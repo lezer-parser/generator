@@ -254,25 +254,36 @@ class State {
   }
 }
 
+class Frame {
+  constructor(prev, value, state) {
+    this.prev = prev
+    this.value = value
+    this.state = state
+  }
+
+  toString() {
+    return this.prev ? this.prev + " " + this.value + " " + this.state.id : this.state.id
+  }
+}
+
 function parse(input, grammar, table) {
-  let stack = [table[0]], pos = 0
+  let stack = new Frame(null, null, table[0]), pos = 0
   for (;;) {
     let next = grammar.terms.get(pos < input.length ? input[pos] : "#")
-    console.log("stack is", stack.map(e => e instanceof State ? table.indexOf(e) : e).join())
+    console.log("stack is " + stack)
     console.log("token is", next.name)
-    let state = stack[stack.length - 1]
-    let action = state.getAction(next)
+    let action = stack.state.getAction(next)
     if (!action) {
       throw new Error("Fail at " + pos)
     } else if (action instanceof Goto) {
-      stack.push(next, action.target)
+      stack = new Frame(stack, next, action.target)
       pos++
     } else if (action instanceof Accept) {
       break
     } else { // A reduce
-      stack.length -= action.rule.parts.length * 2 // Pop off consumed parts
-      let newState = stack[stack.length - 1].getGoto(action.rule.name).target
-      stack.push(action.rule.name, newState)
+      for (let i = action.rule.parts.length; i > 0; i--) stack = stack.prev
+      let newState = stack.state.getGoto(action.rule.name).target
+      stack = new Frame(stack, action.rule.name, newState)
     }
   }
   console.log("Success")
