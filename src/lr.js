@@ -1,14 +1,32 @@
-class Rule {
-  constructor(str) {
-    let [_, name, expr] = /(\w+)\s*->\s*(.*)/.exec(str)
+class Term {
+  constructor(name) {
     this.name = name
-    this.parts = expr.split(/\s+/)
+    this.terminal = !/^[A-Z]/.test(name)
+  }
+  toString() { return this.name }
+  cmp(other) { return this == other ? 0 : this.name < other.name ? -1 : 1 }
+}
+
+class TermSet {
+  constructor() { this.terms = [] }
+  get(name) {
+    let found = this.terms.find(t => t.name == name)
+    if (!found) this.terms.push(found = new Term(name))
+    return found
+  }
+}
+
+class Rule {
+  constructor(str, terms) {
+    let [_, name, expr] = /(\w+)\s*->\s*(.*)/.exec(str)
+    this.name = terms.get(name)
+    this.parts = expr.split(/\s+/).map(n => terms.get(n))
   }
 
   cmp(rule) {
-    return cmpStr(this.name, rule.name) ||
+    return this.name.cmp(rule.name) ||
       this.parts.length - rule.parts.length ||
-      this.parts.reduce((r, s, i) => r || cmpStr(s, rule.parts[i]), 0)
+      this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0)
   }
 
   toString() {
@@ -16,92 +34,23 @@ class Rule {
   }
 }
 
-function isTerm(name) { return !/^[A-Z]/.test(name) }
-
-function uniq(names) {
-  let result = []
-  for (let name of names) if (!result.includes(name)) result.push(name)
-  return result
-}
-
 class Grammar {
   constructor(rules) {
-    this.rules = rules.map(rule => new Rule(rule))
-    this.nonTerminals = uniq(this.rules.map(r => r.name))
-    this.terminals = uniq(this.rules.reduce((set, rule) => set.concat(rule.parts.filter(p => isTerm(p))), []))
-    this.first = this.computeFirst()
-    this.follows = this.computeFollows()
-  }
-
-  computeFirst() {
-    let table = {}, change = false
-    for (let nt of this.nonTerminals) table[nt] = []
-    function add(name, value) {
-      let set = table[name]
-      if (!set.includes(value)) { set.push(value); change = true }
-    }
-    for (;;) {
-      change = false
-      for (let rule of this.rules) {
-        let found = false
-        for (let part of rule.parts) {
-          found = true
-          if (isTerm(part)) {
-            add(rule.name, part)
-          } else {
-            for (let t in table[part]) {
-              if (t == null) found = false
-              else add(rule.name, t)
-            }
-          }
-          if (found) break
-        }
-        if (!found) add(rule.name, null)
-      }
-      if (!change) return table
-    }
-  }
-
-  computeFollows() {
-    let table = [], change = false
-    for (let nt of this.nonTerminals) table[nt] = []
-    function add(name, value) {
-      let set = table[name]
-      if (!set.includes(value)) { set.push(value); change = true }
-    }
-    for (;;) {
-      change = false
-      for (let rule of this.rules) {
-        for (let i = 0; i < rule.parts.length; i++) {
-          let part = rule.parts[i], toEnd = true
-          if (isTerm(part)) continue
-          for (let j = i + 1; j < rule.parts.length; j++) {
-            let next = rule.parts[j]
-            toEnd = false
-            if (isTerm(next)) {
-              add(part, next)
-            } else {
-              for (let first of this.first[next]) {
-                if (first == null) toEnd = true
-                else add(part, first)
-              }
-            }
-            if (!toEnd) break
-          }
-          if (toEnd) for (let follow of table[rule.name]) add(part, follow)
-        }
-      }
-      if (!change) return table
-    }
+    this.terms = new TermSet
+    this.rules = rules.map(rule => new Rule(rule, this.terms))
+    this.nonTerminals = this.terms.terms.filter(t => !t.terminal)
+    this.terminals = this.terms.terms.filter(t => t.terminal)
+    this.first = computeFirst(this.rules, this.nonTerminals)
+    this.follows = computeFollows(this.rules, this.nonTerminals, this.first)
   }
 
   closure(set) {
     let result = set.slice()
     for (let pos of result) {
       let next = pos.next
-      if (!next || isTerm(next)) continue
+      if (!next || next.terminal) continue
       for (let rule of this.rules) if (rule.name == next) {
-        if (!result.some(p => p.rule.cmp(rule) == 0 && p.pos == 0))
+        if (!result.some(p => p.pos == 0 && p.rule == rule))
           result.push(new Pos(rule, 0))
       }
     }
@@ -111,34 +60,97 @@ class Grammar {
   table() {
     let states = [], grammar = this
     function explore(set) {
-      if (set.length == 0) return -1
+      if (set.length == 0) return null
       set = grammar.closure(set)
-      let found = states.findIndex(s => sameSet(s.set, set))
-      if (found < 0) {
-        let state = new State(found = states.length, set)
-        states.push(state)
-        for (let i = 0; i < grammar.terminals.length; i++)
-          state.terminals[i] = explore(advance(set, grammar.terminals[i]))
-        for (let i = 0; i < grammar.nonTerminals.length; i++)
-          state.goto[i] = explore(advance(set, grammar.nonTerminals[i]))
+      let state = states.find(s => sameSet(s.set, set))
+      if (!state) {
+        states.push(state = new State(states.length, set))
+        for (let term of grammar.terminals) {
+          if (term.name == "#") continue
+          let shift = explore(advance(set, term))
+          if (shift) state.terminals.push(new Goto(term, shift))
+        }
+        for (let nt of grammar.nonTerminals) {
+          let goto = explore(advance(set, nt))
+          if (goto) state.goto.push(new Goto(nt, goto))
+        }
         for (let pos of set) {
-          if (pos.next == "#") {
-            state.terminals[grammar.terminals.indexOf("#")] = "a"
-          } else if (pos.next == null) {
-            for (let follow of grammar.follows[pos.rule.name]) {
-              let index = grammar.terminals.indexOf(follow)
-              let value = "r" + grammar.rules.indexOf(pos.rule), cur = state.terminals[index]
-              if (cur != -1 && cur != value) throw new Error("Conflict at " + pos + ": " + cur + " vs " + value)
-              state.terminals[index] = value
-            }
+          let next = pos.next
+          if (next == null) {
+            for (let follow of grammar.follows[pos.rule.name])
+              state.addAction(new Reduce(follow, pos.rule), pos)
+          } else if (next.name == "#") { // FIXME robust EOF representation
+            state.addAction(new Accept(next), pos)
           }
         }
       }
-      return found
+      return state
     }
 
     explore(grammar.rules.filter(rule => rule.name == "S").map(rule => new Pos(rule, 0)))
     return states
+  }
+}
+
+function add(value, array) {
+  if (!array.includes(value)) array.push(value)
+}
+
+function computeFirst(rules, nonTerminals) {
+  let table = {}
+  for (let t of nonTerminals) table[t.name] = []
+  for (;;) {
+    let change = false
+    for (let rule of rules) {
+      let set = table[rule.name.name]
+      let found = false, startLen = set.length
+      for (let part of rule.parts) {
+        found = true
+        if (part.terminal) {
+          add(part, set)
+        } else {
+          for (let t of table[part.name]) {
+            if (t == null) found = false
+            else add(t, set)
+          }
+        }
+        if (found) break
+      }
+      if (!found) add(null, set)
+      if (set.length > startLen) change = true
+    }
+    if (!change) return table
+  }
+}
+
+function computeFollows(rules, nonTerminals) {
+  let table = {}
+  for (let t of nonTerminals) table[t.name] = []
+  for (;;) {
+    let change = false
+    for (let rule of rules) {
+      for (let i = 0; i < rule.parts.length; i++) {
+        let part = rule.parts[i], toEnd = true
+        if (part.terminal) continue
+        let set = table[part.name], startLen = set.length
+        for (let j = i + 1; j < rule.parts.length; j++) {
+          let next = rule.parts[j]
+          toEnd = false
+          if (next.terminal) {
+            add(next, set)
+          } else {
+            for (let first of first[next.name]) {
+              if (first == null) toEnd = true
+              else add(first, set)
+            }
+          }
+          if (!toEnd) break
+        }
+        if (toEnd) for (let follow of table[rule.name.name]) add(follow, set)
+        if (set.length > startLen) change = true
+      }
+    }
+    if (!change) return table
   }
 }
 
@@ -167,10 +179,6 @@ class Pos {
   }
 }
 
-function cmpStr(a, b) {
-  return a == b ? 0 : a < b ? -1 : 1
-}
-
 function advance(set, expr) {
   let result = []
   for (let pos of set) if (pos.next == expr)
@@ -182,6 +190,36 @@ function sameSet(a, b) {
   if (a.length != b.length) return false
   for (let i = 0; i < a.length; i++) if (a[i].cmp(b[i]) != 0) return false
   return true
+}
+
+class Goto {
+  constructor(term, target) {
+    this.term = term
+    this.target = target
+  }
+
+  eq(other) { return other instanceof Goto && other.target == this.target }
+
+  toString() { return "goto " + this.target.id }
+}
+
+class Accept {
+  constructor(term) { this.term = term }
+
+  eq(other) { return other instanceof Accept }
+
+  toString() { return "accept" }
+}
+
+class Reduce {
+  constructor(term, rule) {
+    this.term = term
+    this.rule = rule
+  }
+
+  eq(other) { return other instanceof Reduce && other.rule == this.rule }
+
+  toString() { return "reduce " + this.rule }
 }
 
 class State {
@@ -196,30 +234,47 @@ class State {
     return this.id + "=" + this.set.join() +  ": " +
       this.terminals.join(",") + "|" + this.goto.join(",")
   }
+
+  addAction(value, pos) {
+    for (let action of this.terminals) {
+      if (action.term == value.term) {
+        if (action.eq(value)) return
+        throw new Error("Conflict at " + pos + ": " + action + " vs " + value)
+      }
+    }
+    this.terminals.push(value)
+  }
+
+  getAction(term) {
+    return this.terminals.find(a => a.term == term)
+  }
+
+  getGoto(term) {
+    return this.goto.find(a => a.term == term)
+  }
 }
 
 function parse(input, grammar, table) {
   let stack = [table[0]], pos = 0
   for (;;) {
-    let next = pos < input.length ? input[pos] : "#"
-    console.log("stack is", stack.map(e => e instanceof State ? table.indexOf(e) : e))
-    console.log("token is", next)
+    let next = grammar.terms.get(pos < input.length ? input[pos] : "#")
+    console.log("stack is", stack.map(e => e instanceof State ? table.indexOf(e) : e).join())
+    console.log("token is", next.name)
     let state = stack[stack.length - 1]
-    let action = state.terminals[grammar.terminals.indexOf(next)]
-    if (action == -1) {
+    let action = state.getAction(next)
+    if (!action) {
       throw new Error("Fail at " + pos)
-    } else if (typeof action == "number") { // A shift
-      stack.push(next, table[action])
+    } else if (action instanceof Goto) {
+      stack.push(next, action.target)
       pos++
-    } else if (action == "a") {
+    } else if (action instanceof Accept) {
       break
     } else { // A reduce
-      let rule = grammar.rules[+action.slice(1)] // Ewww
-      stack.length -= rule.parts.length * 2 // Pop off consumed parts
-      let newState = stack[stack.length - 1].goto[grammar.nonTerminals.indexOf(rule.name)]
-      stack.push(rule.name, table[newState])
+      stack.length -= action.rule.parts.length * 2 // Pop off consumed parts
+      let newState = stack[stack.length - 1].getGoto(action.rule.name).target
+      stack.push(action.rule.name, newState)
     }
-  }  
+  }
   console.log("Success")
 }
 
@@ -238,7 +293,5 @@ const g = new Grammar([
 
 let table = g.table()
 console.log(table.join("\n"))
-console.log(g.terminals)
-console.log(g.follows)
 
 parse(["0", "+", "1", "*", "(", "1", "/", "0", ")"], g, table)
