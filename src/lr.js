@@ -20,7 +20,7 @@ class Rule {
   constructor(str, terms) {
     let [_, name, expr] = /(\w+)\s*->\s*(.*)/.exec(str)
     this.name = terms.get(name)
-    this.parts = expr.split(/\s+/).map(n => terms.get(n))
+    this.parts = expr.split(/\s+/).filter(x => x).map(n => terms.get(n))
   }
 
   cmp(rule) {
@@ -123,7 +123,7 @@ function computeFirst(rules, nonTerminals) {
   }
 }
 
-function computeFollows(rules, nonTerminals) {
+function computeFollows(rules, nonTerminals, first) {
   let table = {}
   for (let t of nonTerminals) table[t.name] = []
   for (;;) {
@@ -139,9 +139,9 @@ function computeFollows(rules, nonTerminals) {
           if (next.terminal) {
             add(next, set)
           } else {
-            for (let first of first[next.name]) {
-              if (first == null) toEnd = true
-              else add(first, set)
+            for (let f of first[next.name]) {
+              if (f == null) toEnd = true
+              else add(f, set)
             }
           }
           if (!toEnd) break
@@ -266,7 +266,7 @@ class Frame {
   }
 
   toString() {
-    return this.prev ? this.prev + " " + this.value + " " + this.state.id : this.state.id
+    return this.prev ? `${this.prev} ${this.value} [${this.state.id}]` : `[${this.state.id}]`
   }
 
   eq(other) {
@@ -283,6 +283,35 @@ function addFrame(heap, frame) {
   if (!heap.some(f => f.eq(frame))) addToHeap(heap, frame, compareFrames)
 }
 
+const none = []
+
+class Node {
+  constructor(name, children, start, end) {
+    this.name = name
+    this.start = start
+    this.end = end
+    this.children = children
+  }
+
+  toString() { return this.name ? (this.children.length ? this.name + "(" + this.children + ")" : this.name.name) : this.children.join() }
+
+  static leaf(name, start, end) {
+    return new Node(name, [], start, end)
+  }
+
+  static of(name, children) {
+    if (children.some(ch => !ch.name)) {
+      let flat = []
+      for (let ch in children) {
+        if (ch.name) flat.push(ch)
+        else for (let sub in ch.children) flat.push(sub)
+      }
+      children = flat
+    }
+    return new Node(name, children, children[0].start, children[children.length - 1].end)
+  }
+}
+
 function parse(input, grammar, table) {
   let parses = [new Frame(null, null, table[0], 0)]
   let done = false, maxPos = 0
@@ -295,15 +324,18 @@ function parse(input, grammar, table) {
     stack.state.forEachAction(next, action => {
       if (action instanceof Goto) {
         maxPos = Math.max(maxPos, pos + 1)
-        addFrame(parses, new Frame(stack, next, action.target, pos + 1))
+        addFrame(parses, new Frame(stack, Node.leaf(next, pos, pos + 1), action.target, pos + 1))
       } else if (action instanceof Accept) {
-        console.log("Success")
+        console.log("Success: " + stack.value)
         done = true
       } else { // A reduce
-        let newStack = stack
-        for (let i = action.rule.parts.length; i > 0; i--) newStack = newStack.prev
+        let newStack = stack, children = []
+        for (let i = action.rule.parts.length; i > 0; i--) {
+          children.unshift(newStack.value)
+          newStack = newStack.prev
+        }
         let newState = newStack.state.getGoto(action.rule.name).target
-        addFrame(parses, new Frame(newStack, action.rule.name, newState, pos))
+        addFrame(parses, new Frame(newStack, Node.of(action.rule.name, children), newState, pos))
       }
     })
   }
@@ -311,15 +343,15 @@ function parse(input, grammar, table) {
 
 const g = new Grammar([
   "S -> A #",
-  "A -> A + T",
-  "A -> A - T",
-  "A -> T",
-  "T -> T * B",
-  "T -> T / B",
-  "T -> B",
-  "B -> x",
-  "B -> y",
-  "B -> ( A )"
+  "A -> A + M",
+  "A -> A - M",
+  "A -> M",
+  "M -> M * V",
+  "M -> M / V",
+  "M -> V",
+  "V -> x",
+  "V -> y",
+  "V -> ( A )"
 ])
 
 let table = g.table()
