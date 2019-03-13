@@ -232,16 +232,17 @@ class State {
 
   toString() {
     return this.id + "=" + this.set.join() +  ": " +
-      this.terminals.join(",") + "|" + this.goto.join(",")
+      this.terminals.map(t => t.term + "=" + t).join(",") + "|" + this.goto.map(g => g.term + "=" + g).join(",")
   }
 
   addAction(value, pos) {
     // FIXME only allow duplicates when choices are explicitly marked
     // as ambiguous
-    if (0) for (let action of this.terminals) {
+    for (let action of this.terminals) {
       if (action.term == value.term) {
         if (action.eq(value)) return
-        throw new Error("Conflict at " + pos + ": " + action + " vs " + value)
+        console.log("duplicate rule added in " + this.id + " for", value.term + " " + value + " / " + action)
+        // throw new Error("Conflict at " + pos + ": " + action + " vs " + value)
       }
     }
     this.terminals.push(value)
@@ -267,11 +268,20 @@ class Frame {
   toString() {
     return this.prev ? this.prev + " " + this.value + " " + this.state.id : this.state.id
   }
+
+  eq(other) {
+    return this.state == other.state && this.pos == other.pos &&
+      (this.prev == other.prev || this.prev && other.prev && this.prev.eq(other.prev))
+  }
 }
 
 const {takeFromHeap, addToHeap} = require("./heap")
 
 function compareFrames(a, b) { return a.pos - b.pos }
+
+function addFrame(heap, frame) {
+  if (!heap.some(f => f.eq(frame))) addToHeap(heap, frame, compareFrames)
+}
 
 function parse(input, grammar, table) {
   let parses = [new Frame(null, null, table[0], 0)]
@@ -285,14 +295,15 @@ function parse(input, grammar, table) {
     stack.state.forEachAction(next, action => {
       if (action instanceof Goto) {
         maxPos = Math.max(maxPos, pos + 1)
-        addToHeap(parses, new Frame(stack, next, action.target, pos + 1), compareFrames)
+        addFrame(parses, new Frame(stack, next, action.target, pos + 1))
       } else if (action instanceof Accept) {
         console.log("Success")
         done = true
       } else { // A reduce
-        for (let i = action.rule.parts.length; i > 0; i--) stack = stack.prev
-        let newState = stack.state.getGoto(action.rule.name).target
-        addToHeap(parses, new Frame(stack, action.rule.name, newState, pos), compareFrames)
+        let newStack = stack
+        for (let i = action.rule.parts.length; i > 0; i--) newStack = newStack.prev
+        let newState = newStack.state.getGoto(action.rule.name).target
+        addFrame(parses, new Frame(newStack, action.rule.name, newState, pos))
       }
     })
   }
@@ -306,12 +317,12 @@ const g = new Grammar([
   "T -> T * B",
   "T -> T / B",
   "T -> B",
-  "B -> 0",
-  "B -> 1",
+  "B -> x",
+  "B -> y",
   "B -> ( A )"
 ])
 
 let table = g.table()
 console.log(table.join("\n"))
 
-parse(["0", "+", "1", "*", "(", "1", "/", "0", ")"], g, table)
+parse(["x", "+", "y", "*", "(", "y", "/", "x", ")"], g, table)
