@@ -68,7 +68,7 @@ class Grammar {
         for (let term of grammar.terminals) {
           if (term.name == "#") continue
           let shift = explore(advance(set, term))
-          if (shift) state.terminals.push(new Goto(term, shift))
+          if (shift) state.addAction(new Goto(term, shift))
         }
         for (let nt of grammar.nonTerminals) {
           let goto = explore(advance(set, nt))
@@ -236,7 +236,9 @@ class State {
   }
 
   addAction(value, pos) {
-    for (let action of this.terminals) {
+    // FIXME only allow duplicates when choices are explicitly marked
+    // as ambiguous
+    if (0) for (let action of this.terminals) {
       if (action.term == value.term) {
         if (action.eq(value)) return
         throw new Error("Conflict at " + pos + ": " + action + " vs " + value)
@@ -245,8 +247,8 @@ class State {
     this.terminals.push(value)
   }
 
-  getAction(term) {
-    return this.terminals.find(a => a.term == term)
+  forEachAction(term, f) {
+    for (let a of this.terminals) if (a.term == term) f(a)
   }
 
   getGoto(term) {
@@ -255,10 +257,11 @@ class State {
 }
 
 class Frame {
-  constructor(prev, value, state) {
+  constructor(prev, value, state, pos) {
     this.prev = prev
     this.value = value
     this.state = state
+    this.pos = pos
   }
 
   toString() {
@@ -266,27 +269,33 @@ class Frame {
   }
 }
 
+const {takeFromHeap, addToHeap} = require("./heap")
+
+function compareFrames(a, b) { return a.pos - b.pos }
+
 function parse(input, grammar, table) {
-  let stack = new Frame(null, null, table[0]), pos = 0
-  for (;;) {
+  let parses = [new Frame(null, null, table[0], 0)]
+  let done = false, maxPos = 0
+  for (; !done;) {
+    if (parses.length == 0) throw new Error("NO PARSE @ " + maxPos)
+    console.log("stack is " + parses.join(" || "))
+    let stack = takeFromHeap(parses, compareFrames), pos = stack.pos
     let next = grammar.terms.get(pos < input.length ? input[pos] : "#")
-    console.log("stack is " + stack)
-    console.log("token is", next.name)
-    let action = stack.state.getAction(next)
-    if (!action) {
-      throw new Error("Fail at " + pos)
-    } else if (action instanceof Goto) {
-      stack = new Frame(stack, next, action.target)
-      pos++
-    } else if (action instanceof Accept) {
-      break
-    } else { // A reduce
-      for (let i = action.rule.parts.length; i > 0; i--) stack = stack.prev
-      let newState = stack.state.getGoto(action.rule.name).target
-      stack = new Frame(stack, action.rule.name, newState)
-    }
+    console.log("token is", next.name, "@", pos)
+    stack.state.forEachAction(next, action => {
+      if (action instanceof Goto) {
+        maxPos = Math.max(maxPos, pos + 1)
+        addToHeap(parses, new Frame(stack, next, action.target, pos + 1), compareFrames)
+      } else if (action instanceof Accept) {
+        console.log("Success")
+        done = true
+      } else { // A reduce
+        for (let i = action.rule.parts.length; i > 0; i--) stack = stack.prev
+        let newState = stack.state.getGoto(action.rule.name).target
+        addToHeap(parses, new Frame(stack, action.rule.name, newState, pos), compareFrames)
+      }
+    })
   }
-  console.log("Success")
 }
 
 const g = new Grammar([
