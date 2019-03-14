@@ -322,6 +322,43 @@ class Node {
   }
 }
 
+class TreeCursor {
+  constructor(node) {
+    this.nodes = [node]
+    this.start = [0]
+    this.index = [0]
+  }
+
+  // `pos` must be >= any previously given `pos` for this cursor
+  find(pos, type) {
+    for (;;) {
+      let last = this.nodes.length - 1
+      if (last < 0) return null
+      let top = this.nodes[last], index = this.index[last]
+      if (index == top.children.length) {
+        this.nodes.pop()
+        this.start.pop()
+        this.index.pop()
+        continue
+      }
+      let next = top.children[index]
+      let start = this.start[last] + top.positions[index]
+      if (start > pos) return null
+      if (start == pos) for (;;) {
+        if (next.type == type) return next
+        if (next.children.length == 0 || next.position[0] > 0) return null
+        next = next.children[0]
+      }
+      this.index[last]++
+      if (start + next.length >= pos) { // Enter this node
+        this.nodes.push(next)
+        this.start.push(start)
+        this.index.push(0)
+      }
+    }
+  }
+}
+
 function parse(input, grammar, table) {
   let parses = [new Frame(null, null, table[0], 0, 0)]
   let done = false, maxPos = 0
