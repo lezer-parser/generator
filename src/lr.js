@@ -228,6 +228,7 @@ class State {
     this.set = set
     this.terminals = []
     this.goto = []
+    this.ambiguous = false
   }
 
   toString() {
@@ -236,13 +237,14 @@ class State {
   }
 
   addAction(value, _pos) {
-    // FIXME only allow duplicates when choices are explicitly marked
-    // as ambiguous
     for (let action of this.terminals) {
       if (action.term == value.term) {
         if (action.eq(value)) return
-        console.log("duplicate rule added in " + this.id + " for", value.term + " " + value + " / " + action)
+        // FIXME only allow duplicates when choices are explicitly marked
+        // as ambiguous
         // throw new Error("Conflict at " + pos + ": " + action + " vs " + value)
+        this.ambiguous = true
+        console.log("duplicate rule added in " + this.id + " for", value.term + " " + value + " / " + action)
       }
     }
     this.terminals.push(value)
@@ -264,6 +266,7 @@ class Frame {
     this.state = state
     this.start = start
     this.pos = pos
+    if (prev && (pos < prev.pos || start < prev.start)) throw new Error("NONSENE")
   }
 
   toString() {
@@ -294,7 +297,9 @@ class Node {
     this.positions = positions
   }
 
-  toString() { return this.name ? (this.children.length ? this.name + "(" + this.children + ")" : this.name.name) : this.children.join() }
+  toString() {
+    return this.name ? (this.children.length ? this.name + "(" + this.children + ")" : this.name.name) : this.children.join()
+  }
 
   static leaf(name, length) {
     return new Node(name, length, none, none)
@@ -320,6 +325,20 @@ class Node {
     }
     return new Node(name, length, children, positions)
   }
+
+  partial(start, end, offset, target) {
+    if (start <= 0 && end >= this.length) {
+      target.children.push(this)
+      target.positions.push(offset)
+    } else {
+      for (let i = 0; i < this.children.length; i++) {
+        let from = this.positions[i]
+        if (from >= end) break
+        let child = this.children[i], to = from + child.length
+        if (to > start) child.partial(start - from, end - from, offset + from, target)
+      }
+    }
+  }
 }
 
 class TreeCursor {
@@ -330,7 +349,7 @@ class TreeCursor {
   }
 
   // `pos` must be >= any previously given `pos` for this cursor
-  find(pos, type) {
+  nodeAt(pos) {
     for (;;) {
       let last = this.nodes.length - 1
       if (last < 0) return null
@@ -343,12 +362,7 @@ class TreeCursor {
       }
       let next = top.children[index]
       let start = this.start[last] + top.positions[index]
-      if (start > pos) return null
-      if (start == pos) for (;;) {
-        if (next.type == type) return next
-        if (next.children.length == 0 || next.position[0] > 0) return null
-        next = next.children[0]
-      }
+      if (start >= pos) return start == pos ? next : null
       this.index[last]++
       if (start + next.length >= pos) { // Enter this node
         this.nodes.push(next)
@@ -359,22 +373,36 @@ class TreeCursor {
   }
 }
 
-function parse(input, grammar, table) {
+function parse(input, grammar, table, cache = Node.leaf(null, 0)) {
   let parses = [new Frame(null, null, table[0], 0, 0)]
-  let done = false, maxPos = 0
-  for (; !done;) {
+  let done = null, maxPos = 0
+  let cacheIter = new TreeCursor(cache)
+  parse: for (; !done;) {
     if (parses.length == 0) throw new Error("NO PARSE @ " + maxPos)
     console.log("stack is " + parses.join(" || "))
     let stack = takeFromHeap(parses, compareFrames), pos = stack.pos
     let next = grammar.terms.get(pos < input.length ? input[pos] : "#")
     console.log("token is", next.name, "@", pos)
+    if (!stack.state.ambiguous) {
+      for (let cached = cacheIter.nodeAt(pos); cached;
+           cached = cached.children.length && cached.positions[0] == 0 ? cached.children[0] : null) {
+        let match = stack.state.getGoto(cached.name)
+        if (match) {
+          addFrame(parses, new Frame(stack, cached, match.target, pos /* FIXME */, pos + cached.length))
+          maxPos = Math.max(maxPos, pos + cached.length)
+          console.log("REUSE " + cached, "@", pos, "-", pos + cached.length)
+          continue parse
+        }
+      }
+    }
+
     stack.state.forEachAction(next, action => {
       if (action instanceof Goto) {
         maxPos = Math.max(maxPos, pos + 1)
         addFrame(parses, new Frame(stack, Node.leaf(next, 1), action.target, pos, pos + 1))
       } else if (action instanceof Accept) {
         console.log("Success: " + stack.value)
-        done = true
+        done = stack.value
       } else { // A reduce
         let newStack = stack, children = [], positions = []
         for (let i = action.rule.parts.length; i > 0; i--) {
@@ -382,13 +410,19 @@ function parse(input, grammar, table) {
           positions.unshift(newStack.start)
           newStack = newStack.prev
         }
-        let newState = newStack.state.getGoto(action.rule.name).target
-        let frame = children.length ? new Frame(newStack, Node.of(action.rule.name, children, positions), newState, positions[0], pos)
-            : new Frame(newStack, Node.leaf(null, 0), newState, pos, pos)
+        let newState = newStack.state.getGoto(action.rule.name).target, frame
+        if (children.length) {
+          let start = positions[0]
+          for (let i = 0; i < positions.length; i++) positions[i] -= start
+          frame = new Frame(newStack, Node.of(action.rule.name, children, positions), newState, start, pos)
+        } else {
+          frame = new Frame(newStack, Node.leaf(null, 0), newState, pos, pos)
+        }
         addFrame(parses, frame)
       }
     })
   }
+  return done
 }
 
 const g = new Grammar([
@@ -407,4 +441,14 @@ const g = new Grammar([
 let table = g.table()
 console.log(table.join("\n"))
 
-parse(["x", "+", "y", "*", "(", "y", "/", "x", ")"], g, table)
+let input = ["x", "*", "y", "+", "(", "y", "/", "x", ")"]
+let ast = parse(input, g, table)
+
+console.log("--------------")
+
+let cache = new Node(null, 0, [], [])
+ast.partial(0, 2, 0, cache)
+ast.partial(4, input.length, 0, cache)
+let newInput = input.slice()
+newInput[3] = "*"
+let newAST = parse(newInput, g, table, cache)
