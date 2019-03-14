@@ -1,13 +1,13 @@
 {
   "name": "parse",
   "version": "0.0.1",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "author": "",
+  "description": "Experiments around in-editor code parsing",
+  "main": "src/index.ts",
+  "author": "Marijn Haverbeke <marijnh@gmail.com>",
   "license": "MIT",
+  "scripts": {
+    "run": "ts-node src/index.ts"
+  },
   "devDependencies": {
     "rollup": "^1.6.0",
     "rollup-plugin-typescript2": "^0.20.1",
