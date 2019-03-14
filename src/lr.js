@@ -235,7 +235,7 @@ class State {
       this.terminals.map(t => t.term + "=" + t).join(",") + "|" + this.goto.map(g => g.term + "=" + g).join(",")
   }
 
-  addAction(value, pos) {
+  addAction(value, _pos) {
     // FIXME only allow duplicates when choices are explicitly marked
     // as ambiguous
     for (let action of this.terminals) {
@@ -258,10 +258,11 @@ class State {
 }
 
 class Frame {
-  constructor(prev, value, state, pos) {
+  constructor(prev, value, state, start, pos) {
     this.prev = prev
     this.value = value
     this.state = state
+    this.start = start
     this.pos = pos
   }
 
@@ -286,34 +287,43 @@ function addFrame(heap, frame) {
 const none = []
 
 class Node {
-  constructor(name, children, start, end) {
+  constructor(name, length, children, positions) {
     this.name = name
-    this.start = start
-    this.end = end
+    this.length = length
     this.children = children
+    this.positions = positions
   }
 
   toString() { return this.name ? (this.children.length ? this.name + "(" + this.children + ")" : this.name.name) : this.children.join() }
 
-  static leaf(name, start, end) {
-    return new Node(name, [], start, end)
+  static leaf(name, length) {
+    return new Node(name, length, none, none)
   }
 
-  static of(name, children) {
+  static of(name, children, positions) {
+    let length = positions[positions.length - 1] + children[children.length - 1].length
     if (children.some(ch => !ch.name)) {
-      let flat = []
-      for (let ch in children) {
-        if (ch.name) flat.push(ch)
-        else for (let sub in ch.children) flat.push(sub)
+      let flatChildren = [], flatPositions = []
+      for (let i = 0; i < children.length; i++) {
+        let ch = children[i], pos = positions[i]
+        if (ch.name) {
+          flatChildren.push(ch)
+          flatPositions.push(pos)
+        } else {
+          for (let j = 0; j < ch.children.length; j++) {
+            flatChildren.push(ch.children[j])
+            flatPositions.push(pos + ch.positions[j])
+          }
+        }
       }
-      children = flat
+      children = flatChildren; positions = flatPositions
     }
-    return new Node(name, children, children[0].start, children[children.length - 1].end)
+    return new Node(name, length, children, positions)
   }
 }
 
 function parse(input, grammar, table) {
-  let parses = [new Frame(null, null, table[0], 0)]
+  let parses = [new Frame(null, null, table[0], 0, 0)]
   let done = false, maxPos = 0
   for (; !done;) {
     if (parses.length == 0) throw new Error("NO PARSE @ " + maxPos)
@@ -324,18 +334,21 @@ function parse(input, grammar, table) {
     stack.state.forEachAction(next, action => {
       if (action instanceof Goto) {
         maxPos = Math.max(maxPos, pos + 1)
-        addFrame(parses, new Frame(stack, Node.leaf(next, pos, pos + 1), action.target, pos + 1))
+        addFrame(parses, new Frame(stack, Node.leaf(next, 1), action.target, pos, pos + 1))
       } else if (action instanceof Accept) {
         console.log("Success: " + stack.value)
         done = true
       } else { // A reduce
-        let newStack = stack, children = []
+        let newStack = stack, children = [], positions = []
         for (let i = action.rule.parts.length; i > 0; i--) {
           children.unshift(newStack.value)
+          positions.unshift(newStack.start)
           newStack = newStack.prev
         }
         let newState = newStack.state.getGoto(action.rule.name).target
-        addFrame(parses, new Frame(newStack, Node.of(action.rule.name, children), newState, pos))
+        let frame = children.length ? new Frame(newStack, Node.of(action.rule.name, children, positions), newState, positions[0], pos)
+            : new Frame(newStack, Node.leaf(null, 0), newState, pos, pos)
+        addFrame(parses, frame)
       }
     })
   }
