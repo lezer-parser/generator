@@ -1,4 +1,4 @@
-exports.addToHeap = function(heap, elt, compare) {
+export function addToHeap<T>(heap: T[], elt: T, compare: (a: T, b: T) => number) {
   let index = heap.push(elt) - 1
   while (index > 0) {
     let parentIndex = index >> 1, parent = heap[parentIndex]
@@ -9,8 +9,8 @@ exports.addToHeap = function(heap, elt, compare) {
   }
 }
 
-exports.takeFromHeap = function(heap, compare) {
-  let elt = heap[0], replacement = heap.pop()
+export function takeFromHeap<T>(heap: T[], compare: (a: T, b: T) => number): T {
+  let elt = heap[0], replacement = heap.pop()!
   if (heap.length == 0) return elt
   heap[0] = replacement
   for (let index = 0;;) {

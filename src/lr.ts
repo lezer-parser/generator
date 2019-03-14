@@ -1,15 +1,16 @@
 class Term {
-  constructor(name) {
-    this.name = name
+  readonly terminal: boolean
+  constructor(readonly name: string) {
     this.terminal = !/^[A-Z]/.test(name)
   }
   toString() { return this.name }
-  cmp(other) { return this == other ? 0 : this.name < other.name ? -1 : 1 }
+  cmp(other: Term) { return this == other ? 0 : this.name < other.name ? -1 : 1 }
 }
 
 class TermSet {
+  terms: Term[]
   constructor() { this.terms = [] }
-  get(name) {
+  get(name: string) {
     let found = this.terms.find(t => t.name == name)
     if (!found) this.terms.push(found = new Term(name))
     return found
@@ -17,13 +18,15 @@ class TermSet {
 }
 
 class Rule {
-  constructor(str, terms) {
-    let [_, name, expr] = /(\w+)\s*->\s*(.*)/.exec(str)
+  name: Term
+  parts: ReadonlyArray<Term>
+  constructor(str: string, terms: TermSet) {
+    let [, name, expr] = /(\w+)\s*->\s*(.*)/.exec(str)!
     this.name = terms.get(name)
     this.parts = expr.split(/\s+/).filter(x => x).map(n => terms.get(n))
   }
 
-  cmp(rule) {
+  cmp(rule: Rule) {
     return this.name.cmp(rule.name) ||
       this.parts.length - rule.parts.length ||
       this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0)
@@ -35,8 +38,14 @@ class Rule {
 }
 
 class Grammar {
-  constructor(rules) {
-    this.terms = new TermSet
+  terms = new TermSet
+  rules: Rule[]
+  nonTerminals: Term[]
+  terminals: Term[]
+  first: {[name: string]: Term[]}
+  follows: {[name: string]: Term[]}
+
+  constructor(rules: string[]) {
     this.rules = rules.map(rule => new Rule(rule, this.terms))
     this.nonTerminals = this.terms.terms.filter(t => !t.terminal)
     this.terminals = this.terms.terms.filter(t => t.terminal)
@@ -44,7 +53,7 @@ class Grammar {
     this.follows = computeFollows(this.rules, this.nonTerminals, this.first)
   }
 
-  closure(set) {
+  closure(set: ReadonlyArray<Pos>) {
     let result = set.slice()
     for (let pos of result) {
       let next = pos.next
@@ -58,8 +67,8 @@ class Grammar {
   }
 
   table() {
-    let states = [], grammar = this
-    function explore(set) {
+    let states: State[] = [], grammar = this
+    function explore(set: Pos[]) {
       if (set.length == 0) return null
       set = grammar.closure(set)
       let state = states.find(s => sameSet(s.set, set))
@@ -77,7 +86,7 @@ class Grammar {
         for (let pos of set) {
           let next = pos.next
           if (next == null) {
-            for (let follow of grammar.follows[pos.rule.name])
+            for (let follow of grammar.follows[pos.rule.name.name])
               state.addAction(new Reduce(follow, pos.rule), pos)
           } else if (next.name == "#") { // FIXME robust EOF representation
             state.addAction(new Accept(next), pos)
@@ -87,17 +96,17 @@ class Grammar {
       return state
     }
 
-    explore(grammar.rules.filter(rule => rule.name == "S").map(rule => new Pos(rule, 0)))
+    explore(grammar.rules.filter(rule => rule.name.name == "S").map(rule => new Pos(rule, 0)))
     return states
   }
 }
 
-function add(value, array) {
+function add<T>(value: T, array: T[]) {
   if (!array.includes(value)) array.push(value)
 }
 
-function computeFirst(rules, nonTerminals) {
-  let table = {}
+function computeFirst(rules: Rule[], nonTerminals: Term[]) {
+  let table: {[term: string]: Term[]} = {}
   for (let t of nonTerminals) table[t.name] = []
   for (;;) {
     let change = false
@@ -123,8 +132,8 @@ function computeFirst(rules, nonTerminals) {
   }
 }
 
-function computeFollows(rules, nonTerminals, first) {
-  let table = {}
+function computeFollows(rules: Rule[], nonTerminals: Term[], first: {[name: string]: Term[]}) {
+  let table: {[name: string]: Term[]} = {}
   for (let t of nonTerminals) table[t.name] = []
   for (;;) {
     let change = false
@@ -155,9 +164,7 @@ function computeFollows(rules, nonTerminals, first) {
 }
 
 class Pos {
-  constructor(rule, pos) {
-    this.rule = rule; this.pos = pos
-  }
+  constructor(readonly rule: Rule, readonly pos: number) {}
 
   get next() {
     return this.pos < this.rule.parts.length ? this.rule.parts[this.pos] : null
@@ -167,76 +174,73 @@ class Pos {
     return new Pos(this.rule, this.pos + 1)
   }
 
-  cmp(pos) {
+  cmp(pos: Pos) {
     return this.rule.cmp(pos.rule) ||
       this.pos - pos.pos
   }
 
   toString() {
-    let parts = this.rule.parts.slice()
+    let parts = this.rule.parts.map(t => t.name)
     parts.splice(this.pos, 0, "·")
     return this.rule.name + "->" + parts.join("")
   }
 }
 
-function advance(set, expr) {
+function advance(set: Pos[], expr: Term) {
   let result = []
   for (let pos of set) if (pos.next == expr)
     result.push(pos.advance())
   return result
 }
 
-function sameSet(a, b) {
+function sameSet(a: ReadonlyArray<Pos>, b: ReadonlyArray<Pos>) {
   if (a.length != b.length) return false
   for (let i = 0; i < a.length; i++) if (a[i].cmp(b[i]) != 0) return false
   return true
 }
 
-class Goto {
-  constructor(term, target) {
-    this.term = term
-    this.target = target
-  }
+interface Action {
+  term: Term
+  eq(other: Action): boolean
+}
 
-  eq(other) { return other instanceof Goto && other.target == this.target }
+class Goto implements Action {
+  constructor(readonly term: Term, readonly target: State) {}
+
+  eq(other: Action): boolean { return other instanceof Goto && other.target == this.target }
 
   toString() { return "goto " + this.target.id }
 }
 
-class Accept {
-  constructor(term) { this.term = term }
+class Accept implements Action {
+  constructor(readonly term: Term) {}
 
-  eq(other) { return other instanceof Accept }
+  eq(other: Action) { return other instanceof Accept }
 
   toString() { return "accept" }
 }
 
-class Reduce {
-  constructor(term, rule) {
-    this.term = term
-    this.rule = rule
-  }
+class Reduce implements Action {
+  constructor(readonly term: Term, readonly rule: Rule) {}
 
-  eq(other) { return other instanceof Reduce && other.rule == this.rule }
+  eq(other: Action): boolean { return other instanceof Reduce && other.rule == this.rule }
 
   toString() { return "reduce " + this.rule }
 }
 
 class State {
-  constructor(id, set) {
-    this.id = id
-    this.set = set
-    this.terminals = []
-    this.goto = []
-    this.ambiguous = false
-  }
+  terminals: Action[] = []
+  goto: Goto[] = []
+  ambiguous = false
+
+  constructor(readonly id: number, readonly set: ReadonlyArray<Pos>) {}
 
   toString() {
     return this.id + "=" + this.set.join() +  ": " +
       this.terminals.map(t => t.term + "=" + t).join(",") + "|" + this.goto.map(g => g.term + "=" + g).join(",")
   }
 
-  addAction(value, _pos) {
+  addAction(value: Action, pos?: Pos) {
     for (let action of this.terminals) {
       if (action.term == value.term) {
         if (action.eq(value)) return
@@ -250,62 +254,57 @@ class State {
     this.terminals.push(value)
   }
 
-  forEachAction(term, f) {
+  forEachAction(term: Term, f: (action: Action) => void) {
     for (let a of this.terminals) if (a.term == term) f(a)
   }
 
-  getGoto(term) {
+  getGoto(term: Term) {
     return this.goto.find(a => a.term == term)
   }
 }
 
 class Frame {
-  constructor(prev, value, state, start, pos) {
-    this.prev = prev
-    this.value = value
-    this.state = state
-    this.start = start
-    this.pos = pos
-    if (prev && (pos < prev.pos || start < prev.start)) throw new Error("NONSENE")
-  }
+  constructor(readonly prev: Frame | null,
+              readonly value: Node | null,
+              readonly state: State,
+              readonly start: number,
+              readonly pos: number) {}
 
   toString() {
     return this.prev ? `${this.prev} ${this.value} [${this.state.id}]` : `[${this.state.id}]`
   }
 
-  eq(other) {
+  eq(other: Frame): boolean {
     return this.state == other.state && this.pos == other.pos &&
-      (this.prev == other.prev || this.prev && other.prev && this.prev.eq(other.prev))
+      (this.prev == other.prev || (this.prev && other.prev ? this.prev.eq(other.prev) : false))
   }
 }
 
-const {takeFromHeap, addToHeap} = require("./heap")
+import {takeFromHeap, addToHeap} from "./heap"
 
-function compareFrames(a, b) { return a.pos - b.pos }
+function compareFrames(a: Frame, b: Frame) { return a.pos - b.pos }
 
-function addFrame(heap, frame) {
+function addFrame(heap: Frame[], frame: Frame) {
   if (!heap.some(f => f.eq(frame))) addToHeap(heap, frame, compareFrames)
 }
 
-const none = []
+const none: any[] = []
 
 class Node {
-  constructor(name, length, children, positions) {
-    this.name = name
-    this.length = length
-    this.children = children
-    this.positions = positions
-  }
+  constructor(readonly name: Term | null,
+              readonly length: number,
+              readonly children: Node[],
+              readonly positions: number[]) {}
 
   toString() {
     return this.name ? (this.children.length ? this.name + "(" + this.children + ")" : this.name.name) : this.children.join()
   }
 
-  static leaf(name, length) {
+  static leaf(name: Term | null, length: number) {
     return new Node(name, length, none, none)
   }
 
-  static of(name, children, positions) {
+  static of(name: Term | null, children: Node[], positions: number[]) {
     let length = positions[positions.length - 1] + children[children.length - 1].length
     if (children.some(ch => !ch.name)) {
       let flatChildren = [], flatPositions = []
@@ -326,7 +325,7 @@ class Node {
     return new Node(name, length, children, positions)
   }
 
-  partial(start, end, offset, target) {
+  partial(start: number, end: number, offset: number, target: Node) {
     if (start <= 0 && end >= this.length) {
       target.children.push(this)
       target.positions.push(offset)
@@ -342,14 +341,14 @@ class Node {
 }
 
 class TreeCursor {
-  constructor(node) {
-    this.nodes = [node]
-    this.start = [0]
-    this.index = [0]
-  }
+  nodes: Node[]
+  start = [0]
+  index = [0]
+
+  constructor(node: Node) { this.nodes = [node] }
 
   // `pos` must be >= any previously given `pos` for this cursor
-  nodeAt(pos) {
+  nodeAt(pos: number) {
     for (;;) {
       let last = this.nodes.length - 1
       if (last < 0) return null
@@ -373,7 +372,7 @@ class TreeCursor {
   }
 }
 
-function parse(input, grammar, table, cache = Node.leaf(null, 0)) {
+function parse(input: string[], grammar: Grammar, table: State[], cache = Node.leaf(null, 0)): Node {
   let parses = [new Frame(null, null, table[0], 0, 0)]
   let done = null, maxPos = 0
   let cacheIter = new TreeCursor(cache)
@@ -386,7 +385,7 @@ function parse(input, grammar, table, cache = Node.leaf(null, 0)) {
     if (!stack.state.ambiguous) {
       for (let cached = cacheIter.nodeAt(pos); cached;
            cached = cached.children.length && cached.positions[0] == 0 ? cached.children[0] : null) {
-        let match = stack.state.getGoto(cached.name)
+        let match = stack.state.getGoto(cached.name!)
         if (match) {
           addFrame(parses, new Frame(stack, cached, match.target, pos /* FIXME */, pos + cached.length))
           maxPos = Math.max(maxPos, pos + cached.length)
@@ -400,17 +399,14 @@ function parse(input, grammar, table, cache = Node.leaf(null, 0)) {
       if (action instanceof Goto) {
         maxPos = Math.max(maxPos, pos + 1)
         addFrame(parses, new Frame(stack, Node.leaf(next, 1), action.target, pos, pos + 1))
-      } else if (action instanceof Accept) {
-        console.log("Success: " + stack.value)
-        done = stack.value
-      } else { // A reduce
+      } else if (action instanceof Reduce) {
         let newStack = stack, children = [], positions = []
         for (let i = action.rule.parts.length; i > 0; i--) {
-          children.unshift(newStack.value)
+          children.unshift(newStack.value!)
           positions.unshift(newStack.start)
-          newStack = newStack.prev
+          newStack = newStack.prev!
         }
-        let newState = newStack.state.getGoto(action.rule.name).target, frame
+        let newState = newStack.state.getGoto(action.rule.name)!.target, frame
         if (children.length) {
           let start = positions[0]
           for (let i = 0; i < positions.length; i++) positions[i] -= start
@@ -419,6 +415,9 @@ function parse(input, grammar, table, cache = Node.leaf(null, 0)) {
           frame = new Frame(newStack, Node.leaf(null, 0), newState, pos, pos)
         }
         addFrame(parses, frame)
+      } else { // Accept
+        console.log("Success: " + stack.value)
+        done = stack.value
       }
     })
   }
@@ -451,4 +450,4 @@ ast.partial(0, 2, 0, cache)
 ast.partial(4, input.length, 0, cache)
 let newInput = input.slice()
 newInput[3] = "*"
-let newAST = parse(newInput, g, table, cache)
+parse(newInput, g, table, cache)
