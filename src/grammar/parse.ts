@@ -1,80 +1,7 @@
+import {expression, GrammarDeclaration, RuleDeclaration, Identifier, Expression} from "./node"
+
 export function parseGrammar(file: string, fileName?: string) {
   return parseTop(new Input(file, fileName))
-}
-
-export interface Node {
-  type: string,
-  start: number,
-  end: number
-}
-
-export interface GrammarDeclaration extends Node {
-  type: "GrammarDeclaration"
-  rules: {[name: string]: RuleDeclaration}
-}
-
-export interface RuleDeclaration extends Node {
-  type: "RuleDeclaration"
-  isToken: boolean
-  id: Identifier
-  params: Identifier[]
-  expr: Expression
-}
-
-export interface Identifier extends Node {
-  type: "Identifier"
-  name: string
-}
-
-export interface Expression extends Node {}
-
-export interface NamedExpression extends Expression {
-  type: "NamedExpression"
-  id: Identifier
-  arguments: Expression[]
-}
-
-export interface ChoiceExpression extends Expression {
-  type: "ChoiceExpression"
-  exprs: Expression[]
-}
-
-export interface SequenceExpression extends Expression {
-  type: "SequenceExpression"
-  exprs: Expression[]
-}
-
-export interface RepeatExpression extends Expression {
-  type: "RepeatExpression"
-  expr: Expression,
-  kind: string
-}
-
-export interface LiteralExpression extends Expression {
-  type: "LiteralExpression"
-  value: string
-}
-
-export interface CharacterRangeExpression extends Expression {
-  type: "CharacterRangeExpression"
-  from: string
-  to: string
-}
-
-export interface AnyExpression extends Expression {
-  type: "AnyExpression"
-}
-
-class BaseNode implements Node {
-  constructor(public type: string,
-              public start: number,
-              public end: number = start) {}
-
-  static make<T>(type: string, start: number, end: number, props: Partial<T> | null): T {
-    let node = new BaseNode(type, start, end) as any as T
-    if (props) for (let prop in props) (node as any)[prop] = props[prop]
-    return node
-  }
 }
 
 const wordChar = /[\w_$]/
@@ -145,10 +72,6 @@ class Input {
     this.end = end
   }
 
-  node<T = Node>(start: number, type: string = "", props: Partial<T> = null as any as T, end = this.end) {
-    return BaseNode.make<T>(type, start, end, props)
-  }
-
   eat(type: string, value: any = null) {
     if (this.type == type && (value == null || this.value === value)) {
       this.next()
@@ -175,7 +98,7 @@ function parseTop(input: Input) {
       parseRule(input, rules, false)
     }
   }
-  return input.node<GrammarDeclaration>(start, "GrammarDeclaration", {rules})
+  return new GrammarDeclaration(start, input.lastEnd, rules)
 }
 
 function parseRule(input: Input, rules: {[name: string]: RuleDeclaration}, isToken: boolean) {
@@ -191,8 +114,7 @@ function parseRule(input: Input, rules: {[name: string]: RuleDeclaration}, isTok
   if (!input.eat("{")) input.unexpected()
   let expr = parseExprChoice(input)
   if (!input.eat("}")) input.unexpected()
-  return rules[id.name] = input.node<RuleDeclaration>(start, "RuleDeclaration",
-                                                      {isToken, id, params, expr})
+  return rules[id.name] = new RuleDeclaration(start, input.lastEnd, isToken, id, params, expr)
 }
 
 function parseExprInner(input: Input): Expression {
@@ -210,13 +132,13 @@ function parseExprInner(input: Input): Expression {
       if (input.type != "string" || input.value.length != 1) input.unexpected()
       let to = input.value
       input.next()
-      return input.node<CharacterRangeExpression>(start, "CharacterRange", {from: value, to})
+      return expression.characterRange(value, to, start, input.lastEnd)
     } else {
-      if (value.length == 0) return input.node<SequenceExpression>(start, "SequenceExpression", {exprs: []})
-      return input.node<LiteralExpression>(start, "LiteralExpression", {value})
+      if (value.length == 0) return expression.sequence([], start, input.lastEnd)
+      return expression.literal(value, start, input.lastEnd)
     }
   } else if (input.eat("id", "_")) {
-    return input.node<AnyExpression>(start, "AnyExpression")
+    return expression.any(start, input.lastEnd)
   } else {
     let id = parseIdent(input)
     let args = []
@@ -224,7 +146,7 @@ function parseExprInner(input: Input): Expression {
       if (args.length && !input.eat(",")) input.unexpected()
       args.push(parseExprChoice(input))
     }
-    return input.node<NamedExpression>(start, "NamedExpression", {arguments: args, id})
+    return expression.named(id, args, start, input.lastEnd)
   }
 }
 
@@ -233,7 +155,7 @@ function parseExprSuffix(input: Input): Expression {
   let expr = parseExprInner(input), kind = input.type
   if (kind == "*" || kind == "?" || kind == "+") {
     input.next()
-    return input.node<RepeatExpression>(start, "RepeatExpression", {expr, kind})
+    return expression.repeat(expr, kind, start, input.lastEnd)
   }
   return expr
 }
@@ -245,24 +167,24 @@ function endOfSequence(input: Input) {
 function parseExprSequence(input: Input) {
   let start = input.start, first = parseExprSuffix(input)
   if (endOfSequence(input)) return first
-  let exprs: Expression[] = []
+  let exprs: Expression[] = [first]
   do { exprs.push(parseExprSuffix(input)) }
   while (!endOfSequence(input))
-  return input.node<SequenceExpression>(start, "SequenceExpression", {exprs})
+  return expression.sequence(exprs, start, input.lastEnd)
 }
 
 function parseExprChoice(input: Input) {
   let start = input.start, left = parseExprSequence(input)
   if (!input.eat("|")) return left
-  let exprs: Expression[] = []
+  let exprs: Expression[] = [left]
   do { exprs.push(parseExprSequence(input)) }
   while (input.eat("|"))
-  return input.node<ChoiceExpression>(start, "ChoiceExpression", {exprs})
+  return expression.choice(exprs, start, input.lastEnd)
 }
 
 function parseIdent(input: Input) {
   if (input.type != "id") input.unexpected()
   let start = input.start, name = input.value
   input.next()
-  return input.node<Identifier>(start, "Identifier", {name})
+  return expression.identifier(name, start, input.lastEnd)
 }
