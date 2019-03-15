@@ -1,5 +1,5 @@
-import {Term, Grammar} from "./grammar"
-import {State, Goto, Reduce} from "./automaton"
+import {Term, Grammar} from "./grammar/grammar"
+import {State, Goto, Reduce} from "./grammar/automaton"
 
 class Frame {
   constructor(readonly prev: Frame | null,

@@ -1,5 +1,5 @@
-import {Grammar} from "./grammar"
-import {buildAutomaton} from "./automaton"
+import {Grammar} from "./grammar/grammar"
+import {buildAutomaton} from "./grammar/automaton"
 import {parse, Node} from "./parse"
 
 const g = new Grammar([
