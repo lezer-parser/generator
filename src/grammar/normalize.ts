@@ -1,24 +1,25 @@
 import {updateNode, expression, walkExpr, RuleDeclaration, Expression, GrammarDeclaration} from "./node"
 
 export function normalizeGrammar(grammar: GrammarDeclaration): GrammarDeclaration {
-  let rules: {[name: string]: RuleDeclaration} = Object.create(null)
+  let rules: RuleDeclaration[] = []
 
-  for (let name in grammar.rules) {
-    let rule = grammar.rules[name]
+  // FIXME check rule use (existence, arity), duplicate names
+  // FIXME expand instances of parameterized rules
+  for (let rule of grammar.rules) {
     let simple = simplifyRuleExpr(rule.expr, rule.id.name, rules)
-    rules[name] = simple == rule.expr ? rule : updateNode(rule, {expr: simple})
+    rules.push(simple == rule.expr ? rule : updateNode(rule, {expr: simple}))
   }
 
   return updateNode(grammar, {rules})
 }
 
-function simplifyRuleExpr(ruleExpr: Expression, ruleName: string, rules: {[name: string]: RuleDeclaration}): Expression {
+function simplifyRuleExpr(ruleExpr: Expression, ruleName: string, rules: RuleDeclaration[]): Expression {
   let counter = 1
   function newName(pos: number) {
     return expression.identifier(ruleName + "-" + counter++, pos, pos)
   }
   function define(expr: Expression, id = newName(expr.start)): Expression {
-    rules[id.name] = new RuleDeclaration(expr.start, expr.start, false, id, [], expr)
+    rules.push(new RuleDeclaration(expr.start, expr.start, false, id, [], expr))
     return expression.named(id)
   }
 

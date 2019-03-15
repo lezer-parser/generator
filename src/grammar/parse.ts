@@ -87,25 +87,23 @@ class Input {
 }
 
 function parseTop(input: Input) {
-  let start = input.start, rules: {[name: string]: RuleDeclaration} = Object.create(null)
+  let start = input.start, rules: RuleDeclaration[] = []
 
   while (input.type != "eof") {
     if (input.eat("id", "tokens")) {
       if (!input.eat("{")) input.unexpected()
       while (!input.eat("}"))
-        parseRule(input, rules, true)
+        rules.push(parseRule(input, true))
     } else {
-      parseRule(input, rules, false)
+      rules.push(parseRule(input, false))
     }
   }
   return new GrammarDeclaration(start, input.lastEnd, rules)
 }
 
-function parseRule(input: Input, rules: {[name: string]: RuleDeclaration}, isToken: boolean) {
+function parseRule(input: Input, isToken: boolean) {
   let id = parseIdent(input), params: Identifier[] = []
   let start = input.start
-  if (id.name in rules)
-    input.raise(`Duplicate rule declaration '${id.name}'`, id.start)
 
   if (input.eat("<")) while (!input.eat(">")) {
     if (params.length && !input.eat(",")) input.unexpected()
@@ -114,7 +112,7 @@ function parseRule(input: Input, rules: {[name: string]: RuleDeclaration}, isTok
   if (!input.eat("{")) input.unexpected()
   let expr = parseExprChoice(input)
   if (!input.eat("}")) input.unexpected()
-  return rules[id.name] = new RuleDeclaration(start, input.lastEnd, isToken, id, params, expr)
+  return new RuleDeclaration(start, input.lastEnd, isToken, id, params, expr)
 }
 
 function parseExprInner(input: Input): Expression {

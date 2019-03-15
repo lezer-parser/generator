@@ -4,7 +4,7 @@ export class Node {
 
 export class GrammarDeclaration extends Node {
   type!: "GrammarDeclaration"
-  constructor(start: number, end: number, readonly rules: {[name: string]: RuleDeclaration}) {
+  constructor(start: number, end: number, readonly rules: RuleDeclaration[]) {
     super("GrammarDeclaration", start, end)
   }
   toString() { return Object.values(this.rules).join("\n") }

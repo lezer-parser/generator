@@ -1,29 +1,33 @@
-export class Term {
-  readonly terminal: boolean
-  constructor(readonly name: string) {
-    this.terminal = !/^[A-Z]/.test(name)
-  }
-  toString() { return this.name }
-  cmp(other: Term) { return this == other ? 0 : this.name < other.name ? -1 : 1 }
+import {Identifier, Expression} from "./node"
+import {parseGrammar} from "./parse"
+import {normalizeGrammar} from "./normalize"
+
+function flatten(expr: Expression, type: string): Expression[] {
+  let result: Expression[] = []
+  ;(function explore(expr: Expression) {
+    if (expr.type == type) (expr as any).exprs.forEach(explore)
+    else result.push(expr)
+  })(expr)
+  return result
 }
 
-class TermSet {
-  terms: Term[]
-  constructor() { this.terms = [] }
-  get(name: string) {
-    let found = this.terms.find(t => t.name == name)
-    if (!found) this.terms.push(found = new Term(name))
-    return found
-  }
+export class Term {
+  constructor(readonly name: string, readonly terminal: boolean) {}
+  toString() { return this.terminal ? JSON.stringify(this.name) : this.name }
+  cmp(other: Term) { return this == other ? 0 : (this.name < other.name ? -1 : 1) || this.terminal ? -1 : 1 }
 }
 
 export class Rule {
-  name: Term
-  parts: ReadonlyArray<Term>
-  constructor(str: string, terms: TermSet) {
-    let [, name, expr] = /(\w+)\s*->\s*(.*)/.exec(str)!
-    this.name = terms.get(name)
-    this.parts = expr.split(/\s+/).filter(x => x).map(n => terms.get(n))
+  constructor(readonly name: Term, readonly parts: Term[]) {}
+
+  static build(id: Identifier, expr: Expression, grammar: Grammar) {
+    let name = grammar.getNonTerminal(id.name)
+    let parts = flatten(expr, "SequenceExpression").map(expr => {
+      if (expr.type == "NamedExpression") return grammar.getNonTerminal(expr.id.name)
+      else if (expr.type == "LiteralExpression") return grammar.getTerminal(expr.value)
+      else throw new Error("Unsupported expr type " + expr.type)
+    })
+    return new Rule(name, parts)
   }
 
   cmp(rule: Rule) {
@@ -33,24 +37,40 @@ export class Rule {
   }
 
   toString() {
-    return this.name + "->" + this.parts.join("")
+    return this.name + " -> " + this.parts.join(" ")
   }
 }
 
 export class Grammar {
-  terms = new TermSet
   rules: Rule[]
-  nonTerminals: Term[]
-  terminals: Term[]
+  nonTerminals: Term[] = []
+  terminals: Term[] = []
   first: {[name: string]: Term[]}
   follows: {[name: string]: Term[]}
 
-  constructor(rules: string[]) {
-    this.rules = rules.map(rule => new Rule(rule, this.terms))
-    this.nonTerminals = this.terms.terms.filter(t => !t.terminal)
-    this.terminals = this.terms.terms.filter(t => t.terminal)
+  constructor(grammar: string, fileName?: string) {
+    let parsed = normalizeGrammar(parseGrammar(grammar, fileName))
+    this.rules = [new Rule(this.getNonTerminal("S'"), [this.getNonTerminal("S"), this.getTerminal("#")])] // FIXME
+    for (let rule of Object.values(parsed.rules)) {
+      for (let expr of flatten(rule.expr, "ChoiceExpression"))
+        this.rules.push(Rule.build(rule.id, expr, this))
+    }
     this.first = computeFirst(this.rules, this.nonTerminals)
     this.follows = computeFollows(this.rules, this.nonTerminals, this.first)
+  }
+
+  getTerminal(name: string) {
+    for (let term of this.terminals) if (term.name == name) return term
+    let result = new Term(name, true)
+    this.terminals.push(result)
+    return result
+  }
+
+  getNonTerminal(name: string) {
+    for (let term of this.nonTerminals) if (term.name == name) return term
+    let result = new Term(name, false)
+    this.nonTerminals.push(result)
+    return result
   }
 }
 
@@ -115,4 +135,3 @@ function computeFollows(rules: Rule[], nonTerminals: Term[], first: {[name: stri
     if (!change) return table
   }
 }
-

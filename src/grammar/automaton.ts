@@ -143,6 +143,6 @@ export function buildAutomaton(grammar: Grammar) {
     return state
   }
 
-  explore(grammar.rules.filter(rule => rule.name.name == "S").map(rule => new Pos(rule, 0)))
+  explore(grammar.rules.filter(rule => rule.name.name == "S'").map(rule => new Pos(rule, 0)))
   return states
 }
