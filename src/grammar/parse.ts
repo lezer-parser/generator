@@ -1,4 +1,4 @@
-import {expression, GrammarDeclaration, RuleDeclaration, Identifier, Expression, ChoiceKind, Associativity} from "./node"
+import {expression, GrammarDeclaration, RuleDeclaration, Identifier, Expression} from "./node"
 
 export function parseGrammar(file: string, fileName?: string) {
   return parseTop(new Input(file, fileName))
@@ -102,7 +102,7 @@ function parseTop(input: Input) {
 }
 
 function parseRule(input: Input, isToken: boolean) {
-  let id = parseIdent(input), params: Identifier[] = [], assoc = Associativity.None
+  let id = parseIdent(input), params: Identifier[] = [], assoc: null | "left" | "right" = null
   let start = input.start
 
   if (input.eat("<")) while (!input.eat(">")) {
@@ -110,8 +110,8 @@ function parseRule(input: Input, isToken: boolean) {
     params.push(parseIdent(input))
   }
   for (;;) {
-    if (input.eat("id", "left") && assoc == Associativity.None) assoc = Associativity.Left
-    else if (input.eat("id", "right") && assoc == Associativity.None) assoc = Associativity.Right
+    if (input.eat("id", "left") && assoc == null) assoc = "left"
+    else if (input.eat("id", "right") && assoc == null) assoc = "right"
     else break
   }
   if (!input.eat("{")) input.unexpected()
@@ -184,8 +184,7 @@ function parseExprChoice(input: Input) {
   let exprs: Expression[] = [left]
   do { exprs.push(parseExprSequence(input)) }
   while (input.eat(op))
-  return expression.choice(exprs, op == "|" ? ChoiceKind.Plain : op == "/" ? ChoiceKind.Precedence : ChoiceKind.Ambiguous,
-                           start, input.lastEnd)
+  return expression.choice(exprs, op == "|" ? null : op == "/" ? "prec" : "ambig", start, input.lastEnd)
 }
 
 function parseIdent(input: Input) {

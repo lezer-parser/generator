@@ -10,22 +10,18 @@ export class GrammarDeclaration extends Node {
   toString() { return Object.values(this.rules).join("\n") }
 }
 
-export enum Associativity { None, Left, Right }
-
 export class RuleDeclaration extends Node {
   type!: "RuleDeclaration"
   constructor(start: number, end: number,
               readonly isToken: boolean,
               readonly id: Identifier,
               readonly params: Identifier[],
-              readonly assoc: Associativity,
+              readonly assoc: null | "left" | "right",
               readonly expr: Expression) {
     super("RuleDeclaration", start, end)
   }
   toString() {
-    return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") +
-      (this.assoc == Associativity.Left ? " left " : this.assoc == Associativity.Right ? " right " : " ") +
-      this.expr
+    return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") + (this.assoc ? ` ${this.assoc} ` : " ") + this.expr
   }
 }
 
@@ -45,14 +41,12 @@ export class NamedExpression extends Node {
   toString() { return this.id.name + (this.args.length ? `<${this.args.join()}>` : "") }
 }
 
-export enum ChoiceKind { Plain, Precedence, Ambiguous }
-
 export class ChoiceExpression extends Node {
   type!: "ChoiceExpression"
-  constructor(start: number, end: number, readonly exprs: Expression[], readonly kind: ChoiceKind) {
+  constructor(start: number, end: number, readonly exprs: Expression[], readonly kind: null | "prec" | "ambig") {
     super("ChoiceExpression", start, end)
   }
-  toString() { return this.exprs.join(this.kind == ChoiceKind.Plain ? " | " : this.kind == ChoiceKind.Precedence ? " / " : " /\\ ") }
+  toString() { return this.exprs.join(this.kind == null ? " | " : this.kind == "prec" ? " / " : " /\\ ") }
 }
 
 export class SequenceExpression extends Node {
@@ -111,7 +105,7 @@ export const expression = {
   repeat(expr: Expression, kind: "?" | "*" | "+", start = expr.start, end = expr.end + 1) {
     return new RepeatExpression(start, end, expr, kind)
   },
-  choice(exprs: Expression[], kind: ChoiceKind, start = exprs[0].start, end = exprs[exprs.length - 1].end) {
+  choice(exprs: Expression[], kind: null | "prec" | "ambig" = null, start = exprs[0].start, end = exprs[exprs.length - 1].end) {
     return new ChoiceExpression(start, end, exprs, kind)
   },
   literal(value: string, start: number, end: number) {

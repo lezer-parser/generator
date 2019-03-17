@@ -18,16 +18,16 @@ export class Term {
 }
 
 export class Rule {
-  constructor(readonly name: Term, readonly parts: Term[]) {}
+  constructor(readonly name: Term, readonly assoc: null | "left" | "right", precedence: number, readonly parts: Term[]) {}
 
-  static build(id: Identifier, expr: Expression, grammar: Grammar) {
+  static build(id: Identifier, expr: Expression, assoc: null | "left" | "right", prec: number, grammar: Grammar) {
     let name = grammar.getNonTerminal(id.name)
     let parts = flatten(expr, "SequenceExpression").map(expr => {
       if (expr.type == "NamedExpression") return grammar.getNonTerminal(expr.id.name)
       else if (expr.type == "LiteralExpression") return grammar.getTerminal(expr.value)
       else throw new Error("Unsupported expr type " + expr.type)
     })
-    return new Rule(name, parts)
+    return new Rule(name, assoc, prec, parts)
   }
 
   cmp(rule: Rule) {
@@ -41,6 +41,8 @@ export class Rule {
   }
 }
 
+const enum Prec { None = -1, Ambiguous = -2 }
+
 export class Grammar {
   rules: Rule[]
   nonTerminals: Term[] = []
@@ -50,10 +52,15 @@ export class Grammar {
 
   constructor(grammar: string, fileName?: string) {
     let parsed = normalizeGrammar(parseGrammar(grammar, fileName))
-    this.rules = [new Rule(this.getNonTerminal("S'"), [this.getNonTerminal("S"), this.getTerminal("#")])] // FIXME
+    this.rules = [new Rule(this.getNonTerminal("S'"), null, -1, [this.getNonTerminal("S"), this.getTerminal("#")])] // FIXME
     for (let rule of Object.values(parsed.rules)) {
-      for (let expr of flatten(rule.expr, "ChoiceExpression"))
-        this.rules.push(Rule.build(rule.id, expr, this))
+      let choices = flatten(rule.expr, "ChoiceExpression")
+      let prec = rule.expr.type != "ChoiceExpression" || (rule as any).kind == null
+        ? Prec.None : (rule as any).kind == "prec" ? choices.length : Prec.Ambiguous
+      for (let expr of choices) {
+        this.rules.push(Rule.build(rule.id, expr, rule.assoc, prec, this))
+        if (prec > 0) prec--
+      }
     }
     this.first = computeFirst(this.rules, this.nonTerminals)
     this.follows = computeFollows(this.rules, this.nonTerminals, this.first)

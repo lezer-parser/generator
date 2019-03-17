@@ -1,4 +1,4 @@
-import {updateNode, expression, walkExpr, RuleDeclaration, Expression, GrammarDeclaration, ChoiceKind, Associativity} from "./node"
+import {updateNode, expression, walkExpr, RuleDeclaration, Expression, GrammarDeclaration} from "./node"
 
 export function normalizeGrammar(grammar: GrammarDeclaration): GrammarDeclaration {
   let rules: RuleDeclaration[] = []
@@ -19,20 +19,20 @@ function simplifyRuleExpr(ruleExpr: Expression, ruleName: string, rules: RuleDec
     return expression.identifier(ruleName + "-" + counter++, pos, pos)
   }
   function define(expr: Expression, id = newName(expr.start)): Expression {
-    rules.push(new RuleDeclaration(expr.start, expr.start, false, id, [], Associativity.None, expr))
+    rules.push(new RuleDeclaration(expr.start, expr.start, false, id, [], null, expr))
     return expression.named(id)
   }
 
   return walkExpr(ruleExpr, expr => {
     if (expr.type == "RepeatExpression") {
       if (expr.kind == "?") {
-        let choice = expression.choice([expr.expr, expression.sequence([], expr.start, expr.start)], ChoiceKind.Plain)
+        let choice = expression.choice([expr.expr, expression.sequence([], expr.start, expr.start)])
         return ruleExpr == expr ? define(choice) : choice
       }
       let inline = ruleExpr == expr && expr.kind == "*"
       let id = inline ? expression.identifier(ruleName, expr.start, expr.start) : newName(expr.start)
       let choice = expression.choice([expression.sequence([expression.named(id), expr.expr]),
-                                      expression.sequence([], expr.start, expr.start)], ChoiceKind.Plain)
+                                      expression.sequence([], expr.start, expr.start)])
       if (expr.kind == "*")
         return inline ? choice : define(choice, id)
       else
