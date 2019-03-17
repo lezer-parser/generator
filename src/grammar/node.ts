@@ -10,16 +10,23 @@ export class GrammarDeclaration extends Node {
   toString() { return Object.values(this.rules).join("\n") }
 }
 
+export enum Associativity { None, Left, Right }
+
 export class RuleDeclaration extends Node {
   type!: "RuleDeclaration"
   constructor(start: number, end: number,
               readonly isToken: boolean,
               readonly id: Identifier,
               readonly params: Identifier[],
+              readonly assoc: Associativity,
               readonly expr: Expression) {
     super("RuleDeclaration", start, end)
   }
-  toString() { return `${this.id.name}${this.params.length ? `<${this.params.join()}>` : ""} { ${this.expr} }` }
+  toString() {
+    return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") +
+      (this.assoc == Associativity.Left ? " left " : this.assoc == Associativity.Right ? " right " : " ") +
+      this.expr
+  }
 }
 
 export class Identifier extends Node {

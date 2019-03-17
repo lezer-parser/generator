@@ -1,4 +1,4 @@
-import {updateNode, expression, walkExpr, RuleDeclaration, Expression, GrammarDeclaration, ChoiceKind} from "./node"
+import {updateNode, expression, walkExpr, RuleDeclaration, Expression, GrammarDeclaration, ChoiceKind, Associativity} from "./node"
 
 export function normalizeGrammar(grammar: GrammarDeclaration): GrammarDeclaration {
   let rules: RuleDeclaration[] = []
@@ -19,7 +19,7 @@ function simplifyRuleExpr(ruleExpr: Expression, ruleName: string, rules: RuleDec
     return expression.identifier(ruleName + "-" + counter++, pos, pos)
   }
   function define(expr: Expression, id = newName(expr.start)): Expression {
-    rules.push(new RuleDeclaration(expr.start, expr.start, false, id, [], expr))
+    rules.push(new RuleDeclaration(expr.start, expr.start, false, id, [], Associativity.None, expr))
     return expression.named(id)
   }
 

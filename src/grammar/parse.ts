@@ -1,4 +1,4 @@
-import {expression, GrammarDeclaration, RuleDeclaration, Identifier, Expression, ChoiceKind} from "./node"
+import {expression, GrammarDeclaration, RuleDeclaration, Identifier, Expression, ChoiceKind, Associativity} from "./node"
 
 export function parseGrammar(file: string, fileName?: string) {
   return parseTop(new Input(file, fileName))
@@ -102,17 +102,22 @@ function parseTop(input: Input) {
 }
 
 function parseRule(input: Input, isToken: boolean) {
-  let id = parseIdent(input), params: Identifier[] = []
+  let id = parseIdent(input), params: Identifier[] = [], assoc = Associativity.None
   let start = input.start
 
   if (input.eat("<")) while (!input.eat(">")) {
     if (params.length && !input.eat(",")) input.unexpected()
     params.push(parseIdent(input))
   }
+  for (;;) {
+    if (input.eat("id", "left") && assoc == Associativity.None) assoc = Associativity.Left
+    else if (input.eat("id", "right") && assoc == Associativity.None) assoc = Associativity.Right
+    else break
+  }
   if (!input.eat("{")) input.unexpected()
   let expr = parseExprChoice(input)
   if (!input.eat("}")) input.unexpected()
-  return new RuleDeclaration(start, input.lastEnd, isToken, id, params, expr)
+  return new RuleDeclaration(start, input.lastEnd, isToken, id, params, assoc, expr)
 }
 
 function parseExprInner(input: Input): Expression {
