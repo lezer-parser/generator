@@ -1,4 +1,4 @@
-import {expression, GrammarDeclaration, RuleDeclaration, Identifier, Expression} from "./node"
+import {expression, GrammarDeclaration, RuleDeclaration, Identifier, Expression, ChoiceKind} from "./node"
 
 export function parseGrammar(file: string, fileName?: string) {
   return parseTop(new Input(file, fileName))
@@ -54,7 +54,7 @@ class Input {
       let end = this.match(start + 1, /^(\\.|[^'])*'/)
       if (end == -1) this.raise("Unterminated string literal", start)
       return this.set("string", JSON.parse(this.string.slice(start, end)), start, end)
-    } else if (/[()|&~!\-+*?{}<>\.,=]/.test(next)) {
+    } else if (/\/\\?|[()&~!\-+*?{}<>\.,=|]/.test(next)) {
       return this.set(next, null, start, start + 1)
     } else if (wordChar.test(next)) {
       let end = start + 1
@@ -159,7 +159,8 @@ function parseExprSuffix(input: Input): Expression {
 }
 
 function endOfSequence(input: Input) {
-  return input.type == "}" || input.type == ")" || input.type == "|" || input.type == "{" || input.type == ","
+  return input.type == "}" || input.type == ")" || input.type == "|" || input.type == "/" ||
+    input.type == "/\\" || input.type == "{" || input.type == ","
 }
 
 function parseExprSequence(input: Input) {
@@ -173,11 +174,13 @@ function parseExprSequence(input: Input) {
 
 function parseExprChoice(input: Input) {
   let start = input.start, left = parseExprSequence(input)
-  if (!input.eat("|")) return left
+  let op = input.eat("|") ? "|" : input.eat("/") ? "/" : input.eat("/\\") ? "/\\" : null
+  if (!op) return left
   let exprs: Expression[] = [left]
   do { exprs.push(parseExprSequence(input)) }
-  while (input.eat("|"))
-  return expression.choice(exprs, start, input.lastEnd)
+  while (input.eat(op))
+  return expression.choice(exprs, op == "|" ? ChoiceKind.Plain : op == "/" ? ChoiceKind.Precedence : ChoiceKind.Ambiguous,
+                           start, input.lastEnd)
 }
 
 function parseIdent(input: Input) {

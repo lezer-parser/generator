@@ -38,12 +38,14 @@ export class NamedExpression extends Node {
   toString() { return this.id.name + (this.args.length ? `<${this.args.join()}>` : "") }
 }
 
+export enum ChoiceKind { Plain, Precedence, Ambiguous }
+
 export class ChoiceExpression extends Node {
   type!: "ChoiceExpression"
-  constructor(start: number, end: number, readonly exprs: Expression[]) {
+  constructor(start: number, end: number, readonly exprs: Expression[], readonly kind: ChoiceKind) {
     super("ChoiceExpression", start, end)
   }
-  toString() { return this.exprs.join(" | ") }
+  toString() { return this.exprs.join(this.kind == ChoiceKind.Plain ? " | " : this.kind == ChoiceKind.Precedence ? " / " : " /\\ ") }
 }
 
 export class SequenceExpression extends Node {
@@ -102,8 +104,8 @@ export const expression = {
   repeat(expr: Expression, kind: "?" | "*" | "+", start = expr.start, end = expr.end + 1) {
     return new RepeatExpression(start, end, expr, kind)
   },
-  choice(exprs: Expression[], start = exprs[0].start, end = exprs[exprs.length - 1].end) {
-    return new ChoiceExpression(start, end, exprs)
+  choice(exprs: Expression[], kind: ChoiceKind, start = exprs[0].start, end = exprs[exprs.length - 1].end) {
+    return new ChoiceExpression(start, end, exprs, kind)
   },
   literal(value: string, start: number, end: number) {
     return new LiteralExpression(start, end, value)
