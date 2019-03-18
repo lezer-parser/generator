@@ -1,14 +1,9 @@
-import {Identifier, Expression} from "./node"
+import {Identifier, Expression, RuleDeclaration} from "./node"
 import {parseGrammar} from "./parse"
 import {normalizeGrammar} from "./normalize"
 
-function flatten(expr: Expression, type: string): Expression[] {
-  let result: Expression[] = []
-  ;(function explore(expr: Expression) {
-    if (expr.type == type) (expr as any).exprs.forEach(explore)
-    else result.push(expr)
-  })(expr)
-  return result
+function flat(expr: Expression, type: string): Expression[] {
+  return expr.type == type ? (expr as any).exprs : [expr]
 }
 
 export class Term {
@@ -18,16 +13,16 @@ export class Term {
 }
 
 export class Rule {
-  constructor(readonly name: Term, readonly assoc: null | "left" | "right", precedence: number, readonly parts: Term[]) {}
+  constructor(readonly name: Term, readonly parts: Term[], readonly source: RuleDeclaration, readonly position: number) {}
 
-  static build(id: Identifier, expr: Expression, assoc: null | "left" | "right", prec: number, grammar: Grammar) {
+  static build(id: Identifier, expr: Expression, source: RuleDeclaration, position: number, grammar: Grammar) {
     let name = grammar.getNonTerminal(id.name)
-    let parts = flatten(expr, "SequenceExpression").map(expr => {
+    let parts = flat(expr, "SequenceExpression").map(expr => {
       if (expr.type == "NamedExpression") return grammar.getNonTerminal(expr.id.name)
       else if (expr.type == "LiteralExpression") return grammar.getTerminal(expr.value)
       else throw new Error("Unsupported expr type " + expr.type)
     })
-    return new Rule(name, assoc, prec, parts)
+    return new Rule(name, parts, source, position)
   }
 
   cmp(rule: Rule) {
@@ -41,8 +36,6 @@ export class Rule {
   }
 }
 
-const enum Prec { None = -1, Ambiguous = -2 }
-
 export class Grammar {
   rules: Rule[]
   nonTerminals: Term[] = []
@@ -52,15 +45,13 @@ export class Grammar {
 
   constructor(grammar: string, fileName?: string) {
     let parsed = normalizeGrammar(parseGrammar(grammar, fileName))
-    this.rules = [new Rule(this.getNonTerminal("S'"), null, -1, [this.getNonTerminal("S"), this.getTerminal("#")])] // FIXME
-    for (let rule of Object.values(parsed.rules)) {
-      let choices = flatten(rule.expr, "ChoiceExpression")
-      let prec = rule.expr.type != "ChoiceExpression" || (rule as any).kind == null
-        ? Prec.None : (rule as any).kind == "prec" ? choices.length : Prec.Ambiguous
-      for (let expr of choices) {
-        this.rules.push(Rule.build(rule.id, expr, rule.assoc, prec, this))
-        if (prec > 0) prec--
-      }
+    
+    this.rules = [new Rule(this.getNonTerminal("S'"), [this.getNonTerminal("S"), this.getTerminal("#")],
+                           {} as RuleDeclaration, 0)] // FIXME
+    for (let rule of parsed.rules) {
+      let choices = flat(rule.expr, "ChoiceExpression")
+      for (let i = 0; i < choices.length; i++)
+        this.rules.push(Rule.build(rule.id, choices[i], rule, i, this))
     }
     this.first = computeFirst(this.rules, this.nonTerminals)
     this.follows = computeFollows(this.rules, this.nonTerminals, this.first)

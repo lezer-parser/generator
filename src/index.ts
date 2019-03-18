@@ -4,7 +4,6 @@ import {parse} from "./parse"
 
 function test(grammar: string, input: string[]) {
   const g = new Grammar(grammar)
-  console.log(g.rules.join("\n"))
   let table = buildAutomaton(g)
   return parse(input, g, table)
 }
@@ -16,5 +15,5 @@ T { "x" | "y" | "(" S ")" }
 `, ["x", "*", "y", "+", "(", "y", "/", "x", ")"])
 
 test(`
-S { "0" | S "+" S }
+S left { "0" | S "+" S }
 `, ["0", "+", "0", "+", "0"])

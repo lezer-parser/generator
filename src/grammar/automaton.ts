@@ -67,6 +67,7 @@ export class Reduce implements Action {
 
 export class State {
   terminals: Action[] = []
+  terminalSets: Pos[][] = []
   goto: Goto[] = []
   ambiguous = false
 
@@ -77,10 +78,20 @@ export class State {
       this.terminals.map(t => t.term + "=" + t).join(",") + "|" + this.goto.map(g => g.term + "=" + g).join(",")
   }
 
-  addAction(value: Action, pos?: Pos) {
-    for (let action of this.terminals) {
+  addAction(value: Action, set: Pos[]) {
+    for (let i = 0; i < this.terminals.length; i++) {
+      let action = this.terminals[i]
       if (action.term == value.term) {
         if (action.eq(value)) return
+        // Shift-reduce conflict that may be solved with associativity
+        if (value instanceof Reduce && action instanceof Goto && value.rule.source.assoc &&
+            this.terminalSets[i].some(p => p.rule == value.rule)) {
+          if (value.rule.source.assoc == "left") { // Reduce wins in left-associative rules
+            this.terminals[i] = value
+            this.terminalSets[i] = set
+          } // Else the existing shift wins, `value` is discarded
+          return
+        }
         // FIXME only allow duplicates when choices are explicitly marked
         // as ambiguous
         // throw new Error("Conflict at " + pos + ": " + action + " vs " + value)
@@ -89,6 +100,7 @@ export class State {
       }
     }
     this.terminals.push(value)
+    this.terminalSets.push(set)
   }
 
   forEachAction(term: Term, f: (action: Action) => void) {
@@ -124,7 +136,7 @@ export function buildAutomaton(grammar: Grammar) {
       for (let term of grammar.terminals) {
         if (term.name == "#") continue
         let shift = explore(advance(set, term))
-        if (shift) state.addAction(new Goto(term, shift))
+        if (shift) state.addAction(new Goto(term, shift), set)
       }
       for (let nt of grammar.nonTerminals) {
         let goto = explore(advance(set, nt))
@@ -134,9 +146,9 @@ export function buildAutomaton(grammar: Grammar) {
         let next = pos.next
         if (next == null) {
           for (let follow of grammar.follows[pos.rule.name.name])
-            state.addAction(new Reduce(follow, pos.rule), pos)
+            state.addAction(new Reduce(follow, pos.rule), [pos])
         } else if (next.name == "#") { // FIXME robust EOF representation
-          state.addAction(new Accept(next), pos)
+          state.addAction(new Accept(next), [pos])
         }
       }
     }
