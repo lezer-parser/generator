@@ -21,7 +21,7 @@ export class RuleDeclaration extends Node {
     super("RuleDeclaration", start, end)
   }
   toString() {
-    return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") + (this.assoc ? ` ${this.assoc} ` : " ") + this.expr
+    return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") + (this.assoc ? ` ${this.assoc}` : "") + " -> " + this.expr
   }
 }
 
@@ -100,12 +100,17 @@ export const expression = {
     return new NamedExpression(start, end, id, args)
   },
   sequence(exprs: Expression[], start = exprs[0].start, end = exprs[exprs.length - 1].end) {
+    if (exprs.some(e => e.type == "SequenceExpression"))
+      exprs = exprs.reduce((a, e) => a.concat(e.type == "SequenceExpression" ? e.exprs : [e]), [] as Expression[])
     return new SequenceExpression(start, end, exprs)
   },
   repeat(expr: Expression, kind: "?" | "*" | "+", start = expr.start, end = expr.end + 1) {
     return new RepeatExpression(start, end, expr, kind)
   },
-  choice(exprs: Expression[], kind: null | "prec" | "ambig" = null, start = exprs[0].start, end = exprs[exprs.length - 1].end) {
+  choice(exprs: Expression[], kind: null | "prec" | "ambig" = null,
+         start = Math.min(...exprs.map(e => e.start)), end = Math.max(...exprs.map(e => e.end))) {
+    if (exprs.some(e => e.type == "ChoiceExpression" && e.kind == kind))
+      exprs = exprs.reduce((a, e) => a.concat(e.type == "ChoiceExpression" && e.kind == kind ? e.exprs : [e]), [] as Expression[])
     return new ChoiceExpression(start, end, exprs, kind)
   },
   literal(value: string, start: number, end: number) {
