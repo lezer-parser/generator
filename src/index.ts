@@ -4,13 +4,12 @@ import {parse} from "./parse"
 
 function test(grammar: string, input: string[]) {
   const g = new Grammar(grammar)
+  console.log(g + "")
   let table = buildAutomaton(g)
   return parse(input, g, table)
 }
 
 test(`
-S { Atom | Product | Sum }
-Product left { S ("*" | "/") S }
-Sum left { S ("+" | "-") S }
+S left { Atom / S ("*" | "/") S / S ("+" | "-") S }
 Atom { "x" | "y" | "(" S ")" }
 `, ["x", "+", "y", "*", "x"])

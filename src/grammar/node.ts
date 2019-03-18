@@ -131,25 +131,25 @@ export function updateNode<T extends Node>(node: T, props: Partial<T>): T {
   return n
 }
 
-export function walkExpr(expr: Expression, f: (expr: Expression) => Expression): Expression {
+export function walkExpr(expr: Expression, f: (expr: Expression, depth: number) => Expression, depth = 0): Expression {
   let update = null
   if (expr.type == "RepeatExpression") {
-    let ex = walkExpr(expr.expr, f)
+    let ex = walkExpr(expr.expr, f, depth + 1)
     if (ex != expr.expr) update = {expr: ex}
   } else if (expr.type == "ChoiceExpression" || expr.type == "SequenceExpression") {
-    let exprs = walkExprs(expr.exprs, f)
+    let exprs = walkExprs(expr.exprs, f, depth + 1)
     if (exprs != expr.exprs) update = {exprs}
   } else if (expr.type == "NamedExpression" && expr.args.length) {
-    let args = walkExprs(expr.args, f)
+    let args = walkExprs(expr.args, f, depth + 1)
     if (args != expr.args) update = {args}
   }
-  return f(update ? updateNode(expr, update) : expr)
+  return f(update ? updateNode(expr, update) : expr, depth)
 }
 
-function walkExprs(exprs: Expression[], f: (expr: Expression) => Expression) {
+function walkExprs(exprs: Expression[], f: (expr: Expression, depth: number) => Expression, depth: number) {
   let result = null
   for (let i = 0; i < exprs.length; i++) {
-    let expr = exprs[i], walked = walkExpr(expr, f)
+    let expr = exprs[i], walked = walkExpr(expr, f, depth)
     if (!result && expr != walked) result = exprs.slice(0, i)
     if (result) result.push(walked)
   }

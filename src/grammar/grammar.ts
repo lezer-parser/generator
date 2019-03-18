@@ -70,6 +70,8 @@ export class Grammar {
     this.nonTerminals.push(result)
     return result
   }
+
+  toString() { return this.rules.join("\n") }
 }
 
 function add<T>(value: T, array: T[]) {

@@ -6,39 +6,39 @@ export function normalizeGrammar(grammar: GrammarDeclaration): GrammarDeclaratio
   // FIXME check rule use (existence, arity), duplicate names
   // FIXME expand instances of parameterized rules
   for (let rule of grammar.rules) {
-    let simple = simplifyRuleExpr(rule.expr, rule.id.name, rules)
+    let simple = simplifyRule(rule, rules)
     rules.push(simple == rule.expr ? rule : updateNode(rule, {expr: simple}))
   }
 
   return updateNode(grammar, {rules})
 }
 
-function simplifyRuleExpr(ruleExpr: Expression, ruleName: string, rules: RuleDeclaration[]): Expression {
+function simplifyRule(rule: RuleDeclaration, rules: RuleDeclaration[]): Expression {
   let counter = 1
   function newName(pos: number) {
-    return expression.identifier(ruleName + "-" + counter++, pos, pos)
+    return expression.identifier(rule.id.name + "-" + counter++, pos, pos)
   }
-  function define(expr: Expression, id = newName(expr.start)): Expression {
-    rules.push(new RuleDeclaration(expr.start, expr.start, false, id, [], null, expr))
+  function lift(expr: Expression, id = newName(expr.start)): Expression {
+    rules.push(new RuleDeclaration(expr.start, expr.start, false, id, [], rule.assoc, expr))
     return expression.named(id)
   }
-
-  return walkExpr(ruleExpr, expr => {
+ 
+  return walkExpr(rule.expr, (expr, depth) => {
     if (expr.type == "RepeatExpression") {
       if (expr.kind == "?") {
         let choice = expression.choice([expr.expr, expression.sequence([], expr.start, expr.start)])
-        return ruleExpr == expr ? define(choice) : choice
+        return depth > 0 ? lift(choice) : choice
       }
-      let inline = ruleExpr == expr && expr.kind == "*"
-      let id = inline ? expression.identifier(ruleName, expr.start, expr.start) : newName(expr.start)
+      let inline = depth == 0 && expr.kind == "*"
+      let id = inline ? expression.identifier(rule.id.name, expr.start, expr.start) : newName(expr.start)
       let choice = expression.choice([expression.sequence([expression.named(id), expr.expr]),
                                       expression.sequence([], expr.start, expr.start)])
       if (expr.kind == "*")
-        return inline ? choice : define(choice, id)
+        return inline ? choice : lift(choice, id)
       else
-        return expression.sequence([expr, define(choice, id)])
-    } else if (expr.type == "ChoiceExpression" && expr != ruleExpr) {
-      return define(expr)
+        return expression.sequence([expr, lift(choice, id)])
+    } else if (expr.type == "ChoiceExpression" && depth > 0) {
+      return lift(expr)
     } else {
       return expr
     }
