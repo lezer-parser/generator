@@ -19,7 +19,7 @@ export class Pos {
   toString() {
     let parts = this.rule.parts.map(t => t.name)
     parts.splice(this.pos, 0, "·")
-    return this.rule.name + "->" + parts.join("")
+    return this.rule.name + " -> " + parts.join(" ")
   }
 }
 
@@ -48,6 +48,8 @@ export class Goto implements Action {
 
   toString() { return "goto " + this.target.id }
 }
+
+export const Shift = Goto
 
 export class Accept implements Action {
   constructor(readonly term: Term) {}
@@ -83,20 +85,30 @@ export class State {
       let action = this.terminals[i]
       if (action.term == value.term) {
         if (action.eq(value)) return
+        this.ambiguous = true
+        // We know value instanceof Reduce, because Shift actions are
+        // added first, and won't ever conflict with each other
+        let reduce = value as Reduce, source = reduce.rule.source
+        let match = this.terminalSets[i].find(pos => pos.rule.source == source)
         // Shift-reduce conflict that may be solved with associativity
-        if (value instanceof Reduce && action instanceof Goto && value.rule.source.assoc &&
-            this.terminalSets[i].some(p => p.rule == value.rule)) {
-          if (value.rule.source.assoc == "left") { // Reduce wins in left-associative rules
-            this.terminals[i] = value
+        if (action instanceof Shift && match && source.assoc) {
+          if (source.assoc == "left") { // Reduce wins in left-associative rules
+            this.terminals[i] = reduce
             this.terminalSets[i] = set
           } // Else the existing shift wins, `value` is discarded
           return
+        } else if (match && source.expr.type == "ChoiceExpression" && source.expr.kind) {
+          if (source.expr.kind == "ambig") { // Marked ambiguous, allow conflicting actions
+            continue
+          } else if (match.rule.position != reduce.rule.position) { // Precedence choice with differing precedences
+            if (match.rule.position > reduce.rule.position) { // New action has higher precedence
+              this.terminals[i] = reduce
+              this.terminalSets[i] = set
+            } // Otherwise, old action has higher precedence
+            return
+          }
         }
-        // FIXME only allow duplicates when choices are explicitly marked
-        // as ambiguous
-        // throw new Error("Conflict at " + pos + ": " + action + " vs " + value)
-        this.ambiguous = true
-        console.log("duplicate rule added in " + this.id + " for", value.term + " " + value + " / " + action)
+        throw new Error((action instanceof Shift ? "shift" : "reduce") + "/reduce conflict at " + set[0] + " for " + action.term)
       }
     }
     this.terminals.push(value)
@@ -136,7 +148,7 @@ export function buildAutomaton(grammar: Grammar) {
       for (let term of grammar.terminals) {
         if (term.name == "#") continue
         let shift = explore(advance(set, term))
-        if (shift) state.addAction(new Goto(term, shift), set)
+        if (shift) state.addAction(new Shift(term, shift), set)
       }
       for (let nt of grammar.nonTerminals) {
         let goto = explore(advance(set, nt))

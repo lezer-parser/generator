@@ -8,12 +8,9 @@ function test(grammar: string, input: string[]) {
   return parse(input, g, table)
 }
 
-if (0) test(`
-S { P (("+" | "-") P)* }
-P { T (("*" | "/") T)* }
-T { "x" | "y" | "(" S ")" }
-`, ["x", "*", "y", "+", "(", "y", "/", "x", ")"])
-
 test(`
-S left { "0" | S "+" S }
-`, ["0", "+", "0", "+", "0"])
+S { Atom | Product | Sum }
+Product left { S ("*" | "/") S }
+Sum left { S ("+" | "-") S }
+Atom { "x" | "y" | "(" S ")" }
+`, ["x", "+", "y", "*", "x"])
