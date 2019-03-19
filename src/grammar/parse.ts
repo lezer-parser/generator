@@ -54,7 +54,7 @@ class Input {
       let end = this.match(start + 1, /^(\\.|[^'])*'/)
       if (end == -1) this.raise("Unterminated string literal", start)
       return this.set("string", JSON.parse(this.string.slice(start, end)), start, end)
-    } else if (/\/\\?|[()&~!\-+*?{}<>\.,=|]/.test(next)) {
+    } else if (/[()&~!\-+*?{}<>\.,=|]/.test(next)) {
       return this.set(next, null, start, start + 1)
     } else if (wordChar.test(next)) {
       let end = start + 1
@@ -179,12 +179,11 @@ function parseExprSequence(input: Input) {
 
 function parseExprChoice(input: Input) {
   let start = input.start, left = parseExprSequence(input)
-  let op = input.eat("|") ? "|" : input.eat("/") ? "/" : input.eat("/\\") ? "/\\" : null
-  if (!op) return left
+  if (!input.eat("|")) return left
   let exprs: Expression[] = [left]
   do { exprs.push(parseExprSequence(input)) }
-  while (input.eat(op))
-  return expression.choice(exprs, op == "|" ? null : op == "/" ? "prec" : "ambig", start, input.lastEnd)
+  while (input.eat("|"))
+  return expression.choice(exprs, start, input.lastEnd)
 }
 
 function parseIdent(input: Input) {

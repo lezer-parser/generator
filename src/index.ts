@@ -11,6 +11,6 @@ function test(grammar: string, input: string[]) {
 }
 
 test(`
-S left { Atom / S ("*" | "/") S / S ("+" | "-") S }
+S left { Atom | S ("*" | "/") S | S ("+" | "-") S }
 Atom { "x" | "y" | "(" S ")" }
 `, ["x", "*", "y", "-", "x"])

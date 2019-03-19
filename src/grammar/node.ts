@@ -43,10 +43,10 @@ export class NamedExpression extends Node {
 
 export class ChoiceExpression extends Node {
   type!: "ChoiceExpression"
-  constructor(start: number, end: number, readonly exprs: Expression[], readonly kind: null | "prec" | "ambig") {
+  constructor(start: number, end: number, readonly exprs: Expression[]) {
     super("ChoiceExpression", start, end)
   }
-  toString() { return this.exprs.join(this.kind == null ? " | " : this.kind == "prec" ? " / " : " /\\ ") }
+  toString() { return this.exprs.join(" | ") }
 }
 
 export class SequenceExpression extends Node {
@@ -107,11 +107,10 @@ export const expression = {
   repeat(expr: Expression, kind: "?" | "*" | "+", start = expr.start, end = expr.end + 1) {
     return new RepeatExpression(start, end, expr, kind)
   },
-  choice(exprs: Expression[], kind: null | "prec" | "ambig" = null,
-         start = Math.min(...exprs.map(e => e.start)), end = Math.max(...exprs.map(e => e.end))) {
-    if (exprs.some(e => e.type == "ChoiceExpression" && e.kind == kind))
-      exprs = exprs.reduce((a, e) => a.concat(e.type == "ChoiceExpression" && e.kind == kind ? e.exprs : [e]), [] as Expression[])
-    return new ChoiceExpression(start, end, exprs, kind)
+  choice(exprs: Expression[], start = Math.min(...exprs.map(e => e.start)), end = Math.max(...exprs.map(e => e.end))) {
+    if (exprs.some(e => e.type == "ChoiceExpression"))
+      exprs = exprs.reduce((a, e) => a.concat(e.type == "ChoiceExpression" ? e.exprs : [e]), [] as Expression[])
+    return new ChoiceExpression(start, end, exprs)
   },
   literal(value: string, start: number, end: number) {
     return new LiteralExpression(start, end, value)
