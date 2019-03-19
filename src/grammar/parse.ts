@@ -1,4 +1,4 @@
-import {expression, GrammarDeclaration, RuleDeclaration, Identifier, Expression} from "./node"
+import {expression, GrammarDeclaration, RuleDeclaration, PrecDeclaration, Identifier, Expression} from "./node"
 
 export function parseGrammar(file: string, fileName?: string) {
   return parseTop(new Input(file, fileName))
@@ -84,16 +84,22 @@ class Input {
   unexpected() {
     this.raise(`Unexpected token '${this.string.slice(this.start, this.end)}'`, this.start)
   }
+
+  expect(type: string, value: any = null) {
+    if (!this.eat(type, value)) this.unexpected()
+  }
 }
 
 function parseTop(input: Input) {
-  let start = input.start, rules: RuleDeclaration[] = []
+  let start = input.start, rules: RuleDeclaration[] = [], precs: PrecDeclaration[] = []
 
   while (input.type != "eof") {
     if (input.eat("id", "tokens")) {
-      if (!input.eat("{")) input.unexpected()
+      input.expect("{")
       while (!input.eat("}"))
         rules.push(parseRule(input, true))
+    } else if (input.type == "id" && input.value == "prec") {
+      precs.push(parsePrec(input))
     } else {
       rules.push(parseRule(input, false))
     }
@@ -106,7 +112,7 @@ function parseRule(input: Input, isToken: boolean) {
   let start = input.start
 
   if (input.eat("<")) while (!input.eat(">")) {
-    if (params.length && !input.eat(",")) input.unexpected()
+    if (params.length) input.expect(",")
     params.push(parseIdent(input))
   }
   for (;;) {
@@ -114,17 +120,17 @@ function parseRule(input: Input, isToken: boolean) {
     else if (input.eat("id", "right") && assoc == null) assoc = "right"
     else break
   }
-  if (!input.eat("{")) input.unexpected()
+  input.expect("{")
   let expr = parseExprChoice(input)
-  if (!input.eat("}")) input.unexpected()
-  return new RuleDeclaration(start, input.lastEnd, isToken, id, params, assoc, expr)
+  input.expect("}")
+  return new RuleDeclaration(start, input.lastEnd, isToken, id, params, expr)
 }
 
 function parseExprInner(input: Input): Expression {
   let start = input.start
   if (input.eat("(")) {
     let expr = parseExprChoice(input)
-    if (!input.eat(")")) input.unexpected()
+    input.expect(")")
     return expr
   }
 
@@ -142,11 +148,17 @@ function parseExprInner(input: Input): Expression {
     }
   } else if (input.eat("id", "_")) {
     return expression.any(start, input.lastEnd)
+  } else if (input.eat("id", "prec")) {
+    let id = parseIdent(input)
+    input.expect(".")
+    let value = parseIdent(input)
+    let expr = parseExprSuffix(input)
+    return expression.prec(id, value, expr, start, input.lastEnd)
   } else {
     let id = parseIdent(input)
     let args = []
     if (input.eat("<")) while (!input.eat(">")) {
-      if (args.length && !input.eat(",")) input.unexpected()
+      if (args.length) input.expect(",")
       args.push(parseExprChoice(input))
     }
     return expression.named(id, args, start, input.lastEnd)
@@ -192,3 +204,19 @@ function parseIdent(input: Input) {
   input.next()
   return expression.identifier(name, start, input.lastEnd)
 }
+
+function parsePrec(input: Input) {
+  let start = input.start
+  input.next()
+  let baseAssoc: ("left" | "right" | null) = input.eat("id", "left") ? "left" : input.eat("id", "right") ? "right" : null
+  let id = parseIdent(input)
+  input.expect("{")
+  let assoc: ("left" | "right" | null)[] = [], names = []
+  while (!input.eat("}")) {
+    if (names.length) input.expect(",")
+    assoc.push(input.eat("id", "left") ? "left" : input.eat("id", "right") ? "right" : baseAssoc)
+    names.push(parseIdent(input))
+  }
+  return new PrecDeclaration(start, input.lastEnd, id, assoc, names)
+}
+      

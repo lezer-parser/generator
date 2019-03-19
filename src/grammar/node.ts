@@ -16,12 +16,20 @@ export class RuleDeclaration extends Node {
               readonly isToken: boolean,
               readonly id: Identifier,
               readonly params: Identifier[],
-              readonly assoc: null | "left" | "right",
               readonly expr: Expression) {
     super("RuleDeclaration", start, end)
   }
   toString() {
-    return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") + (this.assoc ? ` ${this.assoc}` : "") + " -> " + this.expr
+    return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") + " -> " + this.expr
+  }
+}
+
+export class PrecDeclaration extends Node {
+  type!: "PrecDeclaration"
+  constructor(start: number, end: number,
+              readonly id: Identifier,
+              readonly assoc: ("left" | "right" | null)[], readonly names: Identifier[]) {
+    super("PrecDeclaration", start, end)
   }
 }
 
@@ -89,8 +97,16 @@ export class AnyExpression extends Node {
   toString() { return "_" }
 }
 
+export class PrecExpression extends Node {
+  type!: "PrecExpression"
+  constructor(start: number, end: number, readonly id: Identifier, readonly value: Identifier, readonly expr: Expression) {
+    super("PrecExpression", start, end)
+  }
+  toString() { return `prec ${this.id.name}.${this.value.name} (${this.expr})` }
+}
+
 export type Expression = NamedExpression | ChoiceExpression | SequenceExpression | LiteralExpression |
-  RepeatExpression | CharacterRangeExpression | AnyExpression
+  RepeatExpression | CharacterRangeExpression | AnyExpression | PrecExpression
 
 export const expression = {
   identifier(name: string, start: number, end: number) {
@@ -120,6 +136,9 @@ export const expression = {
   },
   any(start: number, end: number) {
     return new AnyExpression(start, end)
+  },
+  prec(id: Identifier, value: Identifier, expr: Expression, start = id.start, end = expr.end) {
+    return new PrecExpression(start, end, id, value, expr)
   }
 }
 
@@ -132,7 +151,7 @@ export function updateNode<T extends Node>(node: T, props: Partial<T>): T {
 
 export function walkExpr(expr: Expression, f: (expr: Expression, depth: number) => Expression, depth = 0): Expression {
   let update = null
-  if (expr.type == "RepeatExpression") {
+  if (expr.type == "RepeatExpression" || expr.type == "PrecExpression") {
     let ex = walkExpr(expr.expr, f, depth + 1)
     if (ex != expr.expr) update = {expr: ex}
   } else if (expr.type == "ChoiceExpression" || expr.type == "SequenceExpression") {
