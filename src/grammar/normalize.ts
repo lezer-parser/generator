@@ -19,7 +19,7 @@ function simplifyRule(rule: RuleDeclaration, rules: RuleDeclaration[]): Expressi
     return expression.identifier(rule.id.name + "-" + counter++, pos, pos)
   }
   function lift(expr: Expression, id = newName(expr.start)): Expression {
-    rules.push(new RuleDeclaration(expr.start, expr.start, false, id, [], rule.assoc, expr))
+    rules.push(new RuleDeclaration(expr.start, expr.start, false, id, [], null, expr))
     return expression.named(id)
   }
  

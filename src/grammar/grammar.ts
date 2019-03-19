@@ -28,6 +28,7 @@ export class Rule {
   cmp(rule: Rule) {
     return this.name.cmp(rule.name) ||
       this.parts.length - rule.parts.length ||
+      this.position - rule.position ||
       this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0)
   }
 
