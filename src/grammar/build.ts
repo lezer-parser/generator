@@ -95,18 +95,25 @@ class Builder {
     this.ast = this.input.parse()
     this.rules.push(new Rule(this.terms.getNonTerminal("^"), [this.terms.getNonTerminal("Program"),
                                                               this.terms.getTerminal("#")]))
-    for (let prec of this.ast.precedences) {
-      let name = prec.id.name
-      if (this.namespaces[name]) this.input.raise(`Duplicate definition of namespace '${name}'`, prec.id.start)
-      this.namespaces[name] = new PrecNamespace(prec)
-    }
+
+    this.defineNamespace("Conflict", new ConflictNamespace)
+    for (let prec of this.ast.precedences)
+      this.defineNamespace(prec.id.name, new PrecNamespace(prec), prec.id.start)
+
     for (let rule of this.ast.rules) {
       if (this.ast.rules.find(r => r != rule && r.id.name == rule.id.name))
         this.input.raise(`Duplicate rule definition for '${rule.id.name}'`, rule.id.start)
+      if (this.namespaces[rule.id.name])
+        this.input.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
       let name = this.terms.getNonTerminal(rule.id.name)
       let cx = new Context(this, rule, null)
       for (let choice of cx.normalizeTopExpr(rule.expr)) cx.defineRule(name, choice)
     }
+  }
+
+  defineNamespace(name: string, value: Namespace, pos: number = 0) {
+    if (this.namespaces[name]) this.input.raise(`Duplicate definition of namespace '${name}'`, pos)
+    this.namespaces[name] = value
   }
 
   newName(base: string, forceID = true): Term {
@@ -136,9 +143,21 @@ class PrecNamespace implements Namespace {
     if (found < 0)
       cx.raise(`Precedence group '${this.ast.id.name}' has no precedence named '${expr.id.name}'`, expr.id.start)
     let name = cx.b.newName(`${expr.namespace!.name}-${expr.id.name}`, false)
-    // FIXME make sure all sub-rules created by normalizing share the precedence
-    let prec = new Precedence(this.ast.assoc[found], this.id, found)
-    cx = cx.withPrecedence(prec)
+    cx = cx.withPrecedence(new Precedence(this.ast.assoc[found], this.id, found))
+    cx.defineRule(name, cx.normalizeExpr(expr.args[0]))
+    return [name]
+  }
+}
+
+class ConflictNamespace implements Namespace {
+  groups: {[name: string]: number} = Object.create(null)
+
+  resolve(expr: NamedExpression, cx: Context): Term[] {
+    if (expr.args.length != 1)
+      cx.raise(`Conflict specifiers take a single argument`, expr.start)
+    let group = this.groups[expr.id.name] || (this.groups[expr.id.name] = precID++)
+    let name = cx.b.newName(`Conflict-${expr.id.name}`, false)
+    cx = cx.withPrecedence(new Precedence(null, group, -1))
     cx.defineRule(name, cx.normalizeExpr(expr.args[0]))
     return [name]
   }

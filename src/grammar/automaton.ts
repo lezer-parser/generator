@@ -102,6 +102,7 @@ export class State {
         this.ambiguous = true
         let prev = this.terminalPrec[i]
         if (prev && prec && prev.group == prec.group) {
+          if (prec.precedence < 0) continue // This is marked as a conflict
           let override = prec.precedence - prev.precedence // Positive means we override, 0 means conflict
           if (override == 0 && action instanceof Shift && prec.associativity)
             override = prec.associativity == "left" ? 1 : -1
