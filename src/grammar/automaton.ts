@@ -152,7 +152,7 @@ export function buildAutomaton(grammar: Grammar) {
     if (!state) {
       states.push(state = new State(states.length, set))
       for (let term of grammar.terms.terminals) {
-        if (term.name == "#") continue
+        if (term == grammar.terms.eof) continue
         let {set: newSet, prec} = advanceWithPrec(set, term), shift = explore(newSet)
         if (shift) state.addAction(new Shift(term, shift), prec)
       }
@@ -165,7 +165,7 @@ export function buildAutomaton(grammar: Grammar) {
         if (next == null) {
           for (let follow of grammar.follows[pos.rule.name.name])
             state.addAction(new Reduce(follow, pos.rule), pos.rule.precedence, pos)
-        } else if (next.name == "#") { // FIXME robust EOF representation
+        } else if (next == grammar.terms.eof) {
           state.addAction(new Accept(next), pos.rule.precedence, pos)
         }
       }

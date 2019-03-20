@@ -118,7 +118,7 @@ export function parse(input: string[], grammar: Grammar, table: State[], cache =
     if (parses.length == 0) throw new Error("NO PARSE @ " + maxPos)
     console.log("stack is " + parses.join(" || "))
     let stack = takeFromHeap(parses, compareFrames), pos = stack.pos
-    let next = grammar.terms.getTerminal(pos < input.length ? input[pos] : "#")
+    let next = pos < input.length ? grammar.terms.getTerminal(input[pos]) : grammar.terms.eof
     console.log("token is", next.name, "@", pos)
     if (!stack.state.ambiguous) {
       for (let cached = cacheIter.nodeAt(pos); cached;

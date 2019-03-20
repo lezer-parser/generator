@@ -7,9 +7,15 @@ export class Term {
 export class TermSet {
   nonTerminals: Term[] = []
   terminals: Term[] = []
+  eof: Term
+
+  constructor() {
+    this.eof = this.getTerminal("␄")
+  }
 
   getTerminal(name: string) {
-    for (let term of this.terminals) if (term.name == name) return term
+    for (let i = 1; i < this.terminals.length; i++) // (Skip eof)
+      if (this.terminals[i].name == name) return this.terminals[i]
     let result = new Term(name, true)
     this.terminals.push(result)
     return result
