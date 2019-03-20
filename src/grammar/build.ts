@@ -1,6 +1,87 @@
-import {Expression, GrammarDeclaration, NamedExpression, PrecDeclaration, Identifier} from "./node"
+import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, Expression, NamedExpression} from "./node"
 import {Term, TermSet, Precedence, Rule, Grammar} from "./grammar"
 import {Input} from "./parse"
+
+class Context {
+  constructor(readonly b: Builder,
+              readonly rule: RuleDeclaration,
+              readonly precedence: Precedence | null) {}
+
+  newName() {
+    return this.b.newName(this.rule.id.name)
+  }
+
+  defineRule(name: Term, parts: Term[]) {
+    this.b.rules.push(new Rule(name, parts, this.precedence))
+  }
+
+  resolve(expr: NamedExpression) {
+    if (expr.namespace) {
+      let ns = this.b.namespaces[expr.namespace.name]
+      if (!ns)
+        this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
+      return ns.resolve(expr, this)
+    } else {
+      let known = this.b.ast.rules.find(r => r.id.name == expr.id.name)
+      if (!known)
+        this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
+      if (known!.params.length != expr.args.length)
+        this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
+      // FIXME instantiate parameterized rules
+      return [this.b.terms.getNonTerminal(expr.id.name)]
+    }
+  }
+
+  normalizeTopExpr(expr: Expression): Term[][] {
+    if (expr.type == "RepeatExpression" && expr.kind == "?") {
+      return [[], ...this.normalizeTopExpr(expr.expr)]
+    } else if (expr.type == "RepeatExpression" && expr.kind == "*") {
+      return [[], [this.b.terms.getNonTerminal(this.rule.id.name), ...this.normalizeExpr(expr.expr)]]
+    } else if (expr.type == "ChoiceExpression") {
+      return expr.exprs.map(e => this.normalizeExpr(e))
+    } else {
+      return [this.normalizeExpr(expr)]
+    }
+  }
+
+  normalizeExpr(expr: Expression): Term[] {
+    if (expr.type == "RepeatExpression") {
+      if (expr.kind == "?") {
+        let name = this.newName()
+        this.defineRule(name, this.normalizeExpr(expr.expr))
+        this.defineRule(name, [])
+        return [name]
+      } else {
+        let name = this.newName()
+        let inner = this.normalizeExpr(expr.expr)
+        this.defineRule(name, inner)
+        this.defineRule(name, [])
+        return expr.kind == "*" ? [name] : inner.concat(name)
+      }
+    } else if (expr.type == "ChoiceExpression") {
+      let name = this.newName()
+      for (let choice of expr.exprs)
+        this.defineRule(name, this.normalizeExpr(choice))
+      return [name]
+    } else if (expr.type == "SequenceExpression") {
+      return expr.exprs.reduce((a, e) => a.concat(this.normalizeExpr(e)), [] as Term[])
+    } else if (expr.type == "LiteralExpression") {
+      return expr.value ? [this.b.terms.getTerminal(expr.value)] : []
+    } else if (expr.type == "NamedExpression") {
+      return this.resolve(expr)
+    } else {
+      return this.raise("Unhandled expression type " + expr.type, expr.start)
+    }
+  }
+
+  raise(message: string, pos: number): never {
+    return this.b.input.raise(message, pos)
+  }
+
+  withPrecedence(prec: Precedence) {
+    return new Context(this.b, this.rule, prec)
+  }
+}
 
 class Builder {
   ast: GrammarDeclaration
@@ -23,66 +104,8 @@ class Builder {
       if (this.ast.rules.find(r => r != rule && r.id.name == rule.id.name))
         this.input.raise(`Duplicate rule definition for '${rule.id.name}'`, rule.id.start)
       let name = this.terms.getNonTerminal(rule.id.name)
-      for (let choice of this.normalizeTopExpr(rule.expr, rule.id))
-        this.rules.push(new Rule(name, choice))
-    }
-  }
-
-  resolve(expr: NamedExpression, ruleName: Identifier): Term[] {
-    if (expr.namespace) {
-      let ns = this.namespaces[expr.namespace.name]
-      if (!ns)
-        this.input.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
-      return ns.resolve(expr, this, ruleName)
-    } else {
-      let known = this.ast.rules.find(r => r.id.name == expr.id.name)
-      if (!known)
-        this.input.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
-      if (known!.params.length != expr.args.length)
-        this.input.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
-      // FIXME instantiate parameterized rules
-      return [this.terms.getNonTerminal(expr.id.name)]
-    }
-  }
-
-  normalizeTopExpr(expr: Expression, ruleName: Identifier): Term[][] {
-    if (expr.type == "RepeatExpression" && expr.kind == "?") {
-      return [[], ...this.normalizeTopExpr(expr.expr, ruleName)]
-    } else if (expr.type == "RepeatExpression" && expr.kind == "*") {
-      return [[], [this.terms.getNonTerminal(ruleName.name), ...this.normalizeExpr(expr.expr, ruleName)]]
-    } else if (expr.type == "ChoiceExpression") {
-      return expr.exprs.map(e => this.normalizeExpr(e, ruleName))
-    } else {
-      return [this.normalizeExpr(expr, ruleName)]
-    }
-  }
-
-  normalizeExpr(expr: Expression, ruleName: Identifier): Term[] {
-    if (expr.type == "RepeatExpression") {
-      if (expr.kind == "?") {
-        let name = this.newName(ruleName.name)
-        this.rules.push(new Rule(name, this.normalizeExpr(expr.expr, ruleName)),
-                        new Rule(name, []))
-        return [name]
-      } else {
-        let name = this.newName(ruleName.name)
-        let inner = this.normalizeExpr(expr.expr, ruleName)
-        this.rules.push(new Rule(name, inner), new Rule(name, []))
-        return expr.kind == "*" ? [name] : inner.concat(name)
-      }
-    } else if (expr.type == "ChoiceExpression") {
-      let name = this.newName(ruleName.name)
-      for (let choice of expr.exprs)
-        this.rules.push(new Rule(name, this.normalizeExpr(choice, ruleName)))
-      return [name]
-    } else if (expr.type == "SequenceExpression") {
-      return expr.exprs.reduce((a, e) => a.concat(this.normalizeExpr(e, ruleName)), [] as Term[])
-    } else if (expr.type == "LiteralExpression") {
-      return expr.value ? [this.terms.getTerminal(expr.value)] : []
-    } else if (expr.type == "NamedExpression") {
-      return this.resolve(expr, ruleName)
-    } else {
-      return this.input.raise("Unhandled expression type " + expr.type, expr.start)
+      let cx = new Context(this, rule, null)
+      for (let choice of cx.normalizeTopExpr(rule.expr)) cx.defineRule(name, choice)
     }
   }
 
@@ -98,7 +121,7 @@ class Builder {
 let precID = 1
 
 interface Namespace {
-  resolve(expr: NamedExpression, b: Builder, ruleName: Identifier): Term[]
+  resolve(expr: NamedExpression, cx: Context): Term[]
 }
 
 class PrecNamespace implements Namespace {
@@ -106,16 +129,17 @@ class PrecNamespace implements Namespace {
 
   constructor(readonly ast: PrecDeclaration) {}
 
-  resolve(expr: NamedExpression, b: Builder, ruleName: Identifier): Term[] {
+  resolve(expr: NamedExpression, cx: Context): Term[] {
     if (expr.args.length != 1)
-      b.input.raise(`Precedence specifiers take a single argument`, expr.start)
+      cx.raise(`Precedence specifiers take a single argument`, expr.start)
     let found = this.ast.names.findIndex(n => n.name == expr.id.name)
     if (found < 0)
-      b.input.raise(`Precedence group '${this.ast.id.name}' has no precedence named '${expr.id.name}'`, expr.id.start)
-    let name = b.newName(`${expr.namespace!.name}-${expr.id.name}`, false)
+      cx.raise(`Precedence group '${this.ast.id.name}' has no precedence named '${expr.id.name}'`, expr.id.start)
+    let name = cx.b.newName(`${expr.namespace!.name}-${expr.id.name}`, false)
     // FIXME make sure all sub-rules created by normalizing share the precedence
-    b.rules.push(new Rule(name, b.normalizeExpr(expr.args[0], ruleName),
-                          new Precedence(this.ast.assoc[found], this.id, found)))
+    let prec = new Precedence(this.ast.assoc[found], this.id, found)
+    cx = cx.withPrecedence(prec)
+    cx.defineRule(name, cx.normalizeExpr(expr.args[0]))
     return [name]
   }
 }
