@@ -1,4 +1,6 @@
-import {expression, GrammarDeclaration, RuleDeclaration, PrecDeclaration, Identifier, Expression} from "./node"
+import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, Identifier, Expression,
+        NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
+        RepeatExpression, CharacterRangeExpression, AnyExpression} from "./node"
 
 const wordChar = /[\w_$]/
 
@@ -141,13 +143,13 @@ function parseExprInner(input: Input): Expression {
       if (input.type != "string" || input.value.length != 1) input.unexpected()
       let to = input.value
       input.next()
-      return expression.characterRange(value, to, start, input.lastEnd)
+      return new CharacterRangeExpression(start, input.lastEnd, value, to)
     } else {
-      if (value.length == 0) return expression.sequence([], start, input.lastEnd)
-      return expression.literal(value, start, input.lastEnd)
+      if (value.length == 0) return new SequenceExpression(start, input.lastEnd, [])
+      return new LiteralExpression(start, input.lastEnd, value)
     }
   } else if (input.eat("id", "_")) {
-    return expression.any(start, input.lastEnd)
+    return new AnyExpression(start, input.lastEnd)
   } else {
     let id = parseIdent(input), namespace = null
     if (input.eat(".")) {
@@ -159,7 +161,7 @@ function parseExprInner(input: Input): Expression {
       if (args.length) input.expect(",")
       args.push(parseExprChoice(input))
     }
-    return expression.named(namespace, id, args, start, input.lastEnd)
+    return new NamedExpression(start, input.lastEnd, namespace, id, args)
   }
 }
 
@@ -168,7 +170,7 @@ function parseExprSuffix(input: Input): Expression {
   let expr = parseExprInner(input), kind = input.type
   if (kind == "*" || kind == "?" || kind == "+") {
     input.next()
-    return expression.repeat(expr, kind, start, input.lastEnd)
+    return new RepeatExpression(start, input.lastEnd, expr, kind)
   }
   return expr
 }
@@ -184,7 +186,7 @@ function parseExprSequence(input: Input) {
   let exprs: Expression[] = [first]
   do { exprs.push(parseExprSuffix(input)) }
   while (!endOfSequence(input))
-  return expression.sequence(exprs, start, input.lastEnd)
+  return new SequenceExpression(start, input.lastEnd, exprs)
 }
 
 function parseExprChoice(input: Input) {
@@ -193,14 +195,14 @@ function parseExprChoice(input: Input) {
   let exprs: Expression[] = [left]
   do { exprs.push(parseExprSequence(input)) }
   while (input.eat("|"))
-  return expression.choice(exprs, start, input.lastEnd)
+  return new ChoiceExpression(start, input.lastEnd, exprs)
 }
 
 function parseIdent(input: Input) {
   if (input.type != "id") input.unexpected()
   let start = input.start, name = input.value
   input.next()
-  return expression.identifier(name, start, input.lastEnd)
+  return new Identifier(start, input.lastEnd, name)
 }
 
 function parsePrec(input: Input) {

@@ -99,34 +99,3 @@ export class AnyExpression extends Node {
 
 export type Expression = NamedExpression | ChoiceExpression | SequenceExpression | LiteralExpression |
   RepeatExpression | CharacterRangeExpression | AnyExpression
-
-export const expression = {
-  identifier(name: string, start: number, end: number) {
-    return new Identifier(start, end, name)
-  },
-  named(namespace: Identifier | null, id: Identifier, args: Expression[] = [], start = id.start, end = args.length ? args[args.length - 1].end : id.end) {
-    return new NamedExpression(start, end, namespace, id, args)
-  },
-  sequence(exprs: Expression[], start = exprs[0].start, end = exprs[exprs.length - 1].end) {
-    if (exprs.some(e => e.type == "SequenceExpression"))
-      exprs = exprs.reduce((a, e) => a.concat(e.type == "SequenceExpression" ? e.exprs : [e]), [] as Expression[])
-    return new SequenceExpression(start, end, exprs)
-  },
-  repeat(expr: Expression, kind: "?" | "*" | "+", start = expr.start, end = expr.end + 1) {
-    return new RepeatExpression(start, end, expr, kind)
-  },
-  choice(exprs: Expression[], start = Math.min(...exprs.map(e => e.start)), end = Math.max(...exprs.map(e => e.end))) {
-    if (exprs.some(e => e.type == "ChoiceExpression"))
-      exprs = exprs.reduce((a, e) => a.concat(e.type == "ChoiceExpression" ? e.exprs : [e]), [] as Expression[])
-    return new ChoiceExpression(start, end, exprs)
-  },
-  literal(value: string, start: number, end: number) {
-    return new LiteralExpression(start, end, value)
-  },
-  characterRange(from: string, to: string, start: number, end: number) {
-    return new CharacterRangeExpression(start, end, from, to)
-  },
-  any(start: number, end: number) {
-    return new AnyExpression(start, end)
-  }
-}
