@@ -20,7 +20,7 @@ function simplifyRule(rule: RuleDeclaration, rules: RuleDeclaration[]): Expressi
   }
   function lift(expr: Expression, id = newName(expr.start)): Expression {
     rules.push(new RuleDeclaration(expr.start, expr.start, false, id, [], expr))
-    return expression.named(id)
+    return expression.named(null, id)
   }
  
   return walkExpr(rule.expr, (expr, depth) => {
@@ -31,7 +31,7 @@ function simplifyRule(rule: RuleDeclaration, rules: RuleDeclaration[]): Expressi
       }
       let inline = depth == 0 && expr.kind == "*"
       let id = inline ? expression.identifier(rule.id.name, expr.start, expr.start) : newName(expr.start)
-      let choice = expression.choice([expression.sequence([expression.named(id), expr.expr]),
+      let choice = expression.choice([expression.sequence([expression.named(null, id), expr.expr]),
                                       expression.sequence([], expr.start, expr.start)])
       if (expr.kind == "*")
         return inline ? choice : lift(choice, id)

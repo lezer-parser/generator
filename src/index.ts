@@ -14,8 +14,8 @@ test(`
 prec left binop { mult, plus }
 S {
   Atom |
-  prec binop.mult (S ("*" | "/") S) |
-  prec binop.plus (S ("+" | "-") S)
+  binop.mult<S ("*" | "/") S> |
+  binop.plus<S ("+" | "-") S>
 }
 Atom { "x" | "y" | "(" S ")" }
 `, ["x", "*", "y", "-", "x"])

@@ -43,7 +43,7 @@ export class Identifier extends Node {
 
 export class NamedExpression extends Node {
   type!: "NamedExpression"
-  constructor(start: number, end: number, readonly id: Identifier, readonly args: Expression[]) {
+  constructor(start: number, end: number, readonly namespace: Identifier | null, readonly id: Identifier, readonly args: Expression[]) {
     super("NamedExpression", start, end)
   }
   toString() { return this.id.name + (this.args.length ? `<${this.args.join()}>` : "") }
@@ -97,23 +97,15 @@ export class AnyExpression extends Node {
   toString() { return "_" }
 }
 
-export class PrecExpression extends Node {
-  type!: "PrecExpression"
-  constructor(start: number, end: number, readonly id: Identifier, readonly value: Identifier, readonly expr: Expression) {
-    super("PrecExpression", start, end)
-  }
-  toString() { return `prec ${this.id.name}.${this.value.name} (${this.expr})` }
-}
-
 export type Expression = NamedExpression | ChoiceExpression | SequenceExpression | LiteralExpression |
-  RepeatExpression | CharacterRangeExpression | AnyExpression | PrecExpression
+  RepeatExpression | CharacterRangeExpression | AnyExpression
 
 export const expression = {
   identifier(name: string, start: number, end: number) {
     return new Identifier(start, end, name)
   },
-  named(id: Identifier, args: Expression[] = [], start = id.start, end = args.length ? args[args.length - 1].end : id.end) {
-    return new NamedExpression(start, end, id, args)
+  named(namespace: Identifier | null, id: Identifier, args: Expression[] = [], start = id.start, end = args.length ? args[args.length - 1].end : id.end) {
+    return new NamedExpression(start, end, namespace, id, args)
   },
   sequence(exprs: Expression[], start = exprs[0].start, end = exprs[exprs.length - 1].end) {
     if (exprs.some(e => e.type == "SequenceExpression"))
@@ -136,9 +128,6 @@ export const expression = {
   },
   any(start: number, end: number) {
     return new AnyExpression(start, end)
-  },
-  prec(id: Identifier, value: Identifier, expr: Expression, start = id.start, end = expr.end) {
-    return new PrecExpression(start, end, id, value, expr)
   }
 }
 
@@ -151,7 +140,7 @@ export function updateNode<T extends Node>(node: T, props: Partial<T>): T {
 
 export function walkExpr(expr: Expression, f: (expr: Expression, depth: number) => Expression, depth = 0): Expression {
   let update = null
-  if (expr.type == "RepeatExpression" || expr.type == "PrecExpression") {
+  if (expr.type == "RepeatExpression") {
     let ex = walkExpr(expr.expr, f, depth + 1)
     if (ex != expr.expr) update = {expr: ex}
   } else if (expr.type == "ChoiceExpression" || expr.type == "SequenceExpression") {

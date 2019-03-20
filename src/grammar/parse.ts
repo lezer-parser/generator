@@ -148,20 +148,18 @@ function parseExprInner(input: Input): Expression {
     }
   } else if (input.eat("id", "_")) {
     return expression.any(start, input.lastEnd)
-  } else if (input.eat("id", "prec")) {
-    let id = parseIdent(input)
-    input.expect(".")
-    let value = parseIdent(input)
-    let expr = parseExprSuffix(input)
-    return expression.prec(id, value, expr, start, input.lastEnd)
   } else {
-    let id = parseIdent(input)
+    let id = parseIdent(input), namespace = null
+    if (input.eat(".")) {
+      namespace = id
+      id = parseIdent(input)
+    }
     let args = []
     if (input.eat("<")) while (!input.eat(">")) {
       if (args.length) input.expect(",")
       args.push(parseExprChoice(input))
     }
-    return expression.named(id, args, start, input.lastEnd)
+    return expression.named(namespace, id, args, start, input.lastEnd)
   }
 }
 
@@ -177,7 +175,7 @@ function parseExprSuffix(input: Input): Expression {
 
 function endOfSequence(input: Input) {
   return input.type == "}" || input.type == ")" || input.type == "|" || input.type == "/" ||
-    input.type == "/\\" || input.type == "{" || input.type == ","
+    input.type == "/\\" || input.type == "{" || input.type == "," || input.type == ">"
 }
 
 function parseExprSequence(input: Input) {
