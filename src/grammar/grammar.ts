@@ -28,9 +28,8 @@ export class Precedence {
               readonly group: number,
               readonly precedence: number) {}
 
-  cmp(other: Precedence): number {
-    return this.precedence - other.precedence || this.group - other.group ||
-      (this.associativity == other.associativity ? 0 : (this.associativity || "null") < (other.associativity || "null") ? -1 : 1)
+  eq(other: Precedence) {
+    return this.associativity == other.associativity && this.group == other.group && this.precedence == other.precedence
   }
 }
 
@@ -42,17 +41,12 @@ export class Rule {
   cmp(rule: Rule) {
     return this.name.cmp(rule.name) ||
       this.parts.length - rule.parts.length ||
-      this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0) ||
-      cmpPrec(this.precedence, rule.precedence)
+      this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0)
   }
 
   toString() {
     return this.name + " -> " + this.parts.join(" ")
   }
-}
-
-function cmpPrec(a: Precedence | null, b: Precedence | null) {
-  return a == b ? 0 : a && b ? a.cmp(b) : a ? 1 : -1
 }
 
 export class Grammar {
