@@ -2,10 +2,16 @@ import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, Expression, NamedE
 import {Term, TermSet, Precedence, Rule, Grammar} from "./grammar"
 import {Input} from "./parse"
 
+// FIXME add inlining other other grammar simplifications?
+
+const none: ReadonlyArray<any> = []
+
 class Context {
   constructor(readonly b: Builder,
               readonly rule: RuleDeclaration,
-              readonly precedence: Precedence | null) {}
+              readonly precedence: Precedence | null = null,
+              readonly params: ReadonlyArray<string> = none,
+              readonly args: ReadonlyArray<Term[]> = none) {}
 
   newName() {
     return this.b.newName(this.rule.id.name)
@@ -16,19 +22,31 @@ class Context {
   }
 
   resolve(expr: NamedExpression) {
+    let param
     if (expr.namespace) {
       let ns = this.b.namespaces[expr.namespace.name]
       if (!ns)
         this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
       return ns.resolve(expr, this)
+    } else if ((param = this.params.indexOf(expr.id.name)) > -1) {
+      if (expr.args.length)
+        this.raise(`Rule parameters don't take arguments`, expr.args[0].start)
+      return this.args[param]
     } else {
       let known = this.b.ast.rules.find(r => r.id.name == expr.id.name)
       if (!known)
-        this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
-      if (known!.params.length != expr.args.length)
+        return this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
+      if (known.params.length != expr.args.length)
         this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
-      // FIXME instantiate parameterized rules
-      return [this.b.terms.getNonTerminal(expr.id.name)]
+      if (expr.args.length == 0) return [this.b.terms.getNonTerminal(expr.id.name)]
+
+      // FIXME avoid generating the same rules multiple times
+      let name = this.b.newName(expr.id.name, true)
+      let paramCx = new Context(this.b, known, null, known.params.map(p => p.name),
+                                expr.args.map(a => this.normalizeExpr(a)))
+      for (let choice of paramCx.normalizeTopExpr(known.expr))
+        this.defineRule(name, choice)
+      return [name]
     }
   }
 
@@ -52,6 +70,8 @@ class Context {
         this.defineRule(name, [])
         return [name]
       } else {
+        // FIXME is the duplication for + a good idea? Could also
+        // factor expr into a rule.
         let name = this.newName()
         let inner = this.normalizeExpr(expr.expr)
         this.defineRule(name, inner)
@@ -74,12 +94,12 @@ class Context {
     }
   }
 
-  raise(message: string, pos: number): never {
+  raise(message: string, pos: number = -1): never {
     return this.b.input.raise(message, pos)
   }
 
   withPrecedence(prec: Precedence) {
-    return new Context(this.b, this.rule, prec)
+    return new Context(this.b, this.rule, prec, this.params, this.args)
   }
 }
 
@@ -100,14 +120,18 @@ class Builder {
     for (let prec of this.ast.precedences)
       this.defineNamespace(prec.id.name, new PrecNamespace(prec), prec.id.start)
 
+    if (!this.ast.rules.some(r => r.id.name == "Program" && r.params.length == 0))
+      this.input.raise(`Missing 'Program' rule declaration`)
     for (let rule of this.ast.rules) {
       if (this.ast.rules.find(r => r != rule && r.id.name == rule.id.name))
         this.input.raise(`Duplicate rule definition for '${rule.id.name}'`, rule.id.start)
       if (this.namespaces[rule.id.name])
         this.input.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
-      let name = this.terms.getNonTerminal(rule.id.name)
-      let cx = new Context(this, rule, null)
-      for (let choice of cx.normalizeTopExpr(rule.expr)) cx.defineRule(name, choice)
+      if (rule.params.length == 0) {
+        let name = this.terms.getNonTerminal(rule.id.name)
+        let cx = new Context(this, rule)
+        for (let choice of cx.normalizeTopExpr(rule.expr)) cx.defineRule(name, choice)
+      }
     }
   }
 

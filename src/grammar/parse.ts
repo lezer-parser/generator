@@ -23,14 +23,18 @@ export class Input {
         ++line
         cur = next + 1
       } else {
-        return {line, ch: pos - cur, fileName: this.fileName}
+        return {line, ch: pos - cur}
       }
     }
   }
 
-  raise(msg: string, pos: number): never {
-    let info = this.lineInfo(pos)
-    throw new SyntaxError(`${msg} (${info.fileName ? info.fileName + " " : ""}${info.line}:${info.ch})`)
+  raise(msg: string, pos: number = -1): never {
+    let posInfo = this.fileName || ""
+    if (pos > -1) {
+      let info = this.lineInfo(pos)
+      posInfo += (posInfo ? " " : "") + info.line + ":" + info.ch
+    }
+    throw new SyntaxError(posInfo ? msg + ` (${posInfo})` : msg)
   }
 
   match(pos: number, re: RegExp) {

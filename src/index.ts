@@ -17,5 +17,6 @@ Expr {
   BinOp.mult<Expr ("*" | "/") Expr> |
   BinOp.plus<Expr ("+" | "-") Expr>
 }
-Atom { "x" | "y" | "(" Expr ")" }
-`, ["x", "*", "y", "-", "x"])
+Parens<E> { "(" E ")" }
+Atom { "x" | "y" | Parens<Expr> }
+`, ["x", "-", "(", "y", "*", "x", ")"])
