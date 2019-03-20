@@ -122,12 +122,12 @@ export function buildAutomaton(grammar: Grammar) {
     let state = states.find(s => cmpSet(s.set, set) == 0)
     if (!state) {
       states.push(state = new State(states.length, set))
-      for (let term of grammar.terminals) {
+      for (let term of grammar.terms.terminals) {
         if (term.name == "#") continue
         let newSet = advance(set, term), shift = explore(newSet)
         if (shift) state.addAction(new Shift(term, shift))
       }
-      for (let nt of grammar.nonTerminals) {
+      for (let nt of grammar.terms.nonTerminals) {
         let goto = explore(advance(set, nt))
         if (goto) state.goto.push(new Goto(nt, goto))
       }
@@ -144,6 +144,6 @@ export function buildAutomaton(grammar: Grammar) {
     return state
   }
 
-  explore(grammar.rules.filter(rule => rule.name.name == "S'").map(rule => new Pos(rule, 0)))
+  explore(grammar.rules.filter(rule => rule.name.name == "^").map(rule => new Pos(rule, 0)))
   return states
 }

@@ -1,12 +1,8 @@
 import {expression, GrammarDeclaration, RuleDeclaration, PrecDeclaration, Identifier, Expression} from "./node"
 
-export function parseGrammar(file: string, fileName?: string) {
-  return parseTop(new Input(file, fileName))
-}
-
 const wordChar = /[\w_$]/
 
-class Input {
+export class Input {
   type = "sof"
   value: any = null
   start = 0
@@ -30,7 +26,7 @@ class Input {
     }
   }
 
-  raise(msg: string, pos: number) {
+  raise(msg: string, pos: number): never {
     let info = this.lineInfo(pos)
     throw new SyntaxError(`${msg} (${info.fileName ? info.fileName + " " : ""}${info.line}:${info.ch})`)
   }
@@ -88,6 +84,10 @@ class Input {
   expect(type: string, value: any = null) {
     if (!this.eat(type, value)) this.unexpected()
   }
+
+  parse() {
+    return parseTop(this)
+  }
 }
 
 function parseTop(input: Input) {
@@ -104,7 +104,7 @@ function parseTop(input: Input) {
       rules.push(parseRule(input, false))
     }
   }
-  return new GrammarDeclaration(start, input.lastEnd, rules)
+  return new GrammarDeclaration(start, input.lastEnd, rules, precs)
 }
 
 function parseRule(input: Input, isToken: boolean) {

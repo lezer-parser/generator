@@ -1,9 +1,9 @@
-import {Grammar} from "./grammar/grammar"
+import {buildGrammar} from "./grammar/build"
 import {buildAutomaton} from "./grammar/automaton"
 import {parse} from "./parse"
 
 function test(grammar: string, input: string[]) {
-  const g = new Grammar(grammar)
+  const g = buildGrammar(grammar)
   console.log(g + "")
   let table = buildAutomaton(g)
   console.log(table.join("\n"))
@@ -11,11 +11,13 @@ function test(grammar: string, input: string[]) {
 }
 
 test(`
-prec left binop { mult, plus }
-S {
+prec left BinOp { mult, plus }
+
+Program { Expr }
+Expr {
   Atom |
-  binop.mult<S ("*" | "/") S> |
-  binop.plus<S ("+" | "-") S>
+  BinOp.mult<Expr ("*" | "/") Expr> |
+  BinOp.plus<Expr ("+" | "-") Expr>
 }
-Atom { "x" | "y" | "(" S ")" }
+Atom { "x" | "y" | "(" Expr ")" }
 `, ["x", "*", "y", "-", "x"])

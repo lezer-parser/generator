@@ -4,7 +4,7 @@ export class Node {
 
 export class GrammarDeclaration extends Node {
   type!: "GrammarDeclaration"
-  constructor(start: number, end: number, readonly rules: RuleDeclaration[]) {
+  constructor(start: number, end: number, readonly rules: RuleDeclaration[], readonly precedences: PrecDeclaration[]) {
     super("GrammarDeclaration", start, end)
   }
   toString() { return Object.values(this.rules).join("\n") }
@@ -129,36 +129,4 @@ export const expression = {
   any(start: number, end: number) {
     return new AnyExpression(start, end)
   }
-}
-
-export function updateNode<T extends Node>(node: T, props: Partial<T>): T {
-  let n = new (node.constructor as {new (start: number, end: number): T})(node.start, node.end) as T
-  for (let key in node) (n as any)[key] = node[key]
-  for (let key in props) (n as any)[key] = props[key]
-  return n
-}
-
-export function walkExpr(expr: Expression, f: (expr: Expression, depth: number) => Expression, depth = 0): Expression {
-  let update = null
-  if (expr.type == "RepeatExpression") {
-    let ex = walkExpr(expr.expr, f, depth + 1)
-    if (ex != expr.expr) update = {expr: ex}
-  } else if (expr.type == "ChoiceExpression" || expr.type == "SequenceExpression") {
-    let exprs = walkExprs(expr.exprs, f, depth + 1)
-    if (exprs != expr.exprs) update = {exprs}
-  } else if (expr.type == "NamedExpression" && expr.args.length) {
-    let args = walkExprs(expr.args, f, depth + 1)
-    if (args != expr.args) update = {args}
-  }
-  return f(update ? updateNode(expr, update) : expr, depth)
-}
-
-function walkExprs(exprs: Expression[], f: (expr: Expression, depth: number) => Expression, depth: number) {
-  let result = null
-  for (let i = 0; i < exprs.length; i++) {
-    let expr = exprs[i], walked = walkExpr(expr, f, depth)
-    if (!result && expr != walked) result = exprs.slice(0, i)
-    if (result) result.push(walked)
-  }
-  return result || exprs
 }

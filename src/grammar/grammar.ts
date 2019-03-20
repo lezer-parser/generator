@@ -1,62 +1,12 @@
-import {Identifier, Expression, RuleDeclaration} from "./node"
-import {parseGrammar} from "./parse"
-import {normalizeGrammar} from "./normalize"
-
-function flat(expr: Expression, type: string): Expression[] {
-  return expr.type == type ? (expr as any).exprs : [expr]
-}
-
 export class Term {
   constructor(readonly name: string, readonly terminal: boolean) {}
   toString() { return this.terminal ? JSON.stringify(this.name) : this.name }
   cmp(other: Term) { return this == other ? 0 : (this.name < other.name ? -1 : 1) || this.terminal ? -1 : 1 }
 }
 
-export class Rule {
-  constructor(readonly name: Term, readonly parts: Term[], readonly source: RuleDeclaration, readonly position: number) {}
-
-  static build(id: Identifier, expr: Expression, source: RuleDeclaration, position: number, grammar: Grammar) {
-    let name = grammar.getNonTerminal(id.name)
-    let parts = flat(expr, "SequenceExpression").map(expr => {
-      if (expr.type == "NamedExpression") return grammar.getNonTerminal(expr.id.name)
-      else if (expr.type == "LiteralExpression") return grammar.getTerminal(expr.value)
-      else throw new Error("Unsupported expr type " + expr.type)
-    })
-    return new Rule(name, parts, source, position)
-  }
-
-  cmp(rule: Rule) {
-    return this.name.cmp(rule.name) ||
-      this.parts.length - rule.parts.length ||
-      this.position - rule.position ||
-      this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0)
-  }
-
-  toString() {
-    return this.name + " -> " + this.parts.join(" ")
-  }
-}
-
-export class Grammar {
-  rules: Rule[]
+export class TermSet {
   nonTerminals: Term[] = []
   terminals: Term[] = []
-  first: {[name: string]: Term[]}
-  follows: {[name: string]: Term[]}
-
-  constructor(grammar: string, fileName?: string) {
-    let parsed = normalizeGrammar(parseGrammar(grammar, fileName))
-    
-    this.rules = [new Rule(this.getNonTerminal("S'"), [this.getNonTerminal("S"), this.getTerminal("#")],
-                           {} as RuleDeclaration, 0)] // FIXME
-    for (let rule of parsed.rules) {
-      let choices = flat(rule.expr, "ChoiceExpression")
-      for (let i = 0; i < choices.length; i++)
-        this.rules.push(Rule.build(rule.id, choices[i], rule, i, this))
-    }
-    this.first = computeFirst(this.rules, this.nonTerminals)
-    this.follows = computeFollows(this.rules, this.nonTerminals, this.first)
-  }
 
   getTerminal(name: string) {
     for (let term of this.terminals) if (term.name == name) return term
@@ -70,6 +20,48 @@ export class Grammar {
     let result = new Term(name, false)
     this.nonTerminals.push(result)
     return result
+  }
+}
+
+export class Precedence {
+  constructor(readonly associativity: "left" | "right" | null,
+              readonly group: number,
+              readonly precedence: number) {}
+
+  cmp(other: Precedence): number {
+    return this.precedence - other.precedence || this.group - other.group ||
+      (this.associativity == other.associativity ? 0 : (this.associativity || "null") < (other.associativity || "null") ? -1 : 1)
+  }
+}
+
+export class Rule {
+  constructor(readonly name: Term,
+              readonly parts: Term[],
+              readonly precedence: Precedence | null = null) {}
+
+  cmp(rule: Rule) {
+    return this.name.cmp(rule.name) ||
+      this.parts.length - rule.parts.length ||
+      this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0) ||
+      cmpPrec(this.precedence, rule.precedence)
+  }
+
+  toString() {
+    return this.name + " -> " + this.parts.join(" ")
+  }
+}
+
+function cmpPrec(a: Precedence | null, b: Precedence | null) {
+  return a == b ? 0 : a && b ? a.cmp(b) : a ? 1 : -1
+}
+
+export class Grammar {
+  first: {[name: string]: Term[]}
+  follows: {[name: string]: Term[]}
+
+  constructor(readonly rules: Rule[], readonly terms: TermSet) {
+    this.first = computeFirst(this.rules, this.terms.nonTerminals)
+    this.follows = computeFollows(this.rules, this.terms.nonTerminals, this.first)
   }
 
   toString() { return this.rules.join("\n") }
