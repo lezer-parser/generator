@@ -41,6 +41,7 @@ export class Precedence {
 
 export class Rule {
   constructor(readonly name: Term,
+              readonly tag: boolean,
               readonly parts: Term[],
               readonly precedence: Precedence | null = null) {}
 

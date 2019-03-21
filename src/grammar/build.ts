@@ -22,8 +22,8 @@ class Context {
     return this.b.newName(this.rule.id.name)
   }
 
-  defineRule(name: Term, parts: Term[]) {
-    this.b.rules.push(new Rule(name, parts, this.precedence))
+  defineRule(name: Term, parts: Term[], tag: boolean = false) {
+    this.b.rules.push(new Rule(name, tag, parts, this.precedence))
   }
 
   resolve(expr: NamedExpression): Term[] {
@@ -111,8 +111,9 @@ class Context {
   buildRule() {
     let name = this.b.newName(this.rule.id.name, false)
     if (this.args.length == 0) this.b.defined[name.name] = name
+    let tag = isTag(this.rule.id.name)
     for (let choice of this.normalizeTopExpr(this.rule.expr))
-      this.defineRule(name, choice)
+      this.defineRule(name, choice, tag)
     return [name]
   }
 
@@ -123,6 +124,11 @@ class Context {
   withPrecedence(prec: Precedence | null) {
     return new Context(this.b, this.rule, prec, this.params, this.args)
   }
+}
+
+function isTag(name: string) {
+  let ch0 = name[0]
+  return ch0.toUpperCase() == ch0 && ch0 != "_"
 }
 
 class Builder {

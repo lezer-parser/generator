@@ -146,7 +146,9 @@ export function parse(input: string[], grammar: Grammar, table: State[], cache =
         }
         let start = positions.length ? positions[0] : pos
         for (let i = 0; i < positions.length; i++) positions[i] -= start
-        let value = children.length ? Node.of(action.rule.name, children, positions) : Node.leaf(null, 0)
+        let value = children.length
+          ? Node.of(action.rule.tag ? action.rule.name : null, children, positions)
+          : Node.leaf(null, 0)
         if (!newStack.prev && next == grammar.terms.eof) {
           console.log("Success: " + value)
           done = value

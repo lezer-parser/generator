@@ -14,10 +14,10 @@ prec left binOp { mult, plus }
 program { expr }
 expr {
   Atom |
-  BinOp<binOp.mult, "*" | "/"> |
-  BinOp<binOp.plus, "+" | "-">
+  binOp.mult<BinOp<"*" | "/">> |
+  binOp.plus<BinOp<"+" | "-">>
 }
-BinOp<prec, op> { prec<expr op expr> }
+BinOp<op> { expr op expr }
 Atom { "x" | "y" | "(" expr ")" }
 `, ["x", "+", "y", "/", "x"])
 
