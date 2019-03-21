@@ -5,7 +5,6 @@ import {parse} from "./parse"
 function test(grammar: string, input: string[]) {
   const g = buildGrammar(grammar)
   let table = buildAutomaton(g)
-  console.log(table.join("\n"))
   return parse(input, g, table)
 }
 

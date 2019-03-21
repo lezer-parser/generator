@@ -6,27 +6,12 @@ import {Input} from "./parse"
 
 const none: ReadonlyArray<any> = []
 
-// Union type for arguments—precisely one of the fields is null in any
-// instance.
-class Arg {
-  constructor(readonly operator: NamedExpression | null, // Always has zero arguments
-              readonly value: Term[] | null) {}
-
-  static make(expr: Expression, cx: Context): Arg {
-    if (expr.type == "NamedExpression" && expr.args.length == 0) {
-      let param = expr.namespace ? -1 : cx.params.indexOf(expr.id.name)
-      return param > -1 ? cx.args[param] : new Arg(expr, null)
-    }
-    return new Arg(null, cx.normalizeExpr(expr))
-  }
-}
-
 class Context {
   constructor(readonly b: Builder,
               readonly rule: RuleDeclaration,
               readonly precedence: Precedence | null = null,
               readonly params: ReadonlyArray<string> = none,
-              readonly args: ReadonlyArray<Arg> = none) {}
+              readonly args: ReadonlyArray<Expression> = none) {}
 
   newName() {
     return this.b.newName(this.rule.id.name)
@@ -45,12 +30,11 @@ class Context {
       return ns.resolve(expr, this)
     } else if ((param = this.params.indexOf(expr.id.name)) > -1) {
       let arg = this.args[param]
-      if (arg.operator)
-        return this.resolve(new NamedExpression(expr.start, expr.end, arg.operator.namespace,
-                                                arg.operator.id, expr.args))
+      if (arg.type == "NamedExpression" && arg.args.length == 0 && expr.args.length > 0)
+        return this.resolve(new NamedExpression(expr.start, expr.end, arg.namespace, arg.id, expr.args))
       if (expr.args.length)
         this.raise(`Passing arguments to a by-value rule parameter`, expr.args[0].start)
-      return arg.value!
+      return this.normalizeExpr(arg)
     } else {
       let known = this.b.ast.rules.find(r => r.id.name == expr.id.name)
       if (!known)
@@ -62,8 +46,7 @@ class Context {
       // FIXME avoid generating the same rules multiple times
       let name = this.b.newName(expr.id.name, true)
       let paramCx = new Context(this.b, known, this.precedence,
-                                known.params.map(p => p.name),
-                                expr.args.map(a => Arg.make(a, this)))
+                                known.params.map(p => p.name), expr.args)
       for (let choice of paramCx.normalizeTopExpr(known.expr))
         this.defineRule(name, choice)
       return [name]
