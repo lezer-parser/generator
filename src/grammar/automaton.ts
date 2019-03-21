@@ -120,11 +120,11 @@ export class State {
       this.terminals.map(t => t.term + "=" + t).join(",") + "|" + this.goto.map(g => g.term + "=" + g).join(",")
   }
 
-  addAction(value: Action, prec: Precedence | null, pos?: Pos) {
+  addAction(value: Action, prec: Precedence | null, pos?: Pos): boolean {
     for (let i = 0; i < this.terminals.length; i++) {
       let action = this.terminals[i]
       if (action.term == value.term) {
-        if (action.eq(value)) return
+        if (action.eq(value)) return true
         this.ambiguous = true
         let prev = this.terminalPrec[i]
         if (prev && prec && prev.group == prec.group) {
@@ -138,17 +138,16 @@ export class State {
             i--
             continue
           } else if (override < 0) {
-            return
+            return true
           }
         }
-        console.log(action, "vs", value)
-        console.log("state A is " + (action as any).target)
-        console.log("state B is " + (value as any).target)
+        if (!pos) return false
         throw new Error((action instanceof Shift ? "shift" : "reduce") + "/reduce conflict at " + pos + " for " + action.term)
       }
     }
     this.terminals.push(value)
     this.terminalPrec.push(prec)
+    return true
   }
 
   forEachAction(term: Term, f: (action: Action) => void) {
@@ -210,29 +209,66 @@ export function buildFullAutomaton(grammar: Grammar) {
   return states
 }
 
-// Collapse an LR(1) automaton to an LALR automaton
+function mergeState(mapping: number[], newStates: State[], state: State, target: State): boolean {
+  for (let j = 0; j < state.terminals.length; j++)
+    if (!target.addAction(state.terminals[j].map(mapping, newStates), state.terminalPrec[j]))
+      return false
+  for (let goto of state.goto) {
+    if (!target.goto.find(a => a.term == goto.term))
+      target.goto.push(goto.map(mapping, newStates))
+  }
+  return true
+}
+
+function markConflicts(mapping: number[], newID: number, oldStates: State[], newStates: State[], conflicts: number[]) {
+  // For all combinations of merged states
+  for (let i = 0; i < mapping.length; i++) if (mapping[i] == newID) {
+    for (let j = 0; j < mapping.length; j++) if (j != i && mapping[j] == newID) {
+      // Create a dummy state to determine whether there's a conflict
+      let state = new State(0, [])
+      mergeState(mapping, newStates, oldStates[i], state)
+      if (!mergeState(mapping, newStates, oldStates[j], state)) conflicts.push(i, j)
+    }
+  }
+}
+
+function hasConflict(id: number, newID: number, mapping: number[], conflicts: number[]) {
+  for (let i = 0; i < conflicts.length; i++) if (conflicts[i] == id) {
+    let other = conflicts[i + (i % 2 ? -1 : 1)] // Pick other side of the pair
+    if (mapping[other] == newID) return true
+  }
+  return false
+}
+
+// Collapse an LR(1) automaton to an LALR-like automaton
 function collapseAutomaton(states: State[]): State[] {
-  let newStates: State[] = [], mapping: number[] = []
-  for (let i = 0; i < states.length; i++) {
-    let state = states[i], set: Pos[] = []
-    for (let pos of state.set) if (!set.some(p => p.cmpSimple(pos) == 0)) set.push(pos)
-    let newID = newStates.findIndex(s => cmpSet(s.set, set, (a, b) => a.cmpSimple(b)) == 0)
-    if (newID < 0) {
-      newID = newStates.length
-      newStates.push(new State(newID, set))
+  let conflicts: number[] = []
+  for (;;) {
+    let newStates: State[] = [], mapping: number[] = []
+    for (let i = 0; i < states.length; i++) {
+      let state = states[i], set: Pos[] = []
+      for (let pos of state.set) if (!set.some(p => p.cmpSimple(pos) == 0)) set.push(pos)
+      let newID = newStates.findIndex((s, index) => {
+        return cmpSet(s.set, set, (a, b) => a.cmpSimple(b)) == 0 &&
+          !hasConflict(i, index, mapping, conflicts)
+      })
+      if (newID < 0) {
+        newID = newStates.length
+        newStates.push(new State(newID, set))
+      }
+      mapping.push(newID)
     }
-    mapping.push(newID)
-  }
-  for (let i = 0; i < states.length; i++) {
-    let state = states[i], newID = mapping[i], target = newStates[newID]
-    for (let j = 0; j < state.terminals.length; j++)
-      target.addAction(state.terminals[j].map(mapping, newStates), state.terminalPrec[j])
-    for (let goto of state.goto) {
-      if (!target.goto.find(a => a.term == goto.term))
-        target.goto.push(goto.map(mapping, newStates))
+    let conflicting: number[] = []
+    for (let i = 0; i < states.length; i++) {
+      let newID = mapping[i]
+      if (conflicting.includes(newID)) continue // Don't do work for states that are known to conflict
+      if (!mergeState(mapping, newStates, states[i], newStates[mapping[i]])) {
+        conflicting.push(newID)
+        markConflicts(mapping, newID, states, newStates, conflicts)
+      }
     }
+    if (!conflicting.length) return newStates
   }
-  return newStates
 }
 
 export function buildAutomaton(grammar: Grammar) {
