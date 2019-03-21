@@ -1,4 +1,5 @@
-import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, Identifier, Expression,
+import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclaration,
+        Identifier, Expression,
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, CharacterRangeExpression, AnyExpression} from "./node"
 
@@ -97,23 +98,23 @@ export class Input {
 }
 
 function parseTop(input: Input) {
-  let start = input.start, rules: RuleDeclaration[] = [], precs: PrecDeclaration[] = []
+  let start = input.start
+  let rules: RuleDeclaration[] = []
+  let precs: PrecDeclaration[] = []
+  let tokenGroups: TokenGroupDeclaration[] = []
 
   while (input.type != "eof") {
-    if (input.eat("id", "tokens")) {
-      input.expect("{")
-      while (!input.eat("}"))
-        rules.push(parseRule(input, true))
-    } else if (input.type == "id" && input.value == "prec") {
+    if (input.type == "id" && input.value == "tokens")
+      tokenGroups.push(parseTokenGroup(input))
+    else if (input.type == "id" && input.value == "prec")
       precs.push(parsePrec(input))
-    } else {
-      rules.push(parseRule(input, false))
-    }
+    else
+      rules.push(parseRule(input))
   }
-  return new GrammarDeclaration(start, input.lastEnd, rules, precs)
+  return new GrammarDeclaration(start, input.lastEnd, rules, tokenGroups, precs)
 }
 
-function parseRule(input: Input, isToken: boolean) {
+function parseRule(input: Input) {
   let id = parseIdent(input), params: Identifier[] = [], assoc: null | "left" | "right" = null
   let start = input.start
 
@@ -129,7 +130,7 @@ function parseRule(input: Input, isToken: boolean) {
   input.expect("{")
   let expr = parseExprChoice(input)
   input.expect("}")
-  return new RuleDeclaration(start, input.lastEnd, isToken, id, params, expr)
+  return new RuleDeclaration(start, input.lastEnd, id, params, expr)
 }
 
 function parseExprInner(input: Input): Expression {
@@ -224,3 +225,12 @@ function parsePrec(input: Input) {
   return new PrecDeclaration(start, input.lastEnd, id, assoc, names)
 }
       
+function parseTokenGroup(input: Input) {
+  let start = input.start
+  input.next()
+  input.expect("{")
+  let tokenRules: RuleDeclaration[] = []
+  while (!input.eat("}"))
+    tokenRules.push(parseRule(input))
+  return new TokenGroupDeclaration(start, input.lastEnd, tokenRules)
+}

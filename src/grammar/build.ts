@@ -112,7 +112,7 @@ class Context {
     return new Context(this.b, this.rule, prec, this.params, this.args)
   }
 
-  buildRule(rule: RuleDeclaration, args: Expression[]): Term[] {
+  buildRule(rule: RuleDeclaration, args: ReadonlyArray<Expression>): Term[] {
     let cx = new Context(this.b, rule, args.length ? this.precedence : null,
                          rule.params.map(p => p.name), args.map(a => this.resolveArg(a)))
     let name = this.b.newName(rule.id.name, isTag(rule.id.name) || true)
@@ -129,7 +129,7 @@ function isTag(name: string) {
 
 class BuiltRule {
   constructor(readonly id: string,
-              readonly args: Expression[],
+              readonly args: ReadonlyArray<Expression>,
               readonly precedence: Precedence | null,
               readonly name: Term) {}
 }

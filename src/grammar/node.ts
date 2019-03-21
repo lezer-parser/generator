@@ -2,9 +2,14 @@ export class Node {
   constructor(readonly type: string, readonly start: number, readonly end: number) {}
 }
 
+type A<T> = ReadonlyArray<T>
+
 export class GrammarDeclaration extends Node {
   type!: "GrammarDeclaration"
-  constructor(start: number, end: number, readonly rules: RuleDeclaration[], readonly precedences: PrecDeclaration[]) {
+  constructor(start: number, end: number,
+              readonly rules: A<RuleDeclaration>,
+              readonly tokenGroups: A<TokenGroupDeclaration>,
+              readonly precedences: A<PrecDeclaration>) {
     super("GrammarDeclaration", start, end)
   }
   toString() { return Object.values(this.rules).join("\n") }
@@ -13,9 +18,8 @@ export class GrammarDeclaration extends Node {
 export class RuleDeclaration extends Node {
   type!: "RuleDeclaration"
   constructor(start: number, end: number,
-              readonly isToken: boolean,
               readonly id: Identifier,
-              readonly params: Identifier[],
+              readonly params: A<Identifier>,
               readonly expr: Expression) {
     super("RuleDeclaration", start, end)
   }
@@ -28,8 +32,15 @@ export class PrecDeclaration extends Node {
   type!: "PrecDeclaration"
   constructor(start: number, end: number,
               readonly id: Identifier,
-              readonly assoc: ("left" | "right" | null)[], readonly names: Identifier[]) {
+              readonly assoc: ("left" | "right" | null)[], readonly names: A<Identifier>) {
     super("PrecDeclaration", start, end)
+  }
+}
+
+export class TokenGroupDeclaration extends Node {
+  type!: "TokenGroupDeclaration"
+  constructor(start: number, end: number, readonly rules: A<RuleDeclaration>) {
+    super("TokenGroupDeclaration", start, end)
   }
 }
 
@@ -43,7 +54,7 @@ export class Identifier extends Node {
 
 export class NamedExpression extends Node {
   type!: "NamedExpression"
-  constructor(start: number, end: number, readonly namespace: Identifier | null, readonly id: Identifier, readonly args: Expression[]) {
+  constructor(start: number, end: number, readonly namespace: Identifier | null, readonly id: Identifier, readonly args: A<Expression>) {
     super("NamedExpression", start, end)
   }
   toString() { return this.id.name + (this.args.length ? `<${this.args.join()}>` : "") }
@@ -58,7 +69,7 @@ export class NamedExpression extends Node {
 
 export class ChoiceExpression extends Node {
   type!: "ChoiceExpression"
-  constructor(start: number, end: number, readonly exprs: Expression[]) {
+  constructor(start: number, end: number, readonly exprs: A<Expression>) {
     super("ChoiceExpression", start, end)
   }
   toString() { return this.exprs.join(" | ") }
@@ -72,7 +83,7 @@ export class ChoiceExpression extends Node {
 
 export class SequenceExpression extends Node {
   type!: "SequenceExpression"
-  constructor(start: number, end: number, readonly exprs: Expression[]) {
+  constructor(start: number, end: number, readonly exprs: A<Expression>) {
     super("SequenceExpression", start, end)
   }
   toString() { return this.exprs.join(" ") }
@@ -135,6 +146,6 @@ export function exprEq(a: Expression, b: Expression): boolean {
   return a.type == b.type && a.eq(b as any)
 }
 
-export function exprsEq(a: Expression[], b: Expression[]) {
+export function exprsEq(a: A<Expression>, b: A<Expression>) {
   return a.length == b.length && a.every((e, i) => exprEq(e, b[i]))
 }
