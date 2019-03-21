@@ -6,12 +6,16 @@ import {Input} from "./parse"
 
 const none: ReadonlyArray<any> = []
 
+class Arg {
+  constructor(readonly expr: Expression, readonly cx: Context) {}
+}
+
 class Context {
   constructor(readonly b: Builder,
               readonly rule: RuleDeclaration,
               readonly precedence: Precedence | null = null,
               readonly params: ReadonlyArray<string> = none,
-              readonly args: ReadonlyArray<Expression> = none) {}
+              readonly args: ReadonlyArray<Arg> = none) {}
 
   newName() {
     return this.b.newName(this.rule.id.name)
@@ -30,27 +34,33 @@ class Context {
       return ns.resolve(expr, this)
     } else if ((param = this.params.indexOf(expr.id.name)) > -1) {
       let arg = this.args[param]
-      if (arg.type == "NamedExpression" && arg.args.length == 0 && expr.args.length > 0)
-        return this.resolve(new NamedExpression(expr.start, expr.end, arg.namespace, arg.id, expr.args))
+      if (arg.expr.type == "NamedExpression" && arg.expr.args.length == 0 && expr.args.length > 0)
+        return arg.cx.withPrecedence(this.precedence).resolve(new NamedExpression(expr.start, expr.end, arg.expr.namespace, arg.expr.id, expr.args))
       if (expr.args.length)
         this.raise(`Passing arguments to a by-value rule parameter`, expr.args[0].start)
-      return this.normalizeExpr(arg)
+      return arg.cx.withPrecedence(this.precedence).normalizeExpr(arg.expr)
     } else {
       let known = this.b.ast.rules.find(r => r.id.name == expr.id.name)
       if (!known)
         return this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
       if (known.params.length != expr.args.length)
         this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
-      if (expr.args.length == 0) return [this.b.terms.getNonTerminal(expr.id.name)]
-
-      // FIXME avoid generating the same rules multiple times
-      let name = this.b.newName(expr.id.name, true)
-      let paramCx = new Context(this.b, known, this.precedence,
-                                known.params.map(p => p.name), expr.args)
-      for (let choice of paramCx.normalizeTopExpr(known.expr))
-        this.defineRule(name, choice)
-      return [name]
+      if (expr.args.length == 0) {
+        let defined = this.b.defined[expr.id.name]
+        if (defined) return [defined]
+      }
+      // FIXME avoid generating the same rules multiple times (or use deduplication in defineRule?)
+      return new Context(this.b, known, this.precedence, known.params.map(p => p.name),
+                         expr.args.map(e => this.resolveArg(e))).buildRule()
     }
+  }
+
+  resolveArg(e: Expression) {
+    if (e.type == "NamedExpression") {
+      let param = e.namespace ? -1 : this.params.indexOf(e.id.name)
+      if (param > -1) return this.args[param]
+    }
+    return new Arg(e, this)
   }
 
   normalizeTopExpr(expr: Expression): Term[][] {
@@ -97,11 +107,19 @@ class Context {
     }
   }
 
+  buildRule() {
+    let name = this.b.newName(this.rule.id.name, false)
+    if (this.args.length == 0) this.b.defined[name.name] = name
+    for (let choice of this.normalizeTopExpr(this.rule.expr))
+      this.defineRule(name, choice)
+    return [name]
+  }
+
   raise(message: string, pos: number = -1): never {
     return this.b.input.raise(message, pos)
   }
 
-  withPrecedence(prec: Precedence) {
+  withPrecedence(prec: Precedence | null) {
     return new Context(this.b, this.rule, prec, this.params, this.args)
   }
 }
@@ -111,28 +129,32 @@ class Builder {
   input: Input
   terms = new TermSet()
   rules: Rule[] = []
+  defined: {[name: string]: Term} = Object.create(null)
   namespaces: {[name: string]: Namespace} = Object.create(null)
 
   constructor(text: string, fileName: string | null = null) {
     this.input = new Input(text, fileName)
     this.ast = this.input.parse()
 
-    this.defineNamespace("Conflict", new ConflictNamespace)
+    this.defineNamespace("conflict", new ConflictNamespace)
     for (let prec of this.ast.precedences)
       this.defineNamespace(prec.id.name, new PrecNamespace(prec), prec.id.start)
 
-    if (!this.ast.rules.some(r => r.id.name == "program" && r.params.length == 0))
-      this.input.raise(`Missing 'program' rule declaration`)
     for (let rule of this.ast.rules) {
       if (this.ast.rules.find(r => r != rule && r.id.name == rule.id.name))
         this.input.raise(`Duplicate rule definition for '${rule.id.name}'`, rule.id.start)
       if (this.namespaces[rule.id.name])
         this.input.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
-      if (rule.params.length == 0) {
-        let name = this.terms.getNonTerminal(rule.id.name)
-        let cx = new Context(this, rule)
-        for (let choice of cx.normalizeTopExpr(rule.expr)) cx.defineRule(name, choice)
+      if (rule.id.name == "program") {
+        if (rule.params.length) this.input.raise(`'program' rules should not take parameters`, rule.id.start)
+        new Context(this, rule).buildRule()
       }
+    }
+    if (!this.rules.length)
+      this.input.raise(`Missing 'program' rule declaration`)
+    for (let rule of this.ast.rules) {
+      if (!this.rules.some(r => r.name.name == rule.id.name))
+        this.input.raise(`Unused rule '${rule.id.name}'`, rule.start)
     }
   }
 
@@ -181,7 +203,7 @@ class ConflictNamespace implements Namespace {
     if (expr.args.length != 1)
       cx.raise(`Conflict specifiers take a single argument`, expr.start)
     let group = this.groups[expr.id.name] || (this.groups[expr.id.name] = precID++)
-    let name = cx.b.newName(`Conflict-${expr.id.name}`, false)
+    let name = cx.b.newName(`conflict-${expr.id.name}`, false)
     cx = cx.withPrecedence(new Precedence(null, group, -1))
     cx.defineRule(name, cx.normalizeExpr(expr.args[0]))
     return [name]
