@@ -118,7 +118,7 @@ export class State {
         this.ambiguous = true
         let prev = this.terminalPrec[i]
         if (prev && prec && prev.group == prec.group) {
-          if (prec.precedence < 0) continue // This is marked as a conflict
+          if (prec.precedence < 0) continue // This is marked as an intentional, allowed conflict
           let override = prev.precedence - prec.precedence // Positive means we override, 0 means conflict
           if (override == 0 && action instanceof Shift && prec.associativity)
             override = prec.associativity == "left" ? 1 : -1
@@ -192,7 +192,7 @@ export function buildFullAutomaton(grammar: Grammar) {
     return state
   }
 
-  explore(grammar.rules.filter(rule => rule.name.name == "Program").map(rule => new Pos(rule, 0, grammar.terms.eof)))
+  explore(grammar.rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, grammar.terms.eof)))
   return states
 }
 

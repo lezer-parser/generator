@@ -6,12 +6,27 @@ import {Input} from "./parse"
 
 const none: ReadonlyArray<any> = []
 
+// Union type for arguments—precisely one of the fields is null in any
+// instance.
+class Arg {
+  constructor(readonly operator: NamedExpression | null, // Always has zero arguments
+              readonly value: Term[] | null) {}
+
+  static make(expr: Expression, cx: Context): Arg {
+    if (expr.type == "NamedExpression" && expr.args.length == 0) {
+      let param = expr.namespace ? -1 : cx.params.indexOf(expr.id.name)
+      return param > -1 ? cx.args[param] : new Arg(expr, null)
+    }
+    return new Arg(null, cx.normalizeExpr(expr))
+  }
+}
+
 class Context {
   constructor(readonly b: Builder,
               readonly rule: RuleDeclaration,
               readonly precedence: Precedence | null = null,
               readonly params: ReadonlyArray<string> = none,
-              readonly args: ReadonlyArray<Term[]> = none) {}
+              readonly args: ReadonlyArray<Arg> = none) {}
 
   newName() {
     return this.b.newName(this.rule.id.name)
@@ -21,7 +36,7 @@ class Context {
     this.b.rules.push(new Rule(name, parts, this.precedence))
   }
 
-  resolve(expr: NamedExpression) {
+  resolve(expr: NamedExpression): Term[] {
     let param
     if (expr.namespace) {
       let ns = this.b.namespaces[expr.namespace.name]
@@ -29,9 +44,13 @@ class Context {
         this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
       return ns.resolve(expr, this)
     } else if ((param = this.params.indexOf(expr.id.name)) > -1) {
+      let arg = this.args[param]
+      if (arg.operator)
+        return this.resolve(new NamedExpression(expr.start, expr.end, arg.operator.namespace,
+                                                arg.operator.id, expr.args))
       if (expr.args.length)
-        this.raise(`Rule parameters don't take arguments`, expr.args[0].start)
-      return this.args[param]
+        this.raise(`Passing arguments to a by-value rule parameter`, expr.args[0].start)
+      return arg.value!
     } else {
       let known = this.b.ast.rules.find(r => r.id.name == expr.id.name)
       if (!known)
@@ -42,8 +61,9 @@ class Context {
 
       // FIXME avoid generating the same rules multiple times
       let name = this.b.newName(expr.id.name, true)
-      let paramCx = new Context(this.b, known, null, known.params.map(p => p.name),
-                                expr.args.map(a => this.normalizeExpr(a)))
+      let paramCx = new Context(this.b, known, this.precedence,
+                                known.params.map(p => p.name),
+                                expr.args.map(a => Arg.make(a, this)))
       for (let choice of paramCx.normalizeTopExpr(known.expr))
         this.defineRule(name, choice)
       return [name]
@@ -118,8 +138,8 @@ class Builder {
     for (let prec of this.ast.precedences)
       this.defineNamespace(prec.id.name, new PrecNamespace(prec), prec.id.start)
 
-    if (!this.ast.rules.some(r => r.id.name == "Program" && r.params.length == 0))
-      this.input.raise(`Missing 'Program' rule declaration`)
+    if (!this.ast.rules.some(r => r.id.name == "program" && r.params.length == 0))
+      this.input.raise(`Missing 'program' rule declaration`)
     for (let rule of this.ast.rules) {
       if (this.ast.rules.find(r => r != rule && r.id.name == rule.id.name))
         this.input.raise(`Duplicate rule definition for '${rule.id.name}'`, rule.id.start)

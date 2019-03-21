@@ -10,22 +10,22 @@ function test(grammar: string, input: string[]) {
 }
 
 test(`
-prec left BinOp { mult, plus }
+prec left binOp { mult, plus }
 
-Program { Expr }
-Expr {
+program { expr }
+expr {
   Atom |
-  BinOp.mult<Expr ("*" | "/") Expr> |
-  BinOp.plus<Expr ("+" | "-") Expr>
+  BinOp<binOp.mult, "*" | "/"> |
+  BinOp<binOp.plus, "+" | "-">
 }
-Parens<E> { "(" E ")" }
-Atom { "x" | "y" | Parens<Expr> }
+BinOp<prec, op> { prec<expr op expr> }
+Atom { "x" | "y" | "(" expr ")" }
 `, ["x", "+", "y", "/", "x"])
 
 // LR-but-not-LALR
 /*
 test(`
-Program { "a" E "a" | "b" E "b" | "a" F "b" | "b" F "a" }
+program { "a" E "a" | "b" E "b" | "a" F "b" | "b" F "a" }
 E { "e" }
 F { "e" }`, ["a", "e", "b"])
 */
