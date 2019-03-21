@@ -2,7 +2,7 @@ import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, Identifier, Expres
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, CharacterRangeExpression, AnyExpression} from "./node"
 
-const wordChar = /[\w_$]/
+const wordChar = /[\w_$]/ // FIXME international
 
 export class Input {
   type = "sof"

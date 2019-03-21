@@ -1,24 +1,38 @@
 import {Term, Precedence, Rule, Grammar} from "./grammar"
 
 export class Pos {
-  constructor(readonly rule: Rule, readonly pos: number) {}
+  constructor(readonly rule: Rule, readonly pos: number, public ahead: Term) {}
 
   get next() {
     return this.pos < this.rule.parts.length ? this.rule.parts[this.pos] : null
   }
 
   advance() {
-    return new Pos(this.rule, this.pos + 1)
+    return new Pos(this.rule, this.pos + 1, this.ahead)
   }
 
   cmp(pos: Pos) {
-    return this.rule.cmp(pos.rule) || this.pos - pos.pos
+    return this.rule.cmp(pos.rule) || this.pos - pos.pos || this.ahead.cmp(pos.ahead)
   }
 
   toString() {
     let parts = this.rule.parts.map(t => t.name)
     parts.splice(this.pos, 0, "·")
-    return this.rule.name + " -> " + parts.join(" ")
+    return `${this.rule.name} -> ${parts.join(" ")} [${this.ahead}]`
+  }
+
+  termsAhead(grammar: Grammar): Term[] {
+    let found: Term[] = []
+    for (let pos = this.pos + 1; pos < this.rule.parts.length; pos++) {
+      let next = this.rule.parts[pos], cont = false
+      for (let term of next.terminal ? [next] : grammar.first[next.name]) {
+        if (term == null) cont = true
+        else if (!found.includes(term)) found.push(term)
+      }
+      if (!cont) return found
+    }
+    if (!found.includes(this.ahead)) found.push(this.ahead)
+    return found
   }
 }
 
@@ -136,8 +150,12 @@ function closure(set: ReadonlyArray<Pos>, grammar: Grammar) {
   for (let pos of result) {
     let next = pos.next
     if (!next || next.terminal) continue
+    let ahead = pos.termsAhead(grammar)
     for (let rule of grammar.rules) if (rule.name == next) {
-      if (!result.some(p => p.rule == rule && p.pos == 0)) result.push(new Pos(rule, 0))
+      for (let a of ahead) {
+        if (!result.some(p => p.rule == rule && p.pos == 0 && p.ahead == a))
+          result.push(new Pos(rule, 0, a))
+      }
     }
   }
   return result.sort((a, b) => a.cmp(b))
@@ -162,17 +180,15 @@ export function buildAutomaton(grammar: Grammar) {
       }
       for (let pos of set) {
         let next = pos.next
-        if (next == null) {
-          for (let follow of grammar.follows[pos.rule.name.name])
-            state.addAction(new Reduce(follow, pos.rule), pos.rule.precedence, pos)
-        } else if (next == grammar.terms.eof) {
+        if (next == null)
+          state.addAction(new Reduce(pos.ahead, pos.rule), pos.rule.precedence, pos)
+        else if (next == grammar.terms.eof)
           state.addAction(new Accept(next), pos.rule.precedence, pos)
-        }
       }
     }
     return state
   }
 
-  explore(grammar.rules.filter(rule => rule.name.name == "^").map(rule => new Pos(rule, 0)))
+  explore(grammar.rules.filter(rule => rule.name.name == "^").map(rule => new Pos(rule, 0, grammar.terms.eof)))
   return states
 }
