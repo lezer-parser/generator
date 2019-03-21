@@ -87,16 +87,6 @@ export class Goto implements Action {
 
 export const Shift = Goto
 
-export class Accept implements Action {
-  constructor(readonly term: Term) {}
-
-  eq(other: Action) { return other instanceof Accept }
-
-  toString() { return "accept" }
-
-  map() { return this }
-}
-
 export class Reduce implements Action {
   constructor(readonly term: Term, readonly rule: Rule) {}
 
@@ -195,10 +185,7 @@ export function buildFullAutomaton(grammar: Grammar) {
       }
       for (let pos of set) {
         let next = pos.next
-        if (next != null) continue
-        if (pos.ahead == grammar.terms.eof && pos.rule.name.name == "Program")
-          state.addAction(new Accept(grammar.terms.eof), pos.rule.precedence, pos)
-        else
+        if (next == null)
           state.addAction(new Reduce(pos.ahead, pos.rule), pos.rule.precedence, pos)
       }
     }

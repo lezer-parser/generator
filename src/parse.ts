@@ -144,18 +144,17 @@ export function parse(input: string[], grammar: Grammar, table: State[], cache =
           positions.unshift(newStack.start)
           newStack = newStack.prev!
         }
-        let newState = newStack.state.getGoto(action.rule.name)!.target, frame
-        if (children.length) {
-          let start = positions[0]
-          for (let i = 0; i < positions.length; i++) positions[i] -= start
-          frame = new Frame(newStack, Node.of(action.rule.name, children, positions), newState, start, pos)
-        } else {
-          frame = new Frame(newStack, Node.leaf(null, 0), newState, pos, pos)
+        let start = positions.length ? positions[0] : pos
+        for (let i = 0; i < positions.length; i++) positions[i] -= start
+        let value = children.length ? Node.of(action.rule.name, children, positions) : Node.leaf(null, 0)
+        if (!newStack.prev && next == grammar.terms.eof) {
+          console.log("Success: " + value)
+          done = value
+          return
         }
-        addFrame(parses, frame)
-      } else { // Accept
-        console.log("Success: " + stack.value)
-        done = stack.value
+
+        let newState = newStack.state.getGoto(action.rule.name)!.target
+        addFrame(parses, new Frame(newStack, value, newState, start, pos))
       }
     })
   }

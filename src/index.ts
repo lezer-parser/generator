@@ -9,7 +9,7 @@ function test(grammar: string, input: string[]) {
   return parse(input, g, table)
 }
 
-if (0) test(`
+test(`
 prec left BinOp { mult, plus }
 
 Program { Expr }
@@ -22,7 +22,10 @@ Parens<E> { "(" E ")" }
 Atom { "x" | "y" | Parens<Expr> }
 `, ["x", "+", "y", "/", "x"])
 
+// LR-but-not-LALR
+/*
 test(`
 Program { "a" E "a" | "b" E "b" | "a" F "b" | "b" F "a" }
 E { "e" }
 F { "e" }`, ["a", "e", "b"])
+*/
