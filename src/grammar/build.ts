@@ -22,8 +22,10 @@ class Context {
     return this.b.newName(this.rule.id.name)
   }
 
-  defineRule(name: Term, parts: Term[]) {
-    this.b.rules.push(new Rule(name, parts, this.precedence))
+  defineRule(name: Term, choices: Term[][]) {
+    for (let choice of choices)
+      this.b.rules.push(new Rule(name, choice, this.precedence))
+    return [name]
   }
 
   resolve(expr: NamedExpression): Term[] {
@@ -81,23 +83,16 @@ class Context {
     if (expr.type == "RepeatExpression") {
       if (expr.kind == "?") {
         let name = this.newName()
-        this.defineRule(name, this.normalizeExpr(expr.expr))
-        this.defineRule(name, [])
-        return [name]
+        return this.defineRule(this.newName(), [[] as Term[]].concat(this.normalizeTopExpr(expr.expr, name)))
       } else {
         // FIXME is the duplication for + a good idea? Could also
         // factor expr into a rule.
-        let name = this.newName()
-        let inner = this.normalizeExpr(expr.expr)
-        this.defineRule(name, inner)
-        this.defineRule(name, [])
-        return expr.kind == "*" ? [name] : inner.concat(name)
+        let inner = this.normalizeExpr(expr.expr), name = this.newName()
+        let result = this.defineRule(name, [[name].concat(inner), []])
+        return expr.kind == "*" ? result : inner.concat(result)
       }
     } else if (expr.type == "ChoiceExpression") {
-      let name = this.newName()
-      for (let choice of expr.exprs)
-        this.defineRule(name, this.normalizeExpr(choice))
-      return [name]
+      return this.defineRule(this.newName(), expr.exprs.map(e => this.normalizeExpr(e)))
     } else if (expr.type == "SequenceExpression") {
       return expr.exprs.reduce((a, e) => a.concat(this.normalizeExpr(e)), [] as Term[])
     } else if (expr.type == "LiteralExpression") {
@@ -123,9 +118,7 @@ class Context {
     let name = this.b.newName(rule.id.name, isTag(rule.id.name) || true)
     if (!args.some(a => a.containsNames(this.params)))
       this.b.built.push(new BuiltRule(rule.id.name, args, cx.precedence, name))
-    for (let choice of cx.normalizeTopExpr(rule.expr, name))
-      cx.defineRule(name, choice)
-    return [name]
+    return cx.defineRule(name, cx.normalizeTopExpr(rule.expr, name))
   }
 }
 
@@ -154,6 +147,7 @@ class Builder {
     this.ast = this.input.parse()
 
     this.defineNamespace("conflict", new ConflictNamespace)
+    this.defineNamespace("tag", new TagNamespace)
     for (let prec of this.ast.precedences)
       this.defineNamespace(prec.id.name, new PrecNamespace(prec), prec.id.start)
 
@@ -208,8 +202,7 @@ class PrecNamespace implements Namespace {
       cx.raise(`Precedence group '${this.ast.id.name}' has no precedence named '${expr.id.name}'`, expr.id.start)
     let name = cx.b.newName(`${expr.namespace!.name}-${expr.id.name}`, true)
     cx = cx.withPrecedence(new Precedence(this.ast.assoc[found], this.id, found))
-    cx.defineRule(name, cx.normalizeExpr(expr.args[0]))
-    return [name]
+    return cx.defineRule(name, [cx.normalizeExpr(expr.args[0])])
   }
 }
 
@@ -222,8 +215,17 @@ class ConflictNamespace implements Namespace {
     let group = this.groups[expr.id.name] || (this.groups[expr.id.name] = precID++)
     let name = cx.b.newName(`conflict-${expr.id.name}`, true)
     cx = cx.withPrecedence(new Precedence(null, group, -1))
-    cx.defineRule(name, cx.normalizeExpr(expr.args[0]))
-    return [name]
+    return cx.defineRule(name, cx.normalizeTopExpr(expr.args[0], name))
+  }
+}
+
+class TagNamespace implements Namespace {
+  resolve(expr: NamedExpression, cx: Context): Term[] {
+    if (expr.args.length != 1)
+      cx.raise(`Tag wrappers take a single argument`, expr.start)
+    let tag = expr.id.name
+    let name = cx.b.newName(`tag.${tag}`, tag)
+    return cx.defineRule(name, cx.normalizeTopExpr(expr.args[0], name))
   }
 }
 
