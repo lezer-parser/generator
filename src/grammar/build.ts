@@ -1,4 +1,4 @@
-import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, Expression, NamedExpression} from "./node"
+import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, Expression, NamedExpression, exprsEq} from "./node"
 import {Term, TermSet, Precedence, Rule, Grammar} from "./grammar"
 import {Input} from "./parse"
 
@@ -41,18 +41,20 @@ class Context {
         this.raise(`Passing arguments to a by-value rule parameter`, expr.args[0].start)
       return arg.value!
     } else {
+      let innerPrec = expr.args.length ? this.precedence : null
+      if (!expr.args.some(e => e.containsNames(this.params))) for (let built of this.b.built) {
+        if (built.id == expr.id.name &&
+            (built.precedence ? innerPrec && built.precedence.eq(innerPrec) : !innerPrec) &&
+            exprsEq(expr.args, built.args))
+          return [built.name]
+      }
+
       let known = this.b.ast.rules.find(r => r.id.name == expr.id.name)
       if (!known)
         return this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
       if (known.params.length != expr.args.length)
         this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
-      if (expr.args.length == 0) {
-        let defined = this.b.defined[expr.id.name]
-        if (defined) return [defined]
-      }
-      // FIXME avoid generating the same rules multiple times (or use deduplication in defineRule?)
-      return new Context(this.b, known, this.precedence, known.params.map(p => p.name),
-                         expr.args.map(e => this.resolveArg(e))).buildRule()
+      return this.buildRule(known, expr.args)
     }
   }
 
@@ -107,20 +109,23 @@ class Context {
     }
   }
 
-  buildRule() {
-    let name = this.b.newName(this.rule.id.name, isTag(this.rule.id.name) || true)
-    if (this.args.length == 0) this.b.defined[this.rule.id.name] = name
-    for (let choice of this.normalizeTopExpr(this.rule.expr, name))
-      this.defineRule(name, choice)
-    return [name]
-  }
-
   raise(message: string, pos: number = -1): never {
     return this.b.input.raise(message, pos)
   }
 
   withPrecedence(prec: Precedence | null) {
     return new Context(this.b, this.rule, prec, this.params, this.args)
+  }
+
+  buildRule(rule: RuleDeclaration, args: Expression[]): Term[] {
+    let cx = new Context(this.b, rule, args.length ? this.precedence : null,
+                         rule.params.map(p => p.name), args.map(a => this.resolveArg(a)))
+    let name = this.b.newName(rule.id.name, isTag(rule.id.name) || true)
+    if (!args.some(a => a.containsNames(this.params)))
+      this.b.built.push(new BuiltRule(rule.id.name, args, cx.precedence, name))
+    for (let choice of cx.normalizeTopExpr(rule.expr, name))
+      cx.defineRule(name, choice)
+    return [name]
   }
 }
 
@@ -129,12 +134,19 @@ function isTag(name: string) {
   return ch0.toUpperCase() == ch0 && ch0 != "_" ? name : null
 }
 
+class BuiltRule {
+  constructor(readonly id: string,
+              readonly args: Expression[],
+              readonly precedence: Precedence | null,
+              readonly name: Term) {}
+}
+
 class Builder {
   ast: GrammarDeclaration
   input: Input
   terms = new TermSet()
   rules: Rule[] = []
-  defined: {[name: string]: Term} = Object.create(null)
+  built: BuiltRule[] = []
   namespaces: {[name: string]: Namespace} = Object.create(null)
 
   constructor(text: string, fileName: string | null = null) {
@@ -152,7 +164,7 @@ class Builder {
         this.input.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
       if (rule.id.name == "program") {
         if (rule.params.length) this.input.raise(`'program' rules should not take parameters`, rule.id.start)
-        new Context(this, rule).buildRule()
+        new Context(this, rule).buildRule(rule, [])
       }
     }
     if (!this.rules.length)

@@ -47,6 +47,13 @@ export class NamedExpression extends Node {
     super("NamedExpression", start, end)
   }
   toString() { return this.id.name + (this.args.length ? `<${this.args.join()}>` : "") }
+  eq(other: NamedExpression) {
+    return (this.namespace ? other.namespace != null && other.namespace.name == this.namespace.name : !other.namespace) &&
+      this.id.name == other.id.name
+  }
+  containsNames(names: ReadonlyArray<string>): boolean {
+    return this.namespace == null && names.includes(this.id.name)
+  }
 }
 
 export class ChoiceExpression extends Node {
@@ -55,6 +62,12 @@ export class ChoiceExpression extends Node {
     super("ChoiceExpression", start, end)
   }
   toString() { return this.exprs.join(" | ") }
+  eq(other: ChoiceExpression) {
+    return exprsEq(this.exprs, other.exprs)
+  }
+  containsNames(names: ReadonlyArray<string>): boolean {
+    return this.exprs.some(e => e.containsNames(names))
+  }
 }
 
 export class SequenceExpression extends Node {
@@ -63,6 +76,12 @@ export class SequenceExpression extends Node {
     super("SequenceExpression", start, end)
   }
   toString() { return this.exprs.join(" ") }
+  eq(other: SequenceExpression) {
+    return exprsEq(this.exprs, other.exprs)
+  }
+  containsNames(names: ReadonlyArray<string>): boolean {
+    return this.exprs.some(e => e.containsNames(names))
+  }
 }
 
 export class RepeatExpression extends Node {
@@ -71,6 +90,12 @@ export class RepeatExpression extends Node {
     super("RepeatExpression", start, end)
   }
   toString() { return this.expr + this.kind }
+  eq(other: RepeatExpression) {
+    return exprEq(this.expr, other.expr) && this.kind == other.kind
+  }
+  containsNames(names: ReadonlyArray<string>): boolean {
+    return this.expr.containsNames(names)
+  }
 }
 
 export class LiteralExpression extends Node {
@@ -79,6 +104,8 @@ export class LiteralExpression extends Node {
     super("LiteralExpression", start, end)
   }
   toString() { return JSON.stringify(this.value) }
+  eq(other: LiteralExpression) { return this.value == other.value }
+  containsNames() { return false }
 }
 
 export class CharacterRangeExpression extends Node {
@@ -87,6 +114,8 @@ export class CharacterRangeExpression extends Node {
     super("CharacterRangeExpression", start, end)
   }
   toString() { return `${JSON.stringify(this.from)}-${JSON.stringify(this.to)}` }
+  eq(other: CharacterRangeExpression) { return this.from == other.from && this.to == other.to }
+  containsNames() { return false }
 }
 
 export class AnyExpression extends Node {
@@ -95,7 +124,17 @@ export class AnyExpression extends Node {
     super("AnyExpression", start, end)
   }
   toString() { return "_" }
+  eq() { return true }
+  containsNames() { return false }
 }
 
 export type Expression = NamedExpression | ChoiceExpression | SequenceExpression | LiteralExpression |
   RepeatExpression | CharacterRangeExpression | AnyExpression
+
+export function exprEq(a: Expression, b: Expression): boolean {
+  return a.type == b.type && a.eq(b as any)
+}
+
+export function exprsEq(a: Expression[], b: Expression[]) {
+  return a.length == b.length && a.every((e, i) => exprEq(e, b[i]))
+}
