@@ -12,7 +12,11 @@ export class Pos {
   }
 
   cmp(pos: Pos) {
-    return this.rule.cmp(pos.rule) || this.pos - pos.pos || this.ahead.cmp(pos.ahead)
+    return this.cmpSimple(pos) || this.ahead.cmp(pos.ahead)
+  }
+
+  cmpSimple(pos: Pos) {
+    return this.rule.cmp(pos.rule) || this.pos - pos.pos
   }
 
   toString() {
@@ -55,10 +59,11 @@ function advanceWithPrec(set: Pos[], expr: Term): {set: Pos[], prec: Precedence 
   return {set: result, prec}
 }
 
-function cmpSet<T extends {cmp(other: T): number}>(a: ReadonlyArray<T>, b: ReadonlyArray<T>) {
+function cmpSet<T extends {cmp(other: T): number}>(a: ReadonlyArray<T>, b: ReadonlyArray<T>,
+                                                   cmp: (a: T, b: T) => number = (a, b) => a.cmp(b)) {
   if (a.length != b.length) return a.length - b.length
   for (let i = 0; i < a.length; i++) {
-    let diff = a[i].cmp(b[i])
+    let diff = cmp(a[i], b[i])
     if (diff) return diff
   }
   return 0
@@ -67,6 +72,7 @@ function cmpSet<T extends {cmp(other: T): number}>(a: ReadonlyArray<T>, b: Reado
 export interface Action {
   term: Term
   eq(other: Action): boolean
+  map(mapping: number[], states: State[]): Action
 }
 
 export class Goto implements Action {
@@ -75,6 +81,8 @@ export class Goto implements Action {
   eq(other: Action): boolean { return other instanceof Goto && other.target == this.target }
 
   toString() { return "goto " + this.target.id }
+
+  map(mapping: number[], states: State[]) { return new Goto(this.term, states[mapping[this.target.id]]) }
 }
 
 export const Shift = Goto
@@ -85,6 +93,8 @@ export class Accept implements Action {
   eq(other: Action) { return other instanceof Accept }
 
   toString() { return "accept" }
+
+  map() { return this }
 }
 
 export class Reduce implements Action {
@@ -93,6 +103,8 @@ export class Reduce implements Action {
   eq(other: Action): boolean { return other instanceof Reduce && other.rule == this.rule }
 
   toString() { return "reduce " + this.rule }
+
+  map() { return this }
 }
 
 export class State {
@@ -129,6 +141,9 @@ export class State {
             return
           }
         }
+        console.log(action, "vs", value)
+        console.log("state A is " + (action as any).target)
+        console.log("state B is " + (value as any).target)
         throw new Error((action instanceof Shift ? "shift" : "reduce") + "/reduce conflict at " + pos + " for " + action.term)
       }
     }
@@ -161,7 +176,8 @@ function closure(set: ReadonlyArray<Pos>, grammar: Grammar) {
   return result.sort((a, b) => a.cmp(b))
 }
 
-export function buildAutomaton(grammar: Grammar) {
+// Builds a full LR(1) automaton
+export function buildFullAutomaton(grammar: Grammar) {
   let states: State[] = []
   function explore(set: Pos[]) {
     if (set.length == 0) return null
@@ -180,15 +196,45 @@ export function buildAutomaton(grammar: Grammar) {
       }
       for (let pos of set) {
         let next = pos.next
-        if (next == null)
+        if (next != null) continue
+        if (pos.ahead == grammar.terms.eof && pos.rule.name.name == "Program")
+          state.addAction(new Accept(grammar.terms.eof), pos.rule.precedence, pos)
+        else
           state.addAction(new Reduce(pos.ahead, pos.rule), pos.rule.precedence, pos)
-        else if (next == grammar.terms.eof)
-          state.addAction(new Accept(next), pos.rule.precedence, pos)
       }
     }
     return state
   }
 
-  explore(grammar.rules.filter(rule => rule.name.name == "^").map(rule => new Pos(rule, 0, grammar.terms.eof)))
+  explore(grammar.rules.filter(rule => rule.name.name == "Program").map(rule => new Pos(rule, 0, grammar.terms.eof)))
   return states
+}
+
+// Collapse an LR(1) automaton to an LALR automaton
+function collapseAutomaton(states: State[]): State[] {
+  let newStates: State[] = [], mapping: number[] = []
+  for (let i = 0; i < states.length; i++) {
+    let state = states[i], set: Pos[] = []
+    for (let pos of state.set) if (!set.some(p => p.cmpSimple(pos) == 0)) set.push(pos)
+    let newID = newStates.findIndex(s => cmpSet(s.set, set, (a, b) => a.cmpSimple(b)) == 0)
+    if (newID < 0) {
+      newID = newStates.length
+      newStates.push(new State(newID, set))
+    }
+    mapping.push(newID)
+  }
+  for (let i = 0; i < states.length; i++) {
+    let state = states[i], newID = mapping[i], target = newStates[newID]
+    for (let j = 0; j < state.terminals.length; j++)
+      target.addAction(state.terminals[j].map(mapping, newStates), state.terminalPrec[j])
+    for (let goto of state.goto) {
+      if (!target.goto.find(a => a.term == goto.term))
+        target.goto.push(goto.map(mapping, newStates))
+    }
+  }
+  return newStates
+}
+
+export function buildAutomaton(grammar: Grammar) {
+  return collapseAutomaton(buildFullAutomaton(grammar))
 }

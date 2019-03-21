@@ -57,11 +57,9 @@ export class Rule {
 
 export class Grammar {
   first: {[name: string]: Term[]}
-  follows: {[name: string]: Term[]}
 
   constructor(readonly rules: Rule[], readonly terms: TermSet) {
     this.first = computeFirst(this.rules, this.terms.nonTerminals)
-    this.follows = computeFollows(this.rules, this.terms.nonTerminals, this.first)
   }
 
   toString() { return this.rules.join("\n") }
@@ -93,37 +91,6 @@ function computeFirst(rules: Rule[], nonTerminals: Term[]) {
       }
       if (!found) add(null, set)
       if (set.length > startLen) change = true
-    }
-    if (!change) return table
-  }
-}
-
-function computeFollows(rules: Rule[], nonTerminals: Term[], first: {[name: string]: Term[]}) {
-  let table: {[name: string]: Term[]} = {}
-  for (let t of nonTerminals) table[t.name] = []
-  for (;;) {
-    let change = false
-    for (let rule of rules) {
-      for (let i = 0; i < rule.parts.length; i++) {
-        let part = rule.parts[i], toEnd = true
-        if (part.terminal) continue
-        let set = table[part.name], startLen = set.length
-        for (let j = i + 1; j < rule.parts.length; j++) {
-          let next = rule.parts[j]
-          toEnd = false
-          if (next.terminal) {
-            add(next, set)
-          } else {
-            for (let f of first[next.name]) {
-              if (f == null) toEnd = true
-              else add(f, set)
-            }
-          }
-          if (!toEnd) break
-        }
-        if (toEnd) for (let follow of table[rule.name.name]) add(follow, set)
-        if (set.length > startLen) change = true
-      }
     }
     if (!change) return table
   }

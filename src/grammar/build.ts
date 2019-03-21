@@ -113,8 +113,6 @@ class Builder {
   constructor(text: string, fileName: string | null = null) {
     this.input = new Input(text, fileName)
     this.ast = this.input.parse()
-    this.rules.push(new Rule(this.terms.getNonTerminal("^"), [this.terms.getNonTerminal("Program"),
-                                                              this.terms.eof]))
 
     this.defineNamespace("Conflict", new ConflictNamespace)
     for (let prec of this.ast.precedences)
