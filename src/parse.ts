@@ -35,7 +35,7 @@ export class Node {
               readonly positions: number[]) {}
 
   toString() {
-    return this.name ? (this.children.length ? this.name + "(" + this.children + ")" : this.name.name) : this.children.join()
+    return this.name ? (this.children.length ? this.name.tag + "(" + this.children + ")" : this.name.tag) : this.children.join()
   }
 
   static leaf(name: Term | null, length: number) {
@@ -147,7 +147,7 @@ export function parse(input: string[], grammar: Grammar, table: State[], cache =
         let start = positions.length ? positions[0] : pos
         for (let i = 0; i < positions.length; i++) positions[i] -= start
         let value = children.length
-          ? Node.of(action.rule.tag ? action.rule.name : null, children, positions)
+          ? Node.of(action.rule.name.tag ? action.rule.name : null, children, positions)
           : Node.leaf(null, 0)
         if (!newStack.prev && next == grammar.terms.eof) {
           console.log("Success: " + value)

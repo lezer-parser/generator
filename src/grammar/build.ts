@@ -22,8 +22,8 @@ class Context {
     return this.b.newName(this.rule.id.name)
   }
 
-  defineRule(name: Term, parts: Term[], tag: boolean = false) {
-    this.b.rules.push(new Rule(name, tag, parts, this.precedence))
+  defineRule(name: Term, parts: Term[]) {
+    this.b.rules.push(new Rule(name, parts, this.precedence))
   }
 
   resolve(expr: NamedExpression): Term[] {
@@ -64,16 +64,15 @@ class Context {
     return new Arg(null, this.normalizeExpr(e))
   }
 
-  normalizeTopExpr(expr: Expression): Term[][] {
-    if (expr.type == "RepeatExpression" && expr.kind == "?") {
-      return [[], ...this.normalizeTopExpr(expr.expr)]
-    } else if (expr.type == "RepeatExpression" && expr.kind == "*") {
-      return [[], [this.b.terms.getNonTerminal(this.rule.id.name), ...this.normalizeExpr(expr.expr)]]
-    } else if (expr.type == "ChoiceExpression") {
+  normalizeTopExpr(expr: Expression, self: Term): Term[][] {
+    if (expr.type == "RepeatExpression" && expr.kind == "?")
+      return [[], ...this.normalizeTopExpr(expr.expr, self)]
+    else if (expr.type == "RepeatExpression" && expr.kind == "*")
+      return [[], [self, ...this.normalizeExpr(expr.expr)]]
+    else if (expr.type == "ChoiceExpression")
       return expr.exprs.map(e => this.normalizeExpr(e))
-    } else {
+    else
       return [this.normalizeExpr(expr)]
-    }
   }
 
   normalizeExpr(expr: Expression): Term[] {
@@ -109,11 +108,10 @@ class Context {
   }
 
   buildRule() {
-    let name = this.b.newName(this.rule.id.name, false)
-    if (this.args.length == 0) this.b.defined[name.name] = name
-    let tag = isTag(this.rule.id.name)
-    for (let choice of this.normalizeTopExpr(this.rule.expr))
-      this.defineRule(name, choice, tag)
+    let name = this.b.newName(this.rule.id.name, isTag(this.rule.id.name) || true)
+    if (this.args.length == 0) this.b.defined[this.rule.id.name] = name
+    for (let choice of this.normalizeTopExpr(this.rule.expr, name))
+      this.defineRule(name, choice)
     return [name]
   }
 
@@ -128,7 +126,7 @@ class Context {
 
 function isTag(name: string) {
   let ch0 = name[0]
-  return ch0.toUpperCase() == ch0 && ch0 != "_"
+  return ch0.toUpperCase() == ch0 && ch0 != "_" ? name : null
 }
 
 class Builder {
@@ -170,11 +168,11 @@ class Builder {
     this.namespaces[name] = value
   }
 
-  newName(base: string, forceID = true): Term {
-    for (let i = forceID ? 1 : 0;; i++) {
+  newName(base: string, tag: string | null | true = null): Term {
+    for (let i = tag ? 0 : 1;; i++) {
       let name = i ? `${base}-${i}` : base
       if (!this.terms.nonTerminals.some(t => t.name == name))
-        return this.terms.getNonTerminal(name)
+        return this.terms.makeNonTerminal(name, tag === true ? null : tag)
     }
   }
 }
@@ -196,7 +194,7 @@ class PrecNamespace implements Namespace {
     let found = this.ast.names.findIndex(n => n.name == expr.id.name)
     if (found < 0)
       cx.raise(`Precedence group '${this.ast.id.name}' has no precedence named '${expr.id.name}'`, expr.id.start)
-    let name = cx.b.newName(`${expr.namespace!.name}-${expr.id.name}`, false)
+    let name = cx.b.newName(`${expr.namespace!.name}-${expr.id.name}`, true)
     cx = cx.withPrecedence(new Precedence(this.ast.assoc[found], this.id, found))
     cx.defineRule(name, cx.normalizeExpr(expr.args[0]))
     return [name]
@@ -210,7 +208,7 @@ class ConflictNamespace implements Namespace {
     if (expr.args.length != 1)
       cx.raise(`Conflict specifiers take a single argument`, expr.start)
     let group = this.groups[expr.id.name] || (this.groups[expr.id.name] = precID++)
-    let name = cx.b.newName(`conflict-${expr.id.name}`, false)
+    let name = cx.b.newName(`conflict-${expr.id.name}`, true)
     cx = cx.withPrecedence(new Precedence(null, group, -1))
     cx.defineRule(name, cx.normalizeExpr(expr.args[0]))
     return [name]

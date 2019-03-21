@@ -1,5 +1,5 @@
 export class Term {
-  constructor(readonly name: string, readonly terminal: boolean) {}
+  constructor(readonly name: string, readonly terminal: boolean, readonly tag: string | null) {}
   toString() { return this.terminal ? JSON.stringify(this.name) : this.name }
   cmp(other: Term) { return this == other ? 0 : (this.name < other.name ? -1 : 1) || this.terminal ? -1 : 1 }
 }
@@ -16,14 +16,13 @@ export class TermSet {
   getTerminal(name: string) {
     for (let i = 1; i < this.terminals.length; i++) // (Skip eof)
       if (this.terminals[i].name == name) return this.terminals[i]
-    let result = new Term(name, true)
+    let result = new Term(name, true, name)
     this.terminals.push(result)
     return result
   }
 
-  getNonTerminal(name: string) {
-    for (let term of this.nonTerminals) if (term.name == name) return term
-    let result = new Term(name, false)
+  makeNonTerminal(name: string, tag: string | null) {
+    let result = new Term(name, false, tag)
     this.nonTerminals.push(result)
     return result
   }
@@ -41,7 +40,6 @@ export class Precedence {
 
 export class Rule {
   constructor(readonly name: Term,
-              readonly tag: boolean,
               readonly parts: Term[],
               readonly precedence: Precedence | null = null) {}
 
