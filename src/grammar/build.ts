@@ -7,7 +7,8 @@ import {Input} from "./parse"
 const none: ReadonlyArray<any> = []
 
 class Arg {
-  constructor(readonly expr: Expression, readonly cx: Context) {}
+  constructor(readonly expr: NamedExpression | null,
+              readonly value: Term[] | null) {}
 }
 
 class Context {
@@ -34,11 +35,11 @@ class Context {
       return ns.resolve(expr, this)
     } else if ((param = this.params.indexOf(expr.id.name)) > -1) {
       let arg = this.args[param]
-      if (arg.expr.type == "NamedExpression" && arg.expr.args.length == 0 && expr.args.length > 0)
-        return arg.cx.withPrecedence(this.precedence).resolve(new NamedExpression(expr.start, expr.end, arg.expr.namespace, arg.expr.id, expr.args))
+      if (arg.expr)
+        return this.resolve(new NamedExpression(expr.start, expr.end, arg.expr.namespace, arg.expr.id, expr.args))
       if (expr.args.length)
         this.raise(`Passing arguments to a by-value rule parameter`, expr.args[0].start)
-      return arg.cx.withPrecedence(this.precedence).normalizeExpr(arg.expr)
+      return arg.value!
     } else {
       let known = this.b.ast.rules.find(r => r.id.name == expr.id.name)
       if (!known)
@@ -56,11 +57,11 @@ class Context {
   }
 
   resolveArg(e: Expression) {
-    if (e.type == "NamedExpression") {
+    if (e.type == "NamedExpression" && e.args.length == 0) {
       let param = e.namespace ? -1 : this.params.indexOf(e.id.name)
-      if (param > -1) return this.args[param]
+      return param > -1 ? this.args[param] : new Arg(e, null)
     }
-    return new Arg(e, this)
+    return new Arg(null, this.normalizeExpr(e))
   }
 
   normalizeTopExpr(expr: Expression): Term[][] {
