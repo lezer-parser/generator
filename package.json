@@ -6,7 +6,8 @@
   "author": "Marijn Haverbeke <marijnh@gmail.com>",
   "license": "MIT",
   "scripts": {
-    "run": "ts-node src/index.ts"
+    "run": "ts-node src/index.ts",
+    "test": "ts-node test/run.ts"
   },
   "devDependencies": {
     "rollup": "^1.6.0",

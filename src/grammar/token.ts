@@ -69,6 +69,7 @@ export class State {
       let edge = state.edges.find(e => e.from <= next && e.to > next)
       if (!edge) break
       state = edge.target
+      // FIXME try to avoid pushing duplicate tokens
       for (let acc of state.accepting) result.push({term: acc, end: pos})
     }
     return result

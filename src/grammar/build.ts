@@ -256,12 +256,22 @@ class TokenArg {
 
 class TokenGroup {
   startState: State = new State
+  skipState: State | null = null
   built: BuiltRule[] = []
   used: {[name: string]: boolean} = Object.create(null)
   building: string[] = [] // Used for recursion check
 
   constructor(readonly b: Builder, readonly rules: ReadonlyArray<RuleDeclaration>) {
     for (let rule of rules) this.b.unique(rule.id)
+    let skip = rules.find(r => r.id.name == "skip")
+    if (skip) {
+      this.used.skip = true
+      if (skip.params.length) return this.raise("Skip rules should not take parameters", skip.params[0].start)
+      this.skipState = new State
+      let fin = new State
+      fin.connect(this.build(skip.expr, this.skipState, none))
+      fin.accepting.push(b.terms.eof)
+    }
   }
 
   makeTerminal(name: string, tag: string | null) {
@@ -372,8 +382,10 @@ class TokenGroup {
   }
 }
 
-export function buildGrammar(text: string, fileName: string | null = null): {grammar: Grammar, tokens: State} {
+export function buildGrammar(text: string, fileName: string | null = null): Grammar {
   let builder = new Builder(text, fileName)
-  return {grammar: new Grammar(builder.rules, builder.terms),
-          tokens: builder.tokenGroups[0].startState.compile()} // FIXME multiple groups
+  let skip = builder.tokenGroups[0].skipState
+  return new Grammar(builder.rules, builder.terms,
+                     builder.tokenGroups[0].startState.compile(),
+                     skip && skip.compile()) // FIXME multiple groups
 }

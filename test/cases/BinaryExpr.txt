@@ -22,38 +22,28 @@ tokens {
 
 (x+y)/x
 
-==>
-
-BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),MultOp,Symbol)
+==> BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),MultOp,Symbol)
 
 ---
 
 x+x+x+x
 
-==>
-
-BinaryExpr(BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),AddOp,Symbol),AddOp,Symbol)
+==> BinaryExpr(BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),AddOp,Symbol),AddOp,Symbol)
 
 ---
 
 x+x*x-x
 
-==>
-
-BinaryExpr(BinaryExpr(Symbol,AddOp,BinaryExpr(Symbol,MultOp,Symbol)),AddOp,Symbol)
+==> BinaryExpr(BinaryExpr(Symbol,AddOp,BinaryExpr(Symbol,MultOp,Symbol)),AddOp,Symbol)
 
 ---
 
 x*x+y/y
 
-==>
-
-BinaryExpr(BinaryExpr(Symbol,MultOp,Symbol),AddOp,BinaryExpr(Symbol,MultOp,Symbol))
+==> BinaryExpr(BinaryExpr(Symbol,MultOp,Symbol),AddOp,BinaryExpr(Symbol,MultOp,Symbol))
 
 ---
 
 (x+y)*x
 
-==>
-
-BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),MultOp,Symbol)
+==> BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),MultOp,Symbol)

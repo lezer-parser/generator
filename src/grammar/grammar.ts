@@ -1,3 +1,5 @@
+import {State} from "./token"
+
 export class Term {
   constructor(readonly name: string, readonly terminal: boolean, readonly tag: string | null) {}
   toString() { return this.terminal ? JSON.stringify(this.name) : this.name }
@@ -55,7 +57,10 @@ export class Rule {
 export class Grammar {
   first: {[name: string]: Term[]}
 
-  constructor(readonly rules: Rule[], readonly terms: TermSet) {
+  constructor(readonly rules: Rule[],
+              readonly terms: TermSet,
+              readonly tokens: State,
+              readonly skip: State | null) {
     this.first = computeFirst(this.rules, this.terms.nonTerminals)
   }
 

@@ -1,6 +1,5 @@
 import {Term, Grammar} from "./grammar/grammar"
 import {State, Goto, Reduce} from "./grammar/automaton"
-import {State as TokenState} from "./grammar/token"
 
 class Frame {
   constructor(readonly prev: Frame | null,
@@ -36,7 +35,7 @@ export class Node {
               readonly positions: number[]) {}
 
   toString() {
-    return this.name ? (this.children.length ? this.name.tag + "(" + this.children + ")" : this.name.tag) : this.children.join()
+    return this.name ? (this.children.length ? this.name.tag + "(" + this.children + ")" : this.name.tag!) : this.children.join()
   }
 
   static leaf(name: Term | null, length: number) {
@@ -111,7 +110,7 @@ class TreeCursor {
   }
 }
 
-export function parse(input: string, grammar: Grammar, tokens: TokenState, table: State[], cache = Node.leaf(null, 0)): Node {
+export function parse(input: string, grammar: Grammar, table: State[], cache = Node.leaf(null, 0)): Node {
   let parses = [new Frame(null, null, table[0], 0, 0)]
   let done = null, maxPos = 0
   let cacheIter = new TreeCursor(cache)
@@ -120,7 +119,11 @@ export function parse(input: string, grammar: Grammar, tokens: TokenState, table
     let stack = takeFromHeap(parses, compareFrames), pos = stack.pos
     let next = grammar.terms.eof, tokEnd = pos
     if (pos < input.length) {
-      let tok = tokens.simulate(input, pos)
+      if (grammar.skip) {
+        let skip = grammar.skip.simulate(input, pos)
+        if (skip.length) pos = skip[skip.length - 1].end
+      }
+      let tok = grammar.tokens.simulate(input, pos)
       if (tok.length == 0) throw new Error("Failed to find token at " + pos)
       // FIXME filter by applicable tokens
       ;({term: next, end: tokEnd} = tok[tok.length - 1])

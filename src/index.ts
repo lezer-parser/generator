@@ -3,9 +3,9 @@ import {buildAutomaton} from "./grammar/automaton"
 import {parse} from "./parse"
 
 function test(grammarText: string, input: string) {
-  let {grammar, tokens} = buildGrammar(grammarText)
+  let grammar = buildGrammar(grammarText)
   let table = buildAutomaton(grammar)
-  return parse(input, grammar, tokens, table)
+  return parse(input, grammar, table)
 }
 
 test(`

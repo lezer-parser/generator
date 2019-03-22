@@ -28,13 +28,12 @@ function compressAST(ast: string, file: string) {
 
 for (let file of fs.readdirSync(caseDir)) {
   if (filter && file.indexOf(filter) < 0) continue
-  cases++
   let content = fs.readFileSync(path.join(caseDir, file), "utf8")
   let parts = content.split(/\n---+\n/)
 
-  let grammar, tokens, table
+  let grammar, table
   try {
-    ;({grammar, tokens} = buildGrammar(parts[0], file))
+    grammar = buildGrammar(parts[0], file)
     table = buildAutomaton(grammar)
   } catch (e) {
     fail(e.message, file)
@@ -42,20 +41,32 @@ for (let file of fs.readdirSync(caseDir)) {
   }
 
   for (let i = 1; i < parts.length; i++) {
-    let [text, ast] = parts[i].split(/\n==+>\n/)
+    let [text, ast] = parts[i].split(/\n==+>/)
+    cases++
     if (!ast) {
       fail("Missing syntax tree", file, i)
       continue
     }
     let expected = compressAST(ast, file), parsed
     try {
-      parsed = parse(text.trim(), grammar, tokens, table)
+      parsed = parse(text.trim(), grammar, table)!.toString()
     } catch (e) {
       fail(e.message, file, i)
       continue
     }
-    if (parsed.toString() != expected)
-      fail(`Output mismatch, got\n  ${parsed.toString()}\nexpected\n  ${expected}`, file, i)
+    if (parsed != expected) {
+      if (parsed.length > 76) {
+        let mis = 0
+        while (parsed[mis] == expected[mis]) mis++
+        if (mis > 30) {
+          parsed = "…" + parsed.slice(mis - 30)
+          expected = "…" + expected.slice(mis - 30)
+        }
+      }
+      if (parsed.length > 76) parsed = parsed.slice(0, 75) + "…"
+      if (expected.length > 76) expected = expected.slice(0, 75) + "…"
+      fail(`Output mismatch, got\n  ${parsed}\nexpected\n  ${expected}`, file, i)
+    }
   }
 }
 
