@@ -1,5 +1,5 @@
-import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclaration,
-        Expression, Identifier, NamedExpression, exprsEq} from "./node"
+import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
+        Expression, Identifier, LiteralExpression, NamedExpression, exprsEq} from "./node"
 import {Term, TermSet, Precedence, Rule, Grammar} from "./grammar"
 import {Edge, State} from "./token"
 import {Input} from "./parse"
@@ -97,8 +97,8 @@ class Context {
       return this.defineRule(this.newName(), expr.exprs.map(e => this.normalizeExpr(e)))
     } else if (expr.type == "SequenceExpression") {
       return expr.exprs.reduce((a, e) => a.concat(this.normalizeExpr(e)), [] as Term[])
-    } else if (expr.type == "LiteralExpression") { // FIXME compile as token?
-      return expr.value ? [this.b.terms.getTerminal(expr.value)] : []
+    } else if (expr.type == "LiteralExpression") {
+      return expr.value ? [this.b.tokenGroups[0].getLiteral(expr)] : []
     } else if (expr.type == "NamedExpression") {
       return this.resolve(expr)
     } else {
@@ -156,13 +156,14 @@ class Builder {
     this.input = new Input(text, fileName)
     this.ast = this.input.parse()
 
+    for (let tokens of this.ast.tokenGroups)
+      this.tokenGroups.push(new TokenGroup(this, tokens.rules))
+    if (!this.tokenGroups.length) this.tokenGroups.push(new TokenGroup(this, none))
+
     this.defineNamespace("conflict", new ConflictNamespace)
     this.defineNamespace("tag", new TagNamespace)
     for (let prec of this.ast.precedences)
       this.defineNamespace(prec.id.name, new PrecNamespace(prec), prec.id.start)
-
-    for (let tokens of this.ast.tokenGroups)
-      this.tokenGroups.push(new TokenGroup(this, tokens))
 
     for (let rule of this.ast.rules) {
       this.unique(rule.id)
@@ -259,20 +260,30 @@ class TokenGroup {
   used: {[name: string]: boolean} = Object.create(null)
   building: string[] = [] // Used for recursion check
 
-  constructor(readonly b: Builder, readonly ast: TokenGroupDeclaration) {
-    for (let rule of ast.rules) this.b.unique(rule.id)
+  constructor(readonly b: Builder, readonly rules: ReadonlyArray<RuleDeclaration>) {
+    for (let rule of rules) this.b.unique(rule.id)
   }
 
   getToken(expr: NamedExpression) {
     for (let built of this.built) if (built.matches(expr)) return built.term
     let name = expr.id.name
-    let rule = this.ast.rules.find(r => r.id.name == name)
+    let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
     let term = this.b.terms.getTerminal(name) // FIXME make sure this is new/unique!
     let end = new State
     end.connect(this.buildRule(rule, expr, this.startState))
     end.accepting.push(term)
     this.built.push(new BuiltRule(name, expr.args, null, term))
+    return term
+  }
+
+  getLiteral(expr: LiteralExpression) {
+    let id = JSON.stringify(expr.value)
+    for (let built of this.built) if (built.id == id) return built.term
+    let term = this.b.terms.getTerminal(id) // FIXME
+    let end = new State
+    end.connect(this.build(expr, this.startState, none))
+    this.built.push(new BuiltRule(id, none, null, term))
     return term
   }
 
@@ -298,7 +309,7 @@ class TokenGroup {
       if (expr.namespace) this.b.input.raise(`Unknown namespace '${expr.namespace.name}'`, expr.start)
       let name = expr.id.name, arg = args.find(a => a.name == name)
       if (arg) return this.build(arg.expr, from, arg.scope)
-      let rule = this.ast.rules.find(r => r.id.name == name)
+      let rule = this.rules.find(r => r.id.name == name)
       if (!rule) return this.raise(`Reference to rule '${expr.id.name}', which isn't in this token group`, expr.start)
       return this.buildRule(rule, expr, from, args)
     } else if (expr.type == "ChoiceExpression") {
@@ -345,7 +356,7 @@ class TokenGroup {
   }
 
   checkUnused() {
-    for (let rule of this.ast.rules) if (!this.used[rule.id.name])
+    for (let rule of this.rules) if (!this.used[rule.id.name])
       // FIXME should probably be a warning
       this.raise(`Unused token rule '${rule.id.name}'`, rule.start)
   }

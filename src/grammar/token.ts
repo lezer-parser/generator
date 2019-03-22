@@ -25,4 +25,8 @@ export class State {
   }
 
   nullEdge(target?: State) { return this.edge(-1, -1, target) }
+
+  compile() {
+
+  }
 }
