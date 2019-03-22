@@ -110,8 +110,8 @@ class TreeCursor {
   }
 }
 
-export function parse(input: string, grammar: Grammar, table: State[], cache = Node.leaf(null, 0)): Node {
-  let parses = [new Frame(null, null, table[0], 0, 0)]
+export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0)): Node {
+  let parses = [new Frame(null, null, grammar.table[0], 0, 0)]
   let done = null, maxPos = 0
   let cacheIter = new TreeCursor(cache)
   parse: for (; !done;) {

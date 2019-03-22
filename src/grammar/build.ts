@@ -320,12 +320,13 @@ class TokenGroup {
 
   // FIXME reuse tail-called rules somehow
   buildRule(rule: RuleDeclaration, expr: NamedExpression, from: State, args: ReadonlyArray<TokenArg> = none): Edge[] {
+    let name = expr.id.name
     if (rule.params.length != expr.args.length)
       this.raise(`Incorrect number of arguments for token '${name}'`, expr.start)
-    this.used[rule.id.name] = true
-    if (this.building.includes(rule.id.name))
+    this.used[name] = true
+    if (this.building.includes(name))
       this.raise(`Recursive token rules: ${this.building.slice(this.building.lastIndexOf(name)).join(" -> ")}`, expr.start)
-    this.building.push(rule.id.name)
+    this.building.push(name)
     let result = this.build(rule.expr, from,
                             expr.args.map((e, i) => new TokenArg(rule!.params[i].name, e, args)))
     this.building.pop()

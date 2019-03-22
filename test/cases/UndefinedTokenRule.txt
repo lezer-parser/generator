@@ -1,0 +1,7 @@
+program { X }
+
+tokens {
+  X { y }
+}
+
+//! Reference to rule 'y'

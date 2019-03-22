@@ -1,5 +1,4 @@
 import {buildGrammar} from "../src/grammar/build"
-import {buildAutomaton} from "../src/grammar/automaton"
 import {parse} from "../src/parse"
 
 let filter = null, filterN = -1, printTokens = false, printSkip = false, printGrammar = false
@@ -40,19 +39,27 @@ for (let file of fs.readdirSync(caseDir)) {
   let content = fs.readFileSync(path.join(caseDir, file), "utf8")
   let parts = content.split(/\n---+\n/)
 
-  let grammar, table
+  let expectedErr = /\/\/! (.*)/.exec(parts[0]), grammar
+  if (expectedErr) cases++
   try {
     grammar = buildGrammar(parts[0], file)
-    table = buildAutomaton(grammar)
   } catch (e) {
-    fail(e.message, file)
     if (!(e instanceof SyntaxError)) console.log(e.stack)
+    if (!expectedErr)
+      fail(e.message, file)
+    else if (e.message.toLowerCase().indexOf(expectedErr[1].trim().toLowerCase()) < 0)
+      fail("Wrong error raised: " + e.message, file)
+    continue
+  }
+  if (expectedErr) {
+    fail("Failed to raise expected grammar error", file)
     continue
   }
   if (printSkip && grammar.skip) console.log(grammar.skip.toString())
   if (printTokens) console.log(grammar.tokens.toString())
   if (printGrammar) console.log(grammar.rules.join("\n"))
 
+  if (parts.length == 1) throw new Error("Test with neither expected errors nor input cases (" + file + ")")
   for (let i = 1; i < parts.length; i++) {
     if (filterN > -1 && filterN != i) continue
     let [text, ast] = parts[i].split(/\n==+>/)
@@ -63,7 +70,7 @@ for (let file of fs.readdirSync(caseDir)) {
     }
     let expected = compressAST(ast, file), parsed
     try {
-      parsed = parse(text.trim(), grammar, table)!.toString()
+      parsed = parse(text.trim(), grammar).toString()
     } catch (e) {
       fail(e.message, file, i)
       if (!(e instanceof SyntaxError)) console.log(e.stack)

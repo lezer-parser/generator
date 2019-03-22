@@ -1,0 +1,7 @@
+program { X<"hi"> }
+
+tokens {
+  X<a, b> { a b }
+}
+
+//! Incorrect number of arguments

@@ -1,0 +1,21 @@
+program { (KW<"let"> | KW<"if"> | Foo)+ }
+
+tokens {
+  skip { std.whitespace* }
+  KW<word> { word }
+  Foo { bar<"foo"> }
+  bar<x> { baz<x> }
+  baz<z> { "!" z }
+}
+
+---
+
+let if let
+
+==> KW,KW,KW
+
+---
+
+!foo
+
+==> Foo

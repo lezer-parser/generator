@@ -1,11 +1,9 @@
 import {buildGrammar} from "./grammar/build"
-import {buildAutomaton} from "./grammar/automaton"
 import {parse} from "./parse"
 
 function test(grammarText: string, input: string) {
   let grammar = buildGrammar(grammarText)
-  let table = buildAutomaton(grammar)
-  return parse(input, grammar, table)
+  return parse(input, grammar)
 }
 
 test(`
@@ -26,11 +24,3 @@ tokens {
   Symbol { "x" | "y" }
 }
 `, "(x+y)/x")
-
-// LR-but-not-LALR
-/*
-test(`
-program { "a" E "a" | "b" E "b" | "a" F "b" | "b" F "a" }
-E { "e" }
-F { "e" }`, ["a", "e", "b"])
-*/

@@ -14,7 +14,8 @@ tokens {
 
 ---
 
-Hello Catch22 Foo azAZ09
+Hello		Catch22 Foo
+azAZ09
 
 ==> Word,Word,Word,Word
 

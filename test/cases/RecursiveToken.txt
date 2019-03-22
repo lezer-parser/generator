@@ -1,0 +1,8 @@
+program { Foo }
+
+tokens {
+  Foo { bar+ }
+  bar { Foo }
+}
+
+//! Recursive token
