@@ -117,7 +117,6 @@ export function parse(input: string, grammar: Grammar, tokens: TokenState, table
   let cacheIter = new TreeCursor(cache)
   parse: for (; !done;) {
     if (parses.length == 0) throw new Error("NO PARSE @ " + maxPos)
-    console.log("stack is " + parses.join(" || "))
     let stack = takeFromHeap(parses, compareFrames), pos = stack.pos
     let next = grammar.terms.eof, tokEnd = pos
     if (pos < input.length) {
@@ -126,7 +125,6 @@ export function parse(input: string, grammar: Grammar, tokens: TokenState, table
       // FIXME filter by applicable tokens
       ;({term: next, end: tokEnd} = tok[tok.length - 1])
     }
-    console.log("token is", next.name, "@", pos)
     if (!stack.state.ambiguous) {
       for (let cached = cacheIter.nodeAt(pos); cached;
            cached = cached.children.length && cached.positions[0] == 0 ? cached.children[0] : null) {
@@ -134,7 +132,6 @@ export function parse(input: string, grammar: Grammar, tokens: TokenState, table
         if (match) {
           addFrame(parses, new Frame(stack, cached, match.target, pos /* FIXME */, pos + cached.length))
           maxPos = Math.max(maxPos, pos + cached.length)
-          console.log("REUSE " + cached, "@", pos, "-", pos + cached.length)
           continue parse
         }
       }
@@ -157,7 +154,6 @@ export function parse(input: string, grammar: Grammar, tokens: TokenState, table
           ? Node.of(action.rule.name.tag ? action.rule.name : null, children, positions)
           : Node.leaf(null, 0)
         if (!newStack.prev && next == grammar.terms.eof) {
-          console.log("Success: " + value)
           done = value
           return
         }

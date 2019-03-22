@@ -300,6 +300,7 @@ class TokenGroup {
     return this.b.input.raise(msg, pos)
   }
 
+  // FIXME reuse tail-called rules somehow
   buildRule(rule: RuleDeclaration, expr: NamedExpression, from: State, args: ReadonlyArray<TokenArg> = none): Edge[] {
     if (rule.params.length != expr.args.length)
       this.raise(`Incorrect number of arguments for token '${name}'`, expr.start)
