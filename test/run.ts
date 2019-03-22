@@ -2,7 +2,7 @@ import {buildGrammar} from "../src/grammar/build"
 import {buildAutomaton} from "../src/grammar/automaton"
 import {parse} from "../src/parse"
 
-let filter = process.argv[3]
+let filter = process.argv[3], filterN = process.argv[4] ? +process.argv[4] : -1
 
 let fs = require("fs"), path = require("path")
 let caseDir = path.join(__dirname, "cases")
@@ -41,6 +41,7 @@ for (let file of fs.readdirSync(caseDir)) {
   }
 
   for (let i = 1; i < parts.length; i++) {
+    if (filterN > -1 && filterN != i) continue
     let [text, ast] = parts[i].split(/\n==+>/)
     cases++
     if (!ast) {

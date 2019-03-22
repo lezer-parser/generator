@@ -5,6 +5,12 @@ export class Edge {
   constructor(readonly from: number, readonly to: number = from + 1, target?: State) {
     if (target) this.target = target
   }
+
+  toString() {
+    return `-> ${this.target.id}[label=${JSON.stringify(
+      this.from < 0 ? "ε" : String.fromCodePoint(this.from) +
+        (this.to > this.from + 1 ? "-" + String.fromCodePoint(this.to) : ""))}]`
+  }
 }
 
 let stateID = 1
@@ -35,21 +41,18 @@ export class State {
 
     function explore(states: State[]) {
       // FIXME properly compare and split ranges. Optimize
-      let out: {[key: number]: State[]} = {}
-      let newState = new State
+      let out: Edge[] = []
+      let newState = labeled[ids(states)] = new State
       for (let state of states) {
-        for (let acc of state.accepting) if (!newState.accepting.includes(acc)) newState.accepting.push(acc)
-        for (let edge of state.edges) {
-          if (edge.from < 0) continue
-          let set = out[edge.from] || (out[edge.from] = [])
-          for (let state of edge.target.closure())
-            if (!set.includes(state)) set.push(state)
-        }
+        for (let acc of state.accepting)
+          if (!newState.accepting.includes(acc)) newState.accepting.push(acc)
+        for (let edge of state.edges)
+          if (edge.from >= 0) out.push(edge)
       }
-      labeled[ids(states)] = newState
-      for (let n in out) {
-        let targets = out[n].sort((a, b) => a.id - b.id)
-        newState.edge(+n, +n + 1, labeled[ids(targets)] || explore(targets))
+      let transitions = mergeEdges(out)
+      for (let merged of transitions) {
+        let targets = merged.targets.sort((a, b) => a.id - b.id)
+        newState.edge(merged.from, merged.to, labeled[ids(targets)] || explore(targets))
       }
       return newState
     }
@@ -83,8 +86,9 @@ export class State {
     let out = ""
     if (this.accepting.length)
       out += `  ${this.id} [label=${this.accepting.map(t => t.name).join()}];\n`
+    for (let edge of this.edges)
+      out += `  ${this.id} ${edge};\n`
     for (let edge of this.edges) {
-      out += `  ${this.id} -> ${edge.target.id}[label=${JSON.stringify(String.fromCharCode(edge.from))}];\n`
       if (!seen.includes(edge.target)) {
         seen.push(edge.target)
         out += edge.target.toGraphViz(seen)
@@ -97,5 +101,31 @@ export class State {
 function ids(states: State[]) {
   let result = ""
   for (let state of states) result += (result.length ? "-" : "") + state.id
+  return result
+}
+
+class MergedEdge {
+  constructor(readonly from: number, readonly to: number, readonly targets: State[]) {}
+}
+
+// Merge multiple edges (tagged by character ranges) into a set of
+// mutually exclusive ranges pointing at all target states for that
+// range
+function mergeEdges(edges: Edge[]): MergedEdge[] {
+  let separate: number[] = [], result: MergedEdge[] = []
+  for (let edge of edges) {
+    if (!separate.includes(edge.from)) separate.push(edge.from)
+    if (!separate.includes(edge.to)) separate.push(edge.to)
+  }
+  separate.sort((a, b) => a - b)
+  for (let i = 1; i < separate.length; i++) {
+    let from = separate[i - 1], to = separate[i]
+    let found: State[] = []
+    for (let edge of edges) if (edge.to > from && edge.from < to) {
+      for (let target of edge.target.closure()) if (!found.includes(target))
+        found.push(target)
+    }
+    if (found.length) result.push(new MergedEdge(from, to, found))
+  }
   return result
 }

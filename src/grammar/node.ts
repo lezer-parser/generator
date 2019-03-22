@@ -119,13 +119,20 @@ export class LiteralExpression extends Node {
   containsNames() { return false }
 }
 
-export class CharacterRangeExpression extends Node {
-  type!: "CharacterRangeExpression"
-  constructor(start: number, end: number, readonly from: string, readonly to: string) {
-    super("CharacterRangeExpression", start, end)
+export class SetExpression extends Node {
+  type!: "SetExpression"
+  constructor(start: number, end: number, readonly ranges: [number, number][], readonly inverted: boolean) {
+    super("SetExpression", start, end)
   }
-  toString() { return `${JSON.stringify(this.from)}-${JSON.stringify(this.to)}` }
-  eq(other: CharacterRangeExpression) { return this.from == other.from && this.to == other.to }
+  toString() {
+    return `[${this.inverted ? "^" : ""}${this.ranges.map(([a, b]) => {
+      return String.fromCodePoint(a) + (b == a + 1 ? "" : "-" + String.fromCodePoint(b))
+    })}]`
+  }
+  eq(other: SetExpression) {
+    return this.inverted == other.inverted && this.ranges.length == other.ranges.length &&
+      this.ranges.every(([a, b], i) => { let [x, y] = other.ranges[i]; return a == x && b == y })
+  }
   containsNames() { return false }
 }
 
@@ -140,7 +147,7 @@ export class AnyExpression extends Node {
 }
 
 export type Expression = NamedExpression | ChoiceExpression | SequenceExpression | LiteralExpression |
-  RepeatExpression | CharacterRangeExpression | AnyExpression
+  RepeatExpression | SetExpression | AnyExpression
 
 export function exprEq(a: Expression, b: Expression): boolean {
   return a.type == b.type && a.eq(b as any)

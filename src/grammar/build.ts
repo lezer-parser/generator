@@ -354,8 +354,8 @@ class TokenGroup {
       } else { // expr.kind == "?"
         return [from.nullEdge()].concat(this.build(expr.expr, from, args))
       }
-    } else if (expr.type == "CharacterRangeExpression") {
-      return [from.edge(expr.from.codePointAt(0)!, expr.to.codePointAt(0)! + 1)]
+    } else if (expr.type == "SetExpression") {
+      return (expr.inverted ? invertRanges(expr.ranges) : expr.ranges).map(([a, b]) => from.edge(a, b))
     } else if (expr.type == "LiteralExpression") {
       for (let i = 0;;) {
         let code = expr.value.codePointAt(i)!
@@ -380,6 +380,16 @@ class TokenGroup {
       // FIXME should probably be a warning
       this.raise(`Unused token rule '${rule.id.name}'`, rule.start)
   }
+}
+
+function invertRanges(ranges: [number, number][]) {
+  let pos = 0, result: [number, number][] = []
+  for (let [a, b] of ranges) {
+    if (a > pos) result.push([pos, a])
+    pos = b
+  }
+  if (pos < 2e8) result.push([pos, 2e8])
+  return result
 }
 
 export function buildGrammar(text: string, fileName: string | null = null): Grammar {

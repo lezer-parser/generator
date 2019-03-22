@@ -1,7 +1,7 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclaration,
         Identifier, Expression,
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
-        RepeatExpression, CharacterRangeExpression, AnyExpression} from "./node"
+        RepeatExpression, SetExpression, AnyExpression} from "./node"
 
 const wordChar = /[\w_$]/ // FIXME international
 
@@ -57,6 +57,10 @@ export class Input {
       let end = this.match(start + 1, /^(\\.|[^'])*'/)
       if (end == -1) this.raise("Unterminated string literal", start)
       return this.set("string", JSON.parse(this.string.slice(start, end)), start, end)
+    } else if (next == "[") {
+      let end = this.match(start + 1, /^(?:\\.|[^\]])*\]/)
+      if (end == -1) this.raise("Unterminated character set", start)
+      return this.set("set", this.string.slice(start + 1, end - 1), start, end)
     } else if (/[()&~!\-+*?{}<>\.,=|]/.test(next)) {
       return this.set(next, null, start, start + 1)
     } else if (wordChar.test(next)) {
@@ -133,6 +137,8 @@ function parseRule(input: Input) {
   return new RuleDeclaration(start, input.lastEnd, id, params, expr)
 }
 
+const SET_MARKER = "\ufdda" // (Invalid unicode character)
+
 function parseExprInner(input: Input): Expression {
   let start = input.start
   if (input.eat("(")) {
@@ -144,17 +150,33 @@ function parseExprInner(input: Input): Expression {
   if (input.type == "string") {
     let value = input.value
     input.next()
-    if (value.length == 1 && input.eat("-")) { // FIXME astral chars
-      if (input.type != "string" || input.value.length != 1) input.unexpected()
-      let to = input.value
-      input.next()
-      return new CharacterRangeExpression(start, input.lastEnd, value, to)
-    } else {
-      if (value.length == 0) return new SequenceExpression(start, input.lastEnd, [])
-      return new LiteralExpression(start, input.lastEnd, value)
-    }
+    if (value.length == 0) return new SequenceExpression(start, input.lastEnd, [])
+    return new LiteralExpression(start, input.lastEnd, value)
   } else if (input.eat("id", "_")) {
     return new AnyExpression(start, input.lastEnd)
+  } else if (input.type == "set") {
+    let content = input.value, invert = false
+    if (/^\^/.test(content)) {
+      invert = true
+      content = content.slice(1)
+    }
+    let unescaped = JSON.parse('"' + content.replace(/\\.|-|"/g, (m: string) => {
+      return m == "-" ? SET_MARKER : m == '"' ? '\\"' : m
+    }) + '"') as string
+    let ranges: [number, number][] = []
+    for (let pos = 0; pos < unescaped.length;) {
+      let code = unescaped.codePointAt(pos)!
+      pos += code > 0xffff ? 2 : 1
+      if (pos < unescaped.length - 1 && unescaped[pos] == SET_MARKER) {
+        let end = unescaped.codePointAt(pos + 1)!
+        pos += end > 0xffff ? 3 : 2
+        ranges.push([code, end + 1])
+      } else {
+        ranges.push([code, code + 1])
+      }
+    }
+    input.next()
+    return new SetExpression(start, input.lastEnd, ranges.sort((a, b) => a[0] - b[0]), invert)
   } else {
     let id = parseIdent(input), namespace = null
     if (input.eat(".")) {
