@@ -326,7 +326,10 @@ class TokenGroup {
 
   build(expr: Expression, from: State, args: ReadonlyArray<TokenArg>): Edge[] {
     if (expr.type == "NamedExpression") {
-      if (expr.namespace) this.b.input.raise(`Unknown namespace '${expr.namespace.name}'`, expr.start)
+      if (expr.namespace) {
+        if (expr.namespace.name == "std") return this.buildStd(expr, from)
+        this.b.input.raise(`Unknown namespace '${expr.namespace.name}'`, expr.start)
+      }
       let name = expr.id.name, arg = args.find(a => a.name == name)
       if (arg) return this.build(arg.expr, from, arg.scope)
       let rule = this.rules.find(r => r.id.name == name)
@@ -375,6 +378,12 @@ class TokenGroup {
     }
   }
 
+  buildStd(expr: NamedExpression, from: State) {
+    if (expr.args.length) this.raise(`'std.${expr.id.name}' does not take arguments`, expr.args[0].start)
+    if (!STD_RANGES.hasOwnProperty(expr.id.name)) this.raise(`There is no builtin rule 'std.${expr.id.name}'`, expr.start)
+    return STD_RANGES[expr.id.name].map(([a, b]) => from.edge(a, b)) 
+  }
+
   checkUnused() {
     for (let rule of this.rules) if (!this.used[rule.id.name])
       // FIXME should probably be a warning
@@ -390,6 +399,15 @@ function invertRanges(ranges: [number, number][]) {
   }
   if (pos < 2e8) result.push([pos, 2e8])
   return result
+}
+
+const STD_RANGES: {[name: string]: [number, number][]} = {
+  asciiLetter: [[65, 91], [97, 123]],
+  asciiLowercase: [[97, 123]],
+  asciiUppercase: [[65, 91]],
+  digit: [[48, 58]],
+  whitespace: [[9, 14], [32, 33], [133, 134], [160, 161], [5760, 5761], [8192, 8203],
+               [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]]
 }
 
 export function buildGrammar(text: string, fileName: string | null = null): Grammar {

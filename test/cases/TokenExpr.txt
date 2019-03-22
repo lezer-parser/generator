@@ -1,24 +1,22 @@
 program { (Word | Number | Operator)+ }
 
 tokens {
-  skip { (" " | "\n")+ }
+  skip { std.whitespace* }
 
-  Word { letter (letter | digit)* }
+  Word { std.asciiLetter (letter | std.digit)* }
 
-  Number { ("-" | "+")? (digit+ ("." digit*)? | "." digit+) (("e" | "E") ("+" | "-")? digit+)? }
+  Number { ("-" | "+")? (std.digit+ ("." std.digit*)? | "." std.digit+) (("e" | "E") ("+" | "-")? std.digit+)? }
 
   Operator { "+" "+"? | "-" }
 
   letter { [a-zA-Z] }
-
-  digit { [0-9] }
 }
 
 ---
 
-Hello Catch22 Foo
+Hello Catch22 Foo azAZ09
 
-==> Word,Word,Word
+==> Word,Word,Word,Word
 
 ---
 
