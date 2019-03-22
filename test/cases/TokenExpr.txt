@@ -1,0 +1,27 @@
+program { (Word | Number | Operator)+ }
+
+tokens {
+  skip { (" " | "\n")+ }
+
+  Word { letter (letter | digit)* }
+
+  Number { ("-" | "+")? (digit+ ("." digit*)? | "." digit+) (("e" | "E") ("+" | "-")? digit+)? }
+
+  Operator { "+" "+"? | "-" }
+
+  letter { [a-zA-Z] }
+
+  digit { [0-9] }
+}
+
+---
+
+Hello Catch22 Foo
+
+==> Word,Word,Word
+
+---
+
+50 + 200e-5 ++ +.2 - -111.111e+111
+
+==> Number,Operator,Number,Operator,Number,Operator,Number

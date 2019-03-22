@@ -9,7 +9,7 @@ export class Edge {
   toString() {
     return `-> ${this.target.id}[label=${JSON.stringify(
       this.from < 0 ? "ε" : charFor(this.from) +
-        (this.to > this.from + 1 ? "-" + charFor(this.to) : ""))}]`
+        (this.to > this.from + 1 ? "-" + charFor(this.to - 1) : ""))}]`
   }
 }
 

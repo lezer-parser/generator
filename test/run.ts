@@ -2,7 +2,16 @@ import {buildGrammar} from "../src/grammar/build"
 import {buildAutomaton} from "../src/grammar/automaton"
 import {parse} from "../src/parse"
 
-let filter = process.argv[3], filterN = process.argv[4] ? +process.argv[4] : -1
+let filter = null, filterN = -1, printTokens = false, printSkip = false, printGrammar = false
+
+for (let i = 2; i < process.argv.length; i++) {
+  let arg = process.argv[i]
+  if (arg == "--tokens") printTokens = true
+  else if (arg == "--skip") printSkip = true
+  else if (arg == "--grammar") printGrammar = true
+  else if (filter) filterN = +arg
+  else filter = arg
+}
 
 let fs = require("fs"), path = require("path")
 let caseDir = path.join(__dirname, "cases")
@@ -40,6 +49,9 @@ for (let file of fs.readdirSync(caseDir)) {
     if (!(e instanceof SyntaxError)) console.log(e.stack)
     continue
   }
+  if (printSkip && grammar.skip) console.log(grammar.skip.toString())
+  if (printTokens) console.log(grammar.tokens.toString())
+  if (printGrammar) console.log(grammar.rules.join("\n"))
 
   for (let i = 1; i < parts.length; i++) {
     if (filterN > -1 && filterN != i) continue
