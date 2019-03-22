@@ -8,9 +8,13 @@ export class Edge {
 
   toString() {
     return `-> ${this.target.id}[label=${JSON.stringify(
-      this.from < 0 ? "ε" : String.fromCodePoint(this.from) +
-        (this.to > this.from + 1 ? "-" + String.fromCodePoint(this.to) : ""))}]`
+      this.from < 0 ? "ε" : charFor(this.from) +
+        (this.to > this.from + 1 ? "-" + charFor(this.to) : ""))}]`
   }
+}
+
+function charFor(n: number) {
+  return n == 2e8 ? "∞" : String.fromCodePoint(n)
 }
 
 let stateID = 1
@@ -37,7 +41,7 @@ export class State {
 
   compile() {
     let labeled: {[id: string]: State} = Object.create(null)
-    return explore(this.closure())
+    return explore(this.closure().sort((a, b) => a.id - b.id))
 
     function explore(states: State[]) {
       // FIXME properly compare and split ranges. Optimize
@@ -59,8 +63,14 @@ export class State {
   }
 
   closure() {
-    let result: State[] = [this]
-    for (let edge of this.edges) if (edge.from < 0 && !result.includes(edge.target)) result.push(edge.target)
+    let result: State[] = []
+    function explore(state: State): void {
+      if (result.includes(state)) return
+      if (state.edges.length == 1 && state.edges[0].from < 0) return explore(state.edges[0].target)
+      result.push(state)
+      for (let edge of state.edges) if (edge.from < 0) explore(edge.target)
+    }
+    explore(this)
     return result
   }
 
@@ -79,7 +89,7 @@ export class State {
   }
 
   toString() {
-    return `digraph {\n${this.toGraphViz([])}\n}`
+    return `digraph {\n${this.toGraphViz([this])}}`
   }
 
   toGraphViz(seen: State[]) {

@@ -170,6 +170,7 @@ function parseExprInner(input: Input): Expression {
       if (pos < unescaped.length - 1 && unescaped[pos] == SET_MARKER) {
         let end = unescaped.codePointAt(pos + 1)!
         pos += end > 0xffff ? 3 : 2
+        if (end < code) input.raise("Invalid character range", input.start)
         ranges.push([code, end + 1])
       } else {
         ranges.push([code, code + 1])

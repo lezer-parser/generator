@@ -37,6 +37,7 @@ for (let file of fs.readdirSync(caseDir)) {
     table = buildAutomaton(grammar)
   } catch (e) {
     fail(e.message, file)
+    if (!(e instanceof SyntaxError)) console.log(e.stack)
     continue
   }
 
@@ -53,6 +54,7 @@ for (let file of fs.readdirSync(caseDir)) {
       parsed = parse(text.trim(), grammar, table)!.toString()
     } catch (e) {
       fail(e.message, file, i)
+      if (!(e instanceof SyntaxError)) console.log(e.stack)
       continue
     }
     if (parsed != expected) {

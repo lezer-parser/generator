@@ -115,7 +115,7 @@ export function parse(input: string, grammar: Grammar, table: State[], cache = N
   let done = null, maxPos = 0
   let cacheIter = new TreeCursor(cache)
   parse: for (; !done;) {
-    if (parses.length == 0) throw new Error("NO PARSE @ " + maxPos)
+    if (parses.length == 0) throw new SyntaxError("NO PARSE @ " + maxPos)
     let stack = takeFromHeap(parses, compareFrames), pos = stack.pos
     let next = grammar.terms.eof, tokEnd = pos
     if (pos < input.length) {
@@ -124,7 +124,7 @@ export function parse(input: string, grammar: Grammar, table: State[], cache = N
         if (skip.length) pos = skip[skip.length - 1].end
       }
       let tok = grammar.tokens.simulate(input, pos)
-      if (tok.length == 0) throw new Error("Failed to find token at " + pos)
+      if (tok.length == 0) throw new SyntaxError("Failed to find token at " + pos)
       // FIXME filter by applicable tokens
       ;({term: next, end: tokEnd} = tok[tok.length - 1])
     }
