@@ -202,6 +202,14 @@ class Builder {
         return this.terms.makeNonTerminal(name, tag === true ? null : tag)
     }
   }
+
+  getGrammar() {
+    let skip = this.tokenGroups[0].skipState
+    let tokens = this.tokenGroups[0].startState.compile() // FIXME multiple groups
+    if (tokens.accepting.length)
+      this.input.raise(`Grammar contains zero-length tokens (in '${tokens.accepting[0].name}')`)
+    return new Grammar(this.rules, this.terms, tokens, skip && skip.compile())
+  }
 }
 
 let precID = 1
@@ -411,9 +419,5 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
 }
 
 export function buildGrammar(text: string, fileName: string | null = null): Grammar {
-  let builder = new Builder(text, fileName)
-  let skip = builder.tokenGroups[0].skipState
-  return new Grammar(builder.rules, builder.terms,
-                     builder.tokenGroups[0].startState.compile(),
-                     skip && skip.compile()) // FIXME multiple groups
+  return new Builder(text, fileName).getGrammar()
 }
