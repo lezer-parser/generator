@@ -1,5 +1,6 @@
 import {Term, Grammar} from "./grammar/grammar"
 import {State, Goto, Reduce} from "./grammar/automaton"
+import {State as TokenState} from "./grammar/token"
 
 class Frame {
   constructor(readonly prev: Frame | null,
@@ -110,7 +111,7 @@ class TreeCursor {
   }
 }
 
-export function parse(input: string[], grammar: Grammar, table: State[], cache = Node.leaf(null, 0)): Node {
+export function parse(input: string, grammar: Grammar, tokens: TokenState, table: State[], cache = Node.leaf(null, 0)): Node {
   let parses = [new Frame(null, null, table[0], 0, 0)]
   let done = null, maxPos = 0
   let cacheIter = new TreeCursor(cache)
@@ -118,7 +119,13 @@ export function parse(input: string[], grammar: Grammar, table: State[], cache =
     if (parses.length == 0) throw new Error("NO PARSE @ " + maxPos)
     console.log("stack is " + parses.join(" || "))
     let stack = takeFromHeap(parses, compareFrames), pos = stack.pos
-    let next = pos < input.length ? grammar.terms.getTerminal(input[pos]) : grammar.terms.eof
+    let next = grammar.terms.eof, tokEnd = pos
+    if (pos < input.length) {
+      let tok = tokens.simulate(input, pos)
+      if (tok.length == 0) throw new Error("Failed to find token at " + pos)
+      // FIXME filter by applicable tokens
+      ;({term: next, end: tokEnd} = tok[tok.length - 1])
+    }
     console.log("token is", next.name, "@", pos)
     if (!stack.state.ambiguous) {
       for (let cached = cacheIter.nodeAt(pos); cached;
@@ -135,8 +142,8 @@ export function parse(input: string[], grammar: Grammar, table: State[], cache =
 
     stack.state.forEachAction(next, action => {
       if (action instanceof Goto) {
-        maxPos = Math.max(maxPos, pos + 1)
-        addFrame(parses, new Frame(stack, Node.leaf(next, 1), action.target, pos, pos + 1))
+        maxPos = Math.max(maxPos, tokEnd)
+        addFrame(parses, new Frame(stack, Node.leaf(next.tag ? next : null, 1), action.target, pos, tokEnd))
       } else if (action instanceof Reduce) {
         let newStack = stack, children = [], positions = []
         for (let i = action.rule.parts.length; i > 0; i--) {

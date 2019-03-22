@@ -10,13 +10,11 @@ export class TermSet {
   eof: Term
 
   constructor() {
-    this.eof = this.getTerminal("␄")
+    this.eof = this.makeTerminal("␄", null)
   }
 
-  getTerminal(name: string) {
-    for (let i = 1; i < this.terminals.length; i++) // (Skip eof)
-      if (this.terminals[i].name == name) return this.terminals[i]
-    let result = new Term(name, true, name)
+  makeTerminal(name: string, tag: string | null) {
+    let result = new Term(name, true, tag)
     this.terminals.push(result)
     return result
   }

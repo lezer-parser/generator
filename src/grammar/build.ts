@@ -264,12 +264,20 @@ class TokenGroup {
     for (let rule of rules) this.b.unique(rule.id)
   }
 
+  makeTerminal(name: string, tag: string | null) {
+    for (let i = 0;; i++) {
+      let cur = i ? `${name}-${i}` : name
+      if (this.b.terms.terminals.some(t => t.name == cur)) continue
+      return this.b.terms.makeTerminal(cur, tag)
+    }
+  }
+
   getToken(expr: NamedExpression) {
     for (let built of this.built) if (built.matches(expr)) return built.term
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    let term = this.b.terms.getTerminal(name) // FIXME make sure this is new/unique!
+    let term = this.makeTerminal(name, isTag(name))
     let end = new State
     end.connect(this.buildRule(rule, expr, this.startState))
     end.accepting.push(term)
@@ -280,8 +288,9 @@ class TokenGroup {
   getLiteral(expr: LiteralExpression) {
     let id = JSON.stringify(expr.value)
     for (let built of this.built) if (built.id == id) return built.term
-    let term = this.b.terms.getTerminal(id) // FIXME
+    let term = this.makeTerminal(id, null)
     let end = new State
+    end.accepting.push(term)
     end.connect(this.build(expr, this.startState, none))
     this.built.push(new BuiltRule(id, none, null, term))
     return term
@@ -362,7 +371,8 @@ class TokenGroup {
   }
 }
 
-export function buildGrammar(text: string, fileName: string | null = null) {
+export function buildGrammar(text: string, fileName: string | null = null): {grammar: Grammar, tokens: State} {
   let builder = new Builder(text, fileName)
-  return new Grammar(builder.rules, builder.terms)
+  return {grammar: new Grammar(builder.rules, builder.terms),
+          tokens: builder.tokenGroups[0].startState.compile()} // FIXME multiple groups
 }

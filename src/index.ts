@@ -2,10 +2,10 @@ import {buildGrammar} from "./grammar/build"
 import {buildAutomaton} from "./grammar/automaton"
 import {parse} from "./parse"
 
-function test(grammar: string, input: string[]) {
-  const g = buildGrammar(grammar)
-  let table = buildAutomaton(g)
-  return parse(input, g, table)
+function test(grammarText: string, input: string) {
+  let {grammar, tokens} = buildGrammar(grammarText)
+  let table = buildAutomaton(grammar)
+  return parse(input, grammar, tokens, table)
 }
 
 test(`
@@ -13,19 +13,19 @@ prec left binOp { mult, plus }
 
 program { expr }
 expr {
-  Atom |
+  atom |
   binOp.mult<BinaryExpr<MultOp>> |
   binOp.plus<BinaryExpr<AddOp>>
 }
 BinaryExpr<op> { expr op expr }
-Atom { Symbol | "(" expr ")" }
+atom { Symbol | "(" expr ")" }
 
 tokens {
   MultOp { "*" | "/" }
   AddOp { "+" | "-" }
   Symbol { "x" | "y" }
 }
-`, ["x", "+", "y", "/", "x"])
+`, "(x+y)/x")
 
 // LR-but-not-LALR
 /*
