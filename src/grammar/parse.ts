@@ -144,7 +144,7 @@ function parseExprInner(input: Input): Expression {
   if (input.type == "string") {
     let value = input.value
     input.next()
-    if (value.length == 1 && input.eat("-")) {
+    if (value.length == 1 && input.eat("-")) { // FIXME astral chars
       if (input.type != "string" || input.value.length != 1) input.unexpected()
       let to = input.value
       input.next()

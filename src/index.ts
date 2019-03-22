@@ -14,11 +14,17 @@ prec left binOp { mult, plus }
 program { expr }
 expr {
   Atom |
-  binOp.mult<BinOp<"*" | "/">> |
-  binOp.plus<BinOp<"+" | "-">>
+  binOp.mult<BinaryExpr<MultOp>> |
+  binOp.plus<BinaryExpr<AddOp>>
 }
-BinOp<op> { expr op expr }
-Atom { "x" | "y" | "(" expr ")" }
+BinaryExpr<op> { expr op expr }
+Atom { Symbol | "(" expr ")" }
+
+tokens {
+  MultOp { "*" | "/" }
+  AddOp { "+" | "-" }
+  Symbol { "x" | "y" }
+}
 `, ["x", "+", "y", "/", "x"])
 
 // LR-but-not-LALR
