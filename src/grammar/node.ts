@@ -8,7 +8,7 @@ export class GrammarDeclaration extends Node {
   type!: "GrammarDeclaration"
   constructor(start: number, end: number,
               readonly rules: A<RuleDeclaration>,
-              readonly tokenGroups: A<TokenGroupDeclaration>,
+              readonly tokens: TokenGroupDeclaration | null,
               readonly precedences: A<PrecDeclaration>) {
     super("GrammarDeclaration", start, end)
   }
@@ -39,7 +39,9 @@ export class PrecDeclaration extends Node {
 
 export class TokenGroupDeclaration extends Node {
   type!: "TokenGroupDeclaration"
-  constructor(start: number, end: number, readonly rules: A<RuleDeclaration>) {
+  constructor(start: number, end: number,
+              readonly rules: A<RuleDeclaration>,
+              readonly groups: A<TokenGroupDeclaration>) {
     super("TokenGroupDeclaration", start, end)
   }
 }

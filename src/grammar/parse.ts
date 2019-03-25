@@ -105,17 +105,19 @@ function parseTop(input: Input) {
   let start = input.start
   let rules: RuleDeclaration[] = []
   let precs: PrecDeclaration[] = []
-  let tokenGroups: TokenGroupDeclaration[] = []
+  let tokens: TokenGroupDeclaration | null = null
 
   while (input.type != "eof") {
-    if (input.type == "id" && input.value == "tokens")
-      tokenGroups.push(parseTokenGroup(input))
-    else if (input.type == "id" && input.value == "prec")
+    if (input.type == "id" && input.value == "tokens") {
+      if (tokens) input.raise(`Multiple tokens declaractions`, input.start)
+      else tokens = parseTokenGroup(input)
+    } else if (input.type == "id" && input.value == "prec") {
       precs.push(parsePrec(input))
-    else
+    } else {
       rules.push(parseRule(input))
+    }
   }
-  return new GrammarDeclaration(start, input.lastEnd, rules, tokenGroups, precs)
+  return new GrammarDeclaration(start, input.lastEnd, rules, tokens, precs)
 }
 
 function parseRule(input: Input) {
@@ -252,8 +254,10 @@ function parseTokenGroup(input: Input) {
   let start = input.start
   input.next()
   input.expect("{")
-  let tokenRules: RuleDeclaration[] = []
-  while (!input.eat("}"))
-    tokenRules.push(parseRule(input))
-  return new TokenGroupDeclaration(start, input.lastEnd, tokenRules)
+  let tokenRules: RuleDeclaration[] = [], subGroups: TokenGroupDeclaration[] = []
+  while (!input.eat("}")) {
+    if (input.type == "id" && input.value == "group") subGroups.push(parseTokenGroup(input))
+    else tokenRules.push(parseRule(input))
+  }
+  return new TokenGroupDeclaration(start, input.lastEnd, tokenRules, subGroups)
 }

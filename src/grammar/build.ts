@@ -1,4 +1,4 @@
-import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
+import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, exprsEq} from "./node"
 import {Term, TermSet, Precedence, Rule, Grammar} from "./grammar"
 import {Edge, State} from "./token"
@@ -160,9 +160,8 @@ class Builder {
     this.input = new Input(text, fileName)
     this.ast = this.input.parse()
 
-    for (let tokens of this.ast.tokenGroups)
-      this.tokenGroups.push(new TokenGroup(this, tokens.rules))
-    if (!this.tokenGroups.length) this.tokenGroups.push(new TokenGroup(this, none))
+    if (this.ast.tokens) this.gatherTokenGroups(this.ast.tokens)
+    else this.tokenGroups.push(new TokenGroup(this, none, null))
 
     this.defineNamespace("conflict", new ConflictNamespace)
     this.defineNamespace("tag", new TagNamespace)
@@ -213,6 +212,12 @@ class Builder {
     if (tokens.accepting)
       this.input.raise(`Grammar contains zero-length tokens (in '${tokens.accepting.name}')`)
     return new Grammar(this.rules, this.terms, tokens, skip && skip.compile())
+  }
+
+  gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
+    let group = new TokenGroup(this, decl.rules, parent)
+    this.tokenGroups.push(group)
+    for (let subGroup of decl.groups) this.gatherTokenGroups(subGroup, group)
   }
 }
 
@@ -273,7 +278,9 @@ class TokenGroup {
   used: {[name: string]: boolean} = Object.create(null)
   building: string[] = [] // Used for recursion check
 
-  constructor(readonly b: Builder, readonly rules: ReadonlyArray<RuleDeclaration>) {
+  constructor(readonly b: Builder,
+              readonly rules: ReadonlyArray<RuleDeclaration>,
+              readonly parent: TokenGroup | null) {
     for (let rule of rules) this.b.unique(rule.id)
     let skip = rules.find(r => r.id.name == "skip")
     if (skip) {
@@ -344,8 +351,10 @@ class TokenGroup {
       }
       let name = expr.id.name, arg = args.find(a => a.name == name)
       if (arg) return this.build(arg.expr, from, arg.scope)
-      let rule = this.rules.find(r => r.id.name == name)
-      if (!rule) return this.raise(`Reference to rule '${expr.id.name}', which isn't in this token group`, expr.start)
+      let rule: RuleDeclaration | undefined = undefined
+      for (let scope: TokenGroup | null = this; scope && !rule; scope = scope.parent)
+        rule = scope.rules.find(r => r.id.name == name)
+      if (!rule) return this.raise(`Reference to rule '${expr.id.name}', which isn't found in this token group`, expr.start)
       return this.buildRule(rule, expr, from, args)
     } else if (expr.type == "ChoiceExpression") {
       return expr.exprs.reduce((out, expr) => out.concat(this.build(expr, from, args)), [] as Edge[])
