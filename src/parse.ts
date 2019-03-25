@@ -160,17 +160,11 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
       // FIXME get valid token groups from state
       if (grammar.skip) {
         let skip = grammar.skip.simulate(input, pos)
-        if (skip.length) pos = skip[skip.length - 1].end
+        if (skip) pos = skip.end
       }
       let tok = grammar.tokens.simulate(input, pos)
-      if (tok.length == 0 && !parses.length)
-        throw new SyntaxError("Invalid token at " + pos)
-      // FIXME filter by applicable tokens
-      for (let i = tok.length - 1; i >= 0; i--) {
-        let {term, end} = tok[i]
-        advance(stack, term, end)
-        if (i && tok[i - 1].end < end) break
-      }
+      if (tok) advance(stack, tok.term, tok.end)
+      else if (!parses.length) throw new SyntaxError("Invalid token at " + pos)
     } else {
       let result = advance(stack, grammar.terms.eof, pos)
       if (result) return result

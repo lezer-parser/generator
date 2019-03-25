@@ -21,8 +21,9 @@ let stateID = 1
 
 export class State {
   edges: Edge[] = []
-  accepting: Term[] = []
   id = stateID++
+
+  constructor(readonly accepting: Term | null = null) {}
 
   connect(edges: Edge[]) {
     for (let e of edges) {
@@ -44,14 +45,15 @@ export class State {
     return explore(this.closure().sort((a, b) => a.id - b.id))
 
     function explore(states: State[]) {
-      // FIXME properly compare and split ranges. Optimize
+      let newState = labeled[ids(states)] = new State(states.reduce((a: Term | null, s: State) => {
+        if (!s.accepting) return a
+        if (a && a != s.accepting)
+          throw new SyntaxError(`Overlapping tokens ${a.name} and ${s.accepting.name}`)
+        return s.accepting
+      }, null))
       let out: Edge[] = []
-      let newState = labeled[ids(states)] = new State
-      for (let state of states) {
-        for (let acc of state.accepting)
-          if (!newState.accepting.includes(acc)) newState.accepting.push(acc)
-        for (let edge of state.edges)
-          if (edge.from >= 0) out.push(edge)
+      for (let state of states) for (let edge of state.edges) {
+        if (edge.from >= 0) out.push(edge)
       }
       let transitions = mergeEdges(out)
       for (let merged of transitions) {
@@ -70,7 +72,7 @@ export class State {
       // term that isn't also in the next state are left out to help
       // reduce the number of unique state combinations
       if (state.edges.length == 1 && state.edges[0].from < 0 &&
-          !state.accepting.some(t => !state.edges[0].target.accepting.includes(t)))
+          !(state.accepting && state.edges[0].target.accepting != state.accepting))
         return explore(state.edges[0].target)
       result.push(state)
       for (let edge of state.edges) if (edge.from < 0) explore(edge.target)
@@ -79,18 +81,16 @@ export class State {
     return result
   }
 
-  simulate(input: string, pos: number): {term: Term, end: number}[] {
-    let result = []
-    for (let state: State = this; pos < input.length;) {
+  simulate(input: string, pos: number): {term: Term, end: number} | null {
+    let state: State = this
+    for (; pos < input.length;) {
       let next = input.codePointAt(pos)!
-      pos += next > 0xffff ? 2 : 1
       let edge = state.edges.find(e => e.from <= next && e.to > next)
       if (!edge) break
       state = edge.target
-      // FIXME try to avoid pushing duplicate tokens
-      for (let acc of state.accepting) result.push({term: acc, end: pos})
+      pos += next > 0xffff ? 2 : 1
     }
-    return result
+    return state.accepting ? {term: state.accepting, end: pos} : null
   }
 
   toString() {
@@ -99,8 +99,8 @@ export class State {
 
   toGraphViz(seen: State[]) {
     let out = ""
-    if (this.accepting.length)
-      out += `  ${this.id} [label=${this.accepting.map(t => t.name).join()}];\n`
+    if (this.accepting)
+      out += `  ${this.id} [label=${this.accepting.name}];\n`
     for (let edge of this.edges)
       out += `  ${this.id} ${edge};\n`
     for (let edge of this.edges) {

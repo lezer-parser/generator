@@ -210,8 +210,8 @@ class Builder {
   getGrammar() {
     let skip = this.tokenGroups[0].skipState
     let tokens = this.tokenGroups[0].startState.compile() // FIXME multiple groups
-    if (tokens.accepting.length)
-      this.input.raise(`Grammar contains zero-length tokens (in '${tokens.accepting[0].name}')`)
+    if (tokens.accepting)
+      this.input.raise(`Grammar contains zero-length tokens (in '${tokens.accepting.name}')`)
     return new Grammar(this.rules, this.terms, tokens, skip && skip.compile())
   }
 }
@@ -280,9 +280,8 @@ class TokenGroup {
       this.used.skip = true
       if (skip.params.length) return this.raise("Skip rules should not take parameters", skip.params[0].start)
       this.skipState = new State
-      let fin = new State
+      let fin = new State(b.terms.eof)
       fin.connect(this.build(skip.expr, this.skipState, none))
-      fin.accepting.push(b.terms.eof)
     }
   }
 
@@ -303,9 +302,8 @@ class TokenGroup {
     if (localArgs)
       this.raise(`Can't reference local rule arguments in arguments passed to a token`, expr.start)
     let term = this.makeTerminal(name, isTag(name))
-    let end = new State
+    let end = new State(term)
     end.connect(this.buildRule(rule, expr, this.startState))
-    end.accepting.push(term)
     this.built.push(new BuiltRule(name, expr.args, null, term))
     return term
   }
@@ -314,8 +312,7 @@ class TokenGroup {
     let id = JSON.stringify(expr.value)
     for (let built of this.built) if (built.id == id) return built.term
     let term = this.makeTerminal(id, null)
-    let end = new State
-    end.accepting.push(term)
+    let end = new State(term)
     end.connect(this.build(expr, this.startState, none))
     this.built.push(new BuiltRule(id, none, null, term))
     return term
@@ -356,7 +353,8 @@ class TokenGroup {
       for (let i = 0;; i++) {
         let next = this.build(expr.exprs[i], from, args)
         if (i == expr.exprs.length - 1) return next
-        ;(from = new State).connect(next)
+        from = new State
+        from.connect(next)
       }
     } else if (expr.type == "RepeatExpression") {
       if (expr.kind == "*") {
