@@ -1,9 +1,14 @@
 import {State} from "./token"
 import {buildAutomaton, State as TableState} from "./automaton"
 
+const TERMINAL = 1, EOF = 2, PROGRAM = 4
+
 export class Term {
-  constructor(readonly name: string, readonly terminal: boolean, readonly tag: string | null) {}
-  toString() { return this.terminal ? JSON.stringify(this.name) : this.name }
+  constructor(readonly name: string, readonly flags: number, readonly tag: string | null) {}
+  toString() { return this.name }
+  get terminal() { return (this.flags & TERMINAL) > 0 }
+  get eof() { return (this.flags & EOF) > 0 }
+  get program() { return (this.flags & PROGRAM) > 0 }
   cmp(other: Term) { return this == other ? 0 : (this.name < other.name ? -1 : 1) || this.terminal ? -1 : 1 }
 }
 
@@ -13,17 +18,18 @@ export class TermSet {
   eof: Term
 
   constructor() {
-    this.eof = this.makeTerminal("␄", null)
+    this.eof = new Term("␄", TERMINAL | EOF, null)
+    this.terminals.push(this.eof)
   }
 
   makeTerminal(name: string, tag: string | null) {
-    let result = new Term(name, true, tag)
+    let result = new Term(name, TERMINAL, tag)
     this.terminals.push(result)
     return result
   }
 
   makeNonTerminal(name: string, tag: string | null) {
-    let result = new Term(name, false, tag)
+    let result = new Term(name, name == "program" ? PROGRAM : 0, tag)
     this.nonTerminals.push(result)
     return result
   }

@@ -1,13 +1,15 @@
 import {buildGrammar} from "../src/grammar/build"
 import {parse} from "../src/parse"
 
-let filter = null, filterN = -1, printTokens = false, printSkip = false, printGrammar = false
+let filter = null, filterN = -1, printTokens = false, printSkip = false, printGrammar = false, printLR = false, printParse = false
 
 for (let i = 2; i < process.argv.length; i++) {
   let arg = process.argv[i]
   if (arg == "--tokens") printTokens = true
   else if (arg == "--skip") printSkip = true
   else if (arg == "--grammar") printGrammar = true
+  else if (arg == "--lr") printLR = true
+  else if (arg == "--parse") printParse = true
   else if (filter) filterN = +arg
   else filter = arg
 }
@@ -58,6 +60,7 @@ for (let file of fs.readdirSync(caseDir)) {
   if (printSkip && grammar.skip) console.log(grammar.skip.toString())
   if (printTokens) console.log(grammar.tokens.toString())
   if (printGrammar) console.log(grammar.rules.join("\n"))
+  if (printLR) console.log(grammar.table.join("\n"))
 
   if (parts.length == 1) throw new Error("Test with neither expected errors nor input cases (" + file + ")")
   for (let i = 1; i < parts.length; i++) {
@@ -70,7 +73,7 @@ for (let file of fs.readdirSync(caseDir)) {
     }
     let expected = compressAST(ast, file), parsed
     try {
-      parsed = parse(text.trim(), grammar).toString()
+      parsed = parse(text.trim(), grammar, undefined, printParse).toString()
     } catch (e) {
       fail(e.message, file, i)
       if (!(e instanceof SyntaxError)) console.log(e.stack)

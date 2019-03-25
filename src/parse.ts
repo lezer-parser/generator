@@ -110,41 +110,15 @@ class TreeCursor {
   }
 }
 
-export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0)): Node {
+export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0), verbose = false): Node {
   let parses = [new Frame(null, null, grammar.table[0], 0, 0)]
-  let done = null, maxPos = 0
   let cacheIter = new TreeCursor(cache)
-  parse: for (; !done;) {
-    if (parses.length == 0) throw new SyntaxError("NO PARSE @ " + maxPos)
-    let stack = takeFromHeap(parses, compareFrames), pos = stack.pos
-    let next = grammar.terms.eof, tokEnd = pos
-    if (pos < input.length) {
-      if (grammar.skip) {
-        let skip = grammar.skip.simulate(input, pos)
-        if (skip.length) pos = skip[skip.length - 1].end
-      }
-      let tok = grammar.tokens.simulate(input, pos)
-      if (tok.length == 0) throw new SyntaxError("Failed to find token at " + pos)
-      // FIXME filter by applicable tokens
-      ;({term: next, end: tokEnd} = tok[tok.length - 1])
-    }
-    if (!stack.state.ambiguous) {
-      for (let cached = cacheIter.nodeAt(pos); cached;
-           cached = cached.children.length && cached.positions[0] == 0 ? cached.children[0] : null) {
-        let match = stack.state.getGoto(cached.name!)
-        if (match) {
-          addFrame(parses, new Frame(stack, cached, match.target, pos /* FIXME */, pos + cached.length))
-          maxPos = Math.max(maxPos, pos + cached.length)
-          continue parse
-        }
-      }
-    }
 
-    stack.state.forEachAction(next, action => {
-      if (action instanceof Goto) {
-        maxPos = Math.max(maxPos, tokEnd)
-        addFrame(parses, new Frame(stack, Node.leaf(next.tag ? next : null, 1), action.target, pos, tokEnd))
-      } else if (action instanceof Reduce) {
+  function advance(stack: Frame, next: Term, nextEnd: number): Node | null {
+    let pos = stack.pos
+    for (let action of stack.state.terminals) if (action.term == next) {
+      let frame
+      if (action instanceof Reduce) {
         let newStack = stack, children = [], positions = []
         for (let i = action.rule.parts.length; i > 0; i--) {
           children.unshift(newStack.value!)
@@ -156,15 +130,52 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
         let value = children.length
           ? Node.of(action.rule.name.tag ? action.rule.name : null, children, positions)
           : Node.leaf(null, 0)
-        if (!newStack.prev && next == grammar.terms.eof) {
-          done = value
-          return
-        }
+        if (!newStack.prev && next.eof && action.rule.name.program) return value
 
         let newState = newStack.state.getGoto(action.rule.name)!.target
-        addFrame(parses, new Frame(newStack, value, newState, start, pos))
+        frame = new Frame(newStack, value, newState, start, pos)
+      } else { // Shift
+        frame = new Frame(stack, Node.leaf(next.tag ? next : null, 1), (action as Goto).target, pos, nextEnd)
       }
-    })
+      if (verbose) console.log(`${frame} (via ${next} ${action})`)
+      addFrame(parses, frame)
+    }
+    return null
   }
-  return done
+
+  parse: for (;;) {
+    let stack = takeFromHeap(parses, compareFrames), pos = stack.pos
+    if (!stack.state.ambiguous) {
+      for (let cached = cacheIter.nodeAt(pos); cached;
+           cached = cached.children.length && cached.positions[0] == 0 ? cached.children[0] : null) {
+        let match = stack.state.getGoto(cached.name!)
+        if (match) {
+          addFrame(parses, new Frame(stack, cached, match.target, pos /* FIXME */, pos + cached.length))
+          continue parse
+        }
+      }
+    }
+
+    if (pos < input.length) {
+      // FIXME get valid token groups from state
+      if (grammar.skip) {
+        let skip = grammar.skip.simulate(input, pos)
+        if (skip.length) pos = skip[skip.length - 1].end
+      }
+      let tok = grammar.tokens.simulate(input, pos)
+      if (tok.length == 0 && !parses.length)
+        throw new SyntaxError("Invalid token at " + pos)
+      // FIXME filter by applicable tokens
+      for (let i = tok.length - 1; i >= 0; i--) {
+        let {term, end} = tok[i]
+        advance(stack, term, end)
+        if (i && tok[i - 1].end < end) break
+      }
+    } else {
+      let result = advance(stack, grammar.terms.eof, pos)
+      if (result) return result
+    }
+    if (!parses.length)
+      throw new SyntaxError("No parse at " + pos + " with stack " + stack)
+  }
 }

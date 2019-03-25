@@ -51,7 +51,7 @@ function advanceWithPrec(set: Pos[], expr: Term): {set: Pos[], prec: Precedence 
   for (let pos of set) if (pos.next == expr) {
     if (pos.rule.precedence) {
       if (prec && !prec.eq(pos.rule.precedence))
-        throw new Error(`Conflicting precedences for terminal ${JSON.stringify(expr.name)} at ${set.join()}`)
+        throw new Error(`Conflicting precedences for terminal ${expr.name} at ${set.join()}`)
       prec = pos.rule.precedence
     }
     result.push(pos.advance())
@@ -138,10 +138,6 @@ export class State {
     this.terminals.push(value)
     this.terminalPrec.push(prec)
     return true
-  }
-
-  forEachAction(term: Term, f: (action: Action) => void) {
-    for (let a of this.terminals) if (a.term == term) f(a)
   }
 
   getGoto(term: Term) {
