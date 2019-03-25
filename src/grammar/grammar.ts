@@ -1,5 +1,5 @@
 import {State} from "./token"
-import {buildAutomaton, State as TableState} from "./automaton"
+import {State as TableState} from "./automaton"
 
 const TERMINAL = 1, EOF = 2, PROGRAM = 4
 
@@ -61,48 +61,16 @@ export class Rule {
   }
 }
 
-export class Grammar {
-  first: {[name: string]: Term[]}
-  readonly table: ReadonlyArray<TableState>
+export class TokenContext {
+  constructor(readonly skip: State | null,
+              readonly tokens: State) {}
+}
 
+export class Grammar {
   constructor(readonly rules: Rule[],
               readonly terms: TermSet,
-              readonly tokens: State,
-              readonly skip: State | null) {
-    this.first = computeFirst(this.rules, this.terms.nonTerminals)
-    this.table = buildAutomaton(this)
-  }
+              readonly table: ReadonlyArray<TableState>,
+              readonly tokenTable: ReadonlyArray<ReadonlyArray<TokenContext>>) {}
 
   toString() { return this.rules.join("\n") }
-}
-
-function add<T>(value: T, array: T[]) {
-  if (!array.includes(value)) array.push(value)
-}
-
-function computeFirst(rules: Rule[], nonTerminals: Term[]) {
-  let table: {[term: string]: Term[]} = {}
-  for (let t of nonTerminals) table[t.name] = []
-  for (;;) {
-    let change = false
-    for (let rule of rules) {
-      let set = table[rule.name.name]
-      let found = false, startLen = set.length
-      for (let part of rule.parts) {
-        found = true
-        if (part.terminal) {
-          add(part, set)
-        } else {
-          for (let t of table[part.name]) {
-            if (t == null) found = false
-            else add(t, set)
-          }
-        }
-        if (found) break
-      }
-      if (!found) add(null, set)
-      if (set.length > startLen) change = true
-    }
-    if (!change) return table
-  }
 }

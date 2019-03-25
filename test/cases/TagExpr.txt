@@ -1,0 +1,7 @@
+program { (tag.A<"a"> | tag.B<"b">)+ }
+
+---
+
+baba
+
+==> B,A,B,A

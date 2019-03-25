@@ -21,6 +21,7 @@ let stateID = 1
 
 export class State {
   edges: Edge[] = []
+  // FIXME number per automaton?
   id = stateID++
 
   constructor(readonly accepting: Term | null = null) {}

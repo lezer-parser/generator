@@ -1,0 +1,23 @@
+prec left binOp { div }
+
+program { expr }
+
+expr { RegExp | Symbol | BinOp }
+
+BinOp { binOp.div<expr "/" expr> }
+
+tokens {
+  skip { std.whitespace* }
+
+  Symbol { std.asciiLetter+ }
+
+  group {
+    RegExp { "/" [^/]+ "/" }
+  }
+}
+
+---
+
+x / y / /foo/
+
+==> BinOp(BinOp(Symbol,Symbol),RegExp)

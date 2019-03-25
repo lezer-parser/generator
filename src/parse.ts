@@ -156,20 +156,30 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
       }
     }
 
-    if (pos < input.length) {
-      // FIXME get valid token groups from state
-      if (grammar.skip) {
-        let skip = grammar.skip.simulate(input, pos)
-        if (skip) pos = skip.end
+    let token: Term | null = null, start = pos, end = pos, sawEof = false
+    for (let tokenCx of grammar.tokenTable[stack.state.id]) {
+      let curPos = pos
+      if (tokenCx.skip) {
+        let skip = tokenCx.skip.simulate(input, curPos)
+        if (skip) curPos = skip.end
       }
-      let tok = grammar.tokens.simulate(input, pos)
-      if (tok) advance(stack, tok.term, tok.end)
-      else if (!parses.length) throw new SyntaxError("Invalid token at " + pos)
-    } else {
-      let result = advance(stack, grammar.terms.eof, pos)
+      if (curPos == input.length) {
+        if (sawEof) continue
+        sawEof = true
+        token = grammar.terms.eof
+        start = end = curPos
+      } else {
+        let found = tokenCx.tokens.simulate(input, curPos)
+        if (!found) continue
+        token = found.term
+        start = curPos
+        end = found.end
+      }
+      let result = advance(stack, token, end)
       if (result) return result
     }
     if (!parses.length)
-      throw new SyntaxError("No parse at " + pos + " with stack " + stack)
+      throw new SyntaxError("No parse at " + start + " with " + (token || "no valid token") +
+                            " (stack is " + stack + ")")
   }
 }

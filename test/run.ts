@@ -57,8 +57,19 @@ for (let file of fs.readdirSync(caseDir)) {
     fail("Failed to raise expected grammar error", file)
     continue
   }
-  if (printSkip && grammar.skip) console.log(grammar.skip.toString())
-  if (printTokens) console.log(grammar.tokens.toString())
+
+  if (printSkip || printTokens) {
+    let seen: any[] = []
+    for (let tokens of grammar.tokenTable) {
+      for (let cx of tokens) {
+        if (!seen.includes(cx)) {
+          if (printSkip && cx.skip) console.log(cx.skip.toString())
+          if (printTokens) console.log(cx.tokens.toString())
+          seen.push(cx)
+        }
+      }
+    }
+  }
   if (printGrammar) console.log(grammar.rules.join("\n"))
   if (printLR) console.log(grammar.table.join("\n"))
 

@@ -1,8 +1,9 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, exprsEq} from "./node"
-import {Term, TermSet, Precedence, Rule, Grammar} from "./grammar"
+import {Term, TermSet, Precedence, Rule, Grammar, TokenContext} from "./grammar"
 import {Edge, State} from "./token"
 import {Input} from "./parse"
+import {buildAutomaton, State as LRState} from "./automaton"
 
 // FIXME add inlining other other grammar simplifications?
 
@@ -207,17 +208,37 @@ class Builder {
   }
 
   getGrammar() {
-    let skip = this.tokenGroups[0].skipState
-    let tokens = this.tokenGroups[0].startState.compile() // FIXME multiple groups
-    if (tokens.accepting)
-      this.input.raise(`Grammar contains zero-length tokens (in '${tokens.accepting.name}')`)
-    return new Grammar(this.rules, this.terms, tokens, skip && skip.compile())
+    let table = buildAutomaton(this.rules, this.terms)
+    // FIXME merge equivalent skip directives
+    let tokenContexts: TokenContext[] = []
+    for (let group of this.tokenGroups) {
+      let skip = group.skipState ? group.skipState.compile() : group.parent ? tokenContexts[this.tokenGroups.indexOf(group.parent)].skip : null
+      let cx = new TokenContext(skip, group.startState.compile())
+      if (cx.tokens.accepting)
+        this.input.raise(`Grammar contains zero-length tokens (in '${cx.tokens.accepting.name}')`,
+                         group.rules.find(r => r.id.name == cx.tokens.accepting!.name)!.start)
+      tokenContexts.push(cx)
+    }
+    let tokenTable = table.map(state => this.tokensForState(state, tokenContexts))
+    return new Grammar(this.rules, this.terms, table, tokenTable)
   }
 
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
     let group = new TokenGroup(this, decl.rules, parent)
     this.tokenGroups.push(group)
     for (let subGroup of decl.groups) this.gatherTokenGroups(subGroup, group)
+  }
+
+  tokensForState(state: LRState, contexts: ReadonlyArray<TokenContext>) {
+    let found: TokenContext[] = []
+    for (let action of state.terminals) {
+      if (action.term.eof) return contexts // Try all possible whitespace before eof
+      for (let i = 0; i < this.tokenGroups.length; i++) {
+        if (this.tokenGroups[i].defines(action.term) && !found.includes(contexts[i]))
+          found.push(contexts[i])
+      }
+    }
+    return found
   }
 }
 
@@ -281,7 +302,7 @@ class TokenGroup {
   constructor(readonly b: Builder,
               readonly rules: ReadonlyArray<RuleDeclaration>,
               readonly parent: TokenGroup | null) {
-    for (let rule of rules) this.b.unique(rule.id)
+    for (let rule of rules) if (rule.id.name != "skip") this.b.unique(rule.id)
     let skip = rules.find(r => r.id.name == "skip")
     if (skip) {
       this.used.skip = true
@@ -323,6 +344,10 @@ class TokenGroup {
     end.connect(this.build(expr, this.startState, none))
     this.built.push(new BuiltRule(id, none, null, term))
     return term
+  }
+
+  defines(term: Term): boolean {
+    return this.built.some(b => b.term == term)
   }
 
   raise(msg: string, pos: number = -1): never {

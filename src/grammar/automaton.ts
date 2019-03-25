@@ -1,4 +1,4 @@
-import {Term, Precedence, Rule, Grammar} from "./grammar"
+ import {Term, TermSet, Precedence, Rule} from "./grammar"
 
 export class Pos {
   constructor(readonly rule: Rule, readonly pos: number, public ahead: Term) {}
@@ -25,11 +25,11 @@ export class Pos {
     return `${this.rule.name} -> ${parts.join(" ")} [${this.ahead}]`
   }
 
-  termsAhead(grammar: Grammar): Term[] {
+  termsAhead(first: {[name: string]: Term[]}): Term[] {
     let found: Term[] = []
     for (let pos = this.pos + 1; pos < this.rule.parts.length; pos++) {
       let next = this.rule.parts[pos], cont = false
-      for (let term of next.terminal ? [next] : grammar.first[next.name]) {
+      for (let term of next.terminal ? [next] : first[next.name]) {
         if (term == null) cont = true
         else if (!found.includes(term)) found.push(term)
       }
@@ -145,13 +145,13 @@ export class State {
   }
 }
 
-function closure(set: ReadonlyArray<Pos>, grammar: Grammar) {
+function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[name: string]: Term[]}) {
   let result = set.slice()
   for (let pos of result) {
     let next = pos.next
     if (!next || next.terminal) continue
-    let ahead = pos.termsAhead(grammar)
-    for (let rule of grammar.rules) if (rule.name == next) {
+    let ahead = pos.termsAhead(first)
+    for (let rule of rules) if (rule.name == next) {
       for (let a of ahead) {
         if (!result.some(p => p.rule == rule && p.pos == 0 && p.ahead == a))
           result.push(new Pos(rule, 0, a))
@@ -161,21 +161,53 @@ function closure(set: ReadonlyArray<Pos>, grammar: Grammar) {
   return result.sort((a, b) => a.cmp(b))
 }
 
+function add<T>(value: T, array: T[]) {
+  if (!array.includes(value)) array.push(value)
+}
+
+function computeFirst(rules: ReadonlyArray<Rule>, nonTerminals: Term[]) {
+  let table: {[term: string]: Term[]} = {}
+  for (let t of nonTerminals) table[t.name] = []
+  for (;;) {
+    let change = false
+    for (let rule of rules) {
+      let set = table[rule.name.name]
+      let found = false, startLen = set.length
+      for (let part of rule.parts) {
+        found = true
+        if (part.terminal) {
+          add(part, set)
+        } else {
+          for (let t of table[part.name]) {
+            if (t == null) found = false
+            else add(t, set)
+          }
+        }
+        if (found) break
+      }
+      if (!found) add(null, set)
+      if (set.length > startLen) change = true
+    }
+    if (!change) return table
+  }
+}
+
 // Builds a full LR(1) automaton
-export function buildFullAutomaton(grammar: Grammar) {
+export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet) {
   let states: State[] = []
+  let first = computeFirst(rules, terms.nonTerminals)
   function explore(set: Pos[]) {
     if (set.length == 0) return null
-    set = closure(set, grammar)
+    set = closure(set, rules, first)
     let state = states.find(s => cmpSet(s.set, set) == 0)
     if (!state) {
       states.push(state = new State(states.length, set))
-      for (let term of grammar.terms.terminals) {
-        if (term == grammar.terms.eof) continue
+      for (let term of terms.terminals) {
+        if (term == terms.eof) continue
         let {set: newSet, prec} = advanceWithPrec(set, term), shift = explore(newSet)
         if (shift) state.addAction(new Shift(term, shift), prec)
       }
-      for (let nt of grammar.terms.nonTerminals) {
+      for (let nt of terms.nonTerminals) {
         let goto = explore(advance(set, nt))
         if (goto) state.goto.push(new Goto(nt, goto))
       }
@@ -188,7 +220,7 @@ export function buildFullAutomaton(grammar: Grammar) {
     return state
   }
 
-  explore(grammar.rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, grammar.terms.eof)))
+  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, terms.eof)))
   return states
 }
 
@@ -254,6 +286,6 @@ function collapseAutomaton(states: State[]): State[] {
   }
 }
 
-export function buildAutomaton(grammar: Grammar) {
-  return collapseAutomaton(buildFullAutomaton(grammar))
+export function buildAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet) {
+  return collapseAutomaton(buildFullAutomaton(rules, terms))
 }
