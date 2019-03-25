@@ -69,6 +69,7 @@ export class TokenContext {
 export class Grammar {
   constructor(readonly rules: Rule[],
               readonly terms: TermSet,
+              readonly specialized: {[terminal: string]: {[value: string]: Term}},
               readonly table: ReadonlyArray<TableState>,
               readonly tokenTable: ReadonlyArray<ReadonlyArray<TokenContext>>) {}
 

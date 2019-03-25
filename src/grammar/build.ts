@@ -31,6 +31,8 @@ class Context {
       if (!ns)
         this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
       return ns.resolve(expr, this)
+    } else if (expr.id.name == "specialize") {
+      return this.resolveSpecialization(expr)
     } else {
       let innerPrec = expr.args.length ? this.precedence : null
       for (let built of this.b.built) if (built.matches(expr, innerPrec)) return [built.term]
@@ -100,6 +102,21 @@ class Context {
     this.b.built.push(new BuiltRule(rule.id.name, args, cx.precedence, name))
     return cx.defineRule(name, cx.normalizeTopExpr(expr, name))
   }
+
+  resolveSpecialization(expr: NamedExpression) {
+    if (expr.args.length != 2) this.raise(`'specialize' takes two arguments`, expr.start)
+    if (!(expr.args[1] instanceof LiteralExpression))
+      this.raise(`The second argument to 'specialize' must be a literal`, expr.args[1].start)
+    let terminal = this.normalizeExpr(expr.args[0])
+    if (terminal.length != 1 || !terminal[0].terminal)
+      this.raise(`The first argument to 'specialize' must resolve to a token`, expr.args[0].start)
+    let term = terminal[0].name, value = (expr.args[1] as LiteralExpression).value
+    let table = this.b.specialized[term] || (this.b.specialized[term] = Object.create(null))
+    let known = table[value]
+    if (!known) known = table[value] =
+      this.b.makeTerminal(term + "-" + JSON.stringify(value), null, this.b.tokens[term])
+    return [known]
+  }
 }
 
 function isTag(name: string) {
@@ -125,10 +142,12 @@ class Builder {
   input: Input
   terms = new TermSet()
   tokenGroups: TokenGroup[] = []
+  specialized: {[name: string]: {[value: string]: Term}} = Object.create(null)
   rules: Rule[] = []
   built: BuiltRule[] = []
   ruleNames: {[name: string]: boolean} = Object.create(null)
   namespaces: {[name: string]: Namespace} = Object.create(null)
+  tokens: {[name: string]: TokenGroup} = Object.create(null)
 
   constructor(text: string, fileName: string | null = null) {
     this.input = new Input(text, fileName)
@@ -164,6 +183,7 @@ class Builder {
   unique(id: Identifier) {
     if (this.ruleNames[id.name])
       this.input.raise(`Duplicate definition of rule '${id.name}'`, id.start)
+    if (id.name == "specialize") this.input.raise("The name 'specialize' is reserved for a built-in operator", id.start)
     this.ruleNames[id.name] = true
   }
 
@@ -193,7 +213,7 @@ class Builder {
       tokenContexts.push(cx)
     }
     let tokenTable = table.map(state => this.tokensForState(state, tokenContexts))
-    return new Grammar(this.rules, this.terms, table, tokenTable)
+    return new Grammar(this.rules, this.terms, this.specialized, table, tokenTable)
   }
 
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
@@ -202,14 +222,22 @@ class Builder {
     for (let subGroup of decl.groups) this.gatherTokenGroups(subGroup, group)
   }
 
+  makeTerminal(name: string, tag: string | null, group: TokenGroup) {
+    for (let i = 0;; i++) {
+      let cur = i ? `${name}-${i}` : name
+      if (this.terms.terminals.some(t => t.name == cur)) continue
+      this.tokens[cur] = group
+      return this.terms.makeTerminal(cur, tag)
+    }
+  }
+
   tokensForState(state: LRState, contexts: ReadonlyArray<TokenContext>) {
     let found: TokenContext[] = []
     for (let action of state.terminals) {
       if (action.term.eof) return contexts // Try all possible whitespace before eof
-      for (let i = 0; i < this.tokenGroups.length; i++) {
-        if (this.tokenGroups[i].defines(action.term) && !found.includes(contexts[i]))
-          found.push(contexts[i])
-      }
+      let group = this.tokens[action.term.name]
+      let context = contexts[this.tokenGroups.indexOf(group)]
+      if (!found.includes(context)) found.push(context)
     }
     return found
   }
@@ -303,20 +331,12 @@ class TokenGroup {
     }
   }
 
-  makeTerminal(name: string, tag: string | null) {
-    for (let i = 0;; i++) {
-      let cur = i ? `${name}-${i}` : name
-      if (this.b.terms.terminals.some(t => t.name == cur)) continue
-      return this.b.terms.makeTerminal(cur, tag)
-    }
-  }
-
   getToken(expr: NamedExpression, cx: Context) {
     for (let built of this.built) if (built.matches(expr)) return built.term
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    let term = this.makeTerminal(name, isTag(name))
+    let term = this.b.makeTerminal(name, isTag(name), this)
     let end = new State(term)
     end.connect(this.buildRule(rule, expr, this.startState))
     this.built.push(new BuiltRule(name, expr.args, null, term))
@@ -326,7 +346,7 @@ class TokenGroup {
   getLiteral(expr: LiteralExpression) {
     let id = JSON.stringify(expr.value)
     for (let built of this.built) if (built.id == id) return built.term
-    let term = this.makeTerminal(id, null)
+    let term = this.b.makeTerminal(id, null, this)
     let end = new State(term)
     end.connect(this.build(expr, this.startState, none))
     this.built.push(new BuiltRule(id, none, null, term))

@@ -171,9 +171,14 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
       } else {
         let found = tokenCx.tokens.simulate(input, curPos)
         if (!found) continue
-        token = found.term
         start = curPos
         end = found.end
+        token = found.term
+        let specialized = grammar.specialized[token.name]
+        if (specialized) {
+          let value = specialized[input.slice(start, end)]
+          if (value) advance(stack, value, end)
+        }
       }
       let result = advance(stack, token, end)
       if (result) return result
