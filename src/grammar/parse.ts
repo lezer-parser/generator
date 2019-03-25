@@ -10,7 +10,6 @@ export class Input {
   value: any = null
   start = 0
   end = 0
-  lastEnd = 0
   
   constructor(readonly string: string,
               readonly fileName: string | null = null) {
@@ -44,7 +43,6 @@ export class Input {
   }
 
   next() {
-    this.lastEnd = this.end
     let start = this.match(this.end, /^(\s|\/\/.*|\/\*[^]*?\*\/)*/)
     if (start == this.string.length) return this.set("eof", null, start, start)
 
@@ -117,7 +115,7 @@ function parseTop(input: Input) {
       rules.push(parseRule(input))
     }
   }
-  return new GrammarDeclaration(start, input.lastEnd, rules, tokens, precs)
+  return new GrammarDeclaration(start, rules, tokens, precs)
 }
 
 function parseRule(input: Input) {
@@ -136,7 +134,7 @@ function parseRule(input: Input) {
   input.expect("{")
   let expr = parseExprChoice(input)
   input.expect("}")
-  return new RuleDeclaration(start, input.lastEnd, id, params, expr)
+  return new RuleDeclaration(start, id, params, expr)
 }
 
 const SET_MARKER = "\ufdda" // (Invalid unicode character)
@@ -152,10 +150,10 @@ function parseExprInner(input: Input): Expression {
   if (input.type == "string") {
     let value = input.value
     input.next()
-    if (value.length == 0) return new SequenceExpression(start, input.lastEnd, [])
-    return new LiteralExpression(start, input.lastEnd, value)
+    if (value.length == 0) return new SequenceExpression(start, [])
+    return new LiteralExpression(start, value)
   } else if (input.eat("id", "_")) {
-    return new AnyExpression(start, input.lastEnd)
+    return new AnyExpression(start)
   } else if (input.type == "set") {
     let content = input.value, invert = false
     if (/^\^/.test(content)) {
@@ -179,7 +177,7 @@ function parseExprInner(input: Input): Expression {
       }
     }
     input.next()
-    return new SetExpression(start, input.lastEnd, ranges.sort((a, b) => a[0] - b[0]), invert)
+    return new SetExpression(start, ranges.sort((a, b) => a[0] - b[0]), invert)
   } else {
     let id = parseIdent(input), namespace = null
     if (input.eat(".")) {
@@ -191,7 +189,7 @@ function parseExprInner(input: Input): Expression {
       if (args.length) input.expect(",")
       args.push(parseExprChoice(input))
     }
-    return new NamedExpression(start, input.lastEnd, namespace, id, args)
+    return new NamedExpression(start, namespace, id, args)
   }
 }
 
@@ -200,7 +198,7 @@ function parseExprSuffix(input: Input): Expression {
   let expr = parseExprInner(input), kind = input.type
   if (kind == "*" || kind == "?" || kind == "+") {
     input.next()
-    return new RepeatExpression(start, input.lastEnd, expr, kind)
+    return new RepeatExpression(start, expr, kind)
   }
   return expr
 }
@@ -216,7 +214,7 @@ function parseExprSequence(input: Input) {
   let exprs: Expression[] = [first]
   do { exprs.push(parseExprSuffix(input)) }
   while (!endOfSequence(input))
-  return new SequenceExpression(start, input.lastEnd, exprs)
+  return new SequenceExpression(start, exprs)
 }
 
 function parseExprChoice(input: Input) {
@@ -225,14 +223,14 @@ function parseExprChoice(input: Input) {
   let exprs: Expression[] = [left]
   do { exprs.push(parseExprSequence(input)) }
   while (input.eat("|"))
-  return new ChoiceExpression(start, input.lastEnd, exprs)
+  return new ChoiceExpression(start, exprs)
 }
 
 function parseIdent(input: Input) {
   if (input.type != "id") input.unexpected()
   let start = input.start, name = input.value
   input.next()
-  return new Identifier(start, input.lastEnd, name)
+  return new Identifier(start, name)
 }
 
 function parsePrec(input: Input) {
@@ -247,7 +245,7 @@ function parsePrec(input: Input) {
     assoc.push(input.eat("id", "left") ? "left" : input.eat("id", "right") ? "right" : baseAssoc)
     names.push(parseIdent(input))
   }
-  return new PrecDeclaration(start, input.lastEnd, id, assoc, names)
+  return new PrecDeclaration(start, id, assoc, names)
 }
       
 function parseTokenGroup(input: Input) {
@@ -259,5 +257,5 @@ function parseTokenGroup(input: Input) {
     if (input.type == "id" && input.value == "group") subGroups.push(parseTokenGroup(input))
     else tokenRules.push(parseRule(input))
   }
-  return new TokenGroupDeclaration(start, input.lastEnd, tokenRules, subGroups)
+  return new TokenGroupDeclaration(start, tokenRules, subGroups)
 }

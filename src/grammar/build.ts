@@ -1,5 +1,6 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclaration,
-        Expression, Identifier, LiteralExpression, NamedExpression, exprsEq} from "./node"
+        Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
+        ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, exprsEq} from "./node"
 import {Term, TermSet, Precedence, Rule, Grammar, TokenContext} from "./grammar"
 import {Edge, State} from "./token"
 import {Input} from "./parse"
@@ -9,21 +10,10 @@ import {buildAutomaton, State as LRState} from "./automaton"
 
 const none: ReadonlyArray<any> = []
 
-class Arg {
-  constructor(readonly name: string,
-              readonly expr: NamedExpression | null,
-              readonly value: Term[] | null) {}
-}
-
 class Context {
-  argNames: ReadonlyArray<string>
-
   constructor(readonly b: Builder,
               readonly rule: RuleDeclaration,
-              readonly precedence: Precedence | null = null,
-              readonly args: ReadonlyArray<Arg> = none) {
-    this.argNames = args.length ? args.map(a => a.name) : none
-  }
+              readonly precedence: Precedence | null = null) {}
 
   newName() {
     return this.b.newName(this.rule.id.name)
@@ -36,22 +26,14 @@ class Context {
   }
 
   resolve(expr: NamedExpression): Term[] {
-    let arg
     if (expr.namespace) {
       let ns = this.b.namespaces[expr.namespace.name]
       if (!ns)
         this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
       return ns.resolve(expr, this)
-    } else if (arg = this.args.find(a => a.name == expr.id.name)) {
-      if (arg.expr)
-        return this.resolve(new NamedExpression(expr.start, expr.end, arg.expr.namespace, arg.expr.id, expr.args))
-      if (expr.args.length)
-        this.raise(`Passing arguments to a by-value rule parameter`, expr.args[0].start)
-      return arg.value!
     } else {
       let innerPrec = expr.args.length ? this.precedence : null
-      if (!expr.args.some(e => e.containsNames(this.argNames))) for (let built of this.b.built)
-        if (built.matches(expr, innerPrec)) return [built.term]
+      for (let built of this.b.built) if (built.matches(expr, innerPrec)) return [built.term]
 
       for (let tokens of this.b.tokenGroups) {
         let found = tokens.getToken(expr, this)
@@ -67,27 +49,19 @@ class Context {
     }
   }
 
-  resolveArg(name: string, e: Expression) {
-    if (e.type == "NamedExpression" && e.args.length == 0) {
-      let found = this.args.find(a => a.name == e.id.name)
-      return found ? new Arg(name, found.expr, found.value) : new Arg(name, e, null)
-    }
-    return new Arg(name, null, this.normalizeExpr(e))
-  }
-
   normalizeTopExpr(expr: Expression, self: Term): Term[][] {
-    if (expr.type == "RepeatExpression" && expr.kind == "?")
+    if (expr instanceof RepeatExpression && expr.kind == "?")
       return [[], ...this.normalizeTopExpr(expr.expr, self)]
-    else if (expr.type == "RepeatExpression" && expr.kind == "*")
+    else if (expr instanceof RepeatExpression && expr.kind == "*")
       return [[], [self, ...this.normalizeExpr(expr.expr)]]
-    else if (expr.type == "ChoiceExpression")
+    else if (expr instanceof ChoiceExpression)
       return expr.exprs.map(e => this.normalizeExpr(e))
     else
       return [this.normalizeExpr(expr)]
   }
 
   normalizeExpr(expr: Expression): Term[] {
-    if (expr.type == "RepeatExpression") {
+    if (expr instanceof RepeatExpression) {
       if (expr.kind == "?") {
         let name = this.newName()
         return this.defineRule(this.newName(), [[] as Term[]].concat(this.normalizeTopExpr(expr.expr, name)))
@@ -98,13 +72,13 @@ class Context {
         let result = this.defineRule(name, [[name].concat(inner), []])
         return expr.kind == "*" ? result : inner.concat(result)
       }
-    } else if (expr.type == "ChoiceExpression") {
+    } else if (expr instanceof ChoiceExpression) {
       return this.defineRule(this.newName(), expr.exprs.map(e => this.normalizeExpr(e)))
-    } else if (expr.type == "SequenceExpression") {
+    } else if (expr instanceof SequenceExpression) {
       return expr.exprs.reduce((a, e) => a.concat(this.normalizeExpr(e)), [] as Term[])
-    } else if (expr.type == "LiteralExpression") {
+    } else if (expr instanceof LiteralExpression) {
       return expr.value ? [this.b.tokenGroups[0].getLiteral(expr)] : []
-    } else if (expr.type == "NamedExpression") {
+    } else if (expr instanceof NamedExpression) {
       return this.resolve(expr)
     } else {
       return this.raise("This type of expression may not occur in non-token rules", expr.start)
@@ -116,16 +90,15 @@ class Context {
   }
 
   withPrecedence(prec: Precedence | null) {
-    return new Context(this.b, this.rule, prec, this.args)
+    return new Context(this.b, this.rule, prec)
   }
 
   buildRule(rule: RuleDeclaration, args: ReadonlyArray<Expression>): Term[] {
-    let cx = new Context(this.b, rule, args.length ? this.precedence : null,
-                         args.map((a, i) => this.resolveArg(rule.params[i].name, a)))
+    let cx = new Context(this.b, rule, args.length ? this.precedence : null)
+    let expr = args.length ? this.b.substituteArgs(rule.expr, args, rule.params) : rule.expr
     let name = this.b.newName(rule.id.name, isTag(rule.id.name) || true)
-    if (!args.some(a => a.containsNames(this.argNames)))
-      this.b.built.push(new BuiltRule(rule.id.name, args, cx.precedence, name))
-    return cx.defineRule(name, cx.normalizeTopExpr(rule.expr, name))
+    this.b.built.push(new BuiltRule(rule.id.name, args, cx.precedence, name))
+    return cx.defineRule(name, cx.normalizeTopExpr(expr, name))
   }
 }
 
@@ -240,6 +213,23 @@ class Builder {
     }
     return found
   }
+
+  substituteArgs(expr: Expression, args: ReadonlyArray<Expression>, params: ReadonlyArray<Identifier>) {
+    return expr.walk(expr => {
+      let found
+      if (expr instanceof NamedExpression && !expr.namespace &&
+          (found = params.findIndex(p => p.name == expr.id.name)) > -1) {
+        let arg = args[found]
+        if (expr.args.length) {
+          if (arg instanceof NamedExpression && !arg.args.length)
+            return new NamedExpression(expr.start, arg.namespace, arg.id, expr.args)
+          this.input.raise(`Passing arguments to a parameter that already has arguments`, expr.start)
+        }
+        return arg
+      }
+      return expr
+    })
+  }
 }
 
 let precID = 1
@@ -322,13 +312,10 @@ class TokenGroup {
   }
 
   getToken(expr: NamedExpression, cx: Context) {
-    let localArgs = expr.args.some(arg => arg.containsNames(cx.argNames))
-    if (!localArgs) for (let built of this.built) if (built.matches(expr)) return built.term
+    for (let built of this.built) if (built.matches(expr)) return built.term
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    if (localArgs)
-      this.raise(`Can't reference local rule arguments in arguments passed to a token`, expr.start)
     let term = this.makeTerminal(name, isTag(name))
     let end = new State(term)
     end.connect(this.buildRule(rule, expr, this.startState))
@@ -362,14 +349,14 @@ class TokenGroup {
     if (this.building.includes(name))
       this.raise(`Recursive token rules: ${this.building.slice(this.building.lastIndexOf(name)).join(" -> ")}`, expr.start)
     this.building.push(name)
-    let result = this.build(rule.expr, from,
+    let result = this.build(this.b.substituteArgs(rule.expr, expr.args, rule.params), from,
                             expr.args.map((e, i) => new TokenArg(rule!.params[i].name, e, args)))
     this.building.pop()
     return result
   }
 
   build(expr: Expression, from: State, args: ReadonlyArray<TokenArg>): Edge[] {
-    if (expr.type == "NamedExpression") {
+    if (expr instanceof NamedExpression) {
       if (expr.namespace) {
         if (expr.namespace.name == "std") return this.buildStd(expr, from)
         this.b.input.raise(`Unknown namespace '${expr.namespace.name}'`, expr.start)
@@ -381,16 +368,16 @@ class TokenGroup {
         rule = scope.rules.find(r => r.id.name == name)
       if (!rule) return this.raise(`Reference to rule '${expr.id.name}', which isn't found in this token group`, expr.start)
       return this.buildRule(rule, expr, from, args)
-    } else if (expr.type == "ChoiceExpression") {
+    } else if (expr instanceof ChoiceExpression) {
       return expr.exprs.reduce((out, expr) => out.concat(this.build(expr, from, args)), [] as Edge[])
-    } else if (expr.type == "SequenceExpression") {
+    } else if (expr instanceof SequenceExpression) {
       for (let i = 0;; i++) {
         let next = this.build(expr.exprs[i], from, args)
         if (i == expr.exprs.length - 1) return next
         from = new State
         from.connect(next)
       }
-    } else if (expr.type == "RepeatExpression") {
+    } else if (expr instanceof RepeatExpression) {
       if (expr.kind == "*") {
         let loop = new State
         from.nullEdge(loop)
@@ -404,9 +391,9 @@ class TokenGroup {
       } else { // expr.kind == "?"
         return [from.nullEdge()].concat(this.build(expr.expr, from, args))
       }
-    } else if (expr.type == "SetExpression") {
+    } else if (expr instanceof SetExpression) {
       return (expr.inverted ? invertRanges(expr.ranges) : expr.ranges).map(([a, b]) => from.edge(a, b))
-    } else if (expr.type == "LiteralExpression") {
+    } else if (expr instanceof LiteralExpression) {
       for (let i = 0;;) {
         let code = expr.value.codePointAt(i)!
         i += code <= 0xffff ? 1 : 2
@@ -418,7 +405,7 @@ class TokenGroup {
           return [from.edge(code, code + 1)]
         }
       }
-    } else if (expr.type == "AnyExpression") {
+    } else if (expr instanceof AnyExpression) {
       return [from.edge(0, 2e8)] // FIXME optimize out comparison in automaton
     } else {
       return this.raise(`Unrecognized expression type in token`, (expr as any).start)

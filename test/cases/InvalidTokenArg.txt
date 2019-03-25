@@ -1,0 +1,11 @@
+program { foo<bar> }
+
+bar { bar "x" | "" }
+
+foo<e> { Token<e> }
+
+tokens {
+  Token<x> { x "!" }
+}
+
+//! isn't found in this token group

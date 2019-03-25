@@ -1,27 +1,25 @@
 export class Node {
-  constructor(readonly type: string, readonly start: number, readonly end: number) {}
+  constructor(readonly start: number) {}
 }
 
 type A<T> = ReadonlyArray<T>
 
 export class GrammarDeclaration extends Node {
-  type!: "GrammarDeclaration"
-  constructor(start: number, end: number,
+  constructor(start: number,
               readonly rules: A<RuleDeclaration>,
               readonly tokens: TokenGroupDeclaration | null,
               readonly precedences: A<PrecDeclaration>) {
-    super("GrammarDeclaration", start, end)
+    super(start)
   }
   toString() { return Object.values(this.rules).join("\n") }
 }
 
 export class RuleDeclaration extends Node {
-  type!: "RuleDeclaration"
-  constructor(start: number, end: number,
+  constructor(start: number,
               readonly id: Identifier,
               readonly params: A<Identifier>,
               readonly expr: Expression) {
-    super("RuleDeclaration", start, end)
+    super(start)
   }
   toString() {
     return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") + " -> " + this.expr
@@ -29,102 +27,101 @@ export class RuleDeclaration extends Node {
 }
 
 export class PrecDeclaration extends Node {
-  type!: "PrecDeclaration"
-  constructor(start: number, end: number,
+  constructor(start: number,
               readonly id: Identifier,
               readonly assoc: ("left" | "right" | null)[], readonly names: A<Identifier>) {
-    super("PrecDeclaration", start, end)
+    super(start)
   }
 }
 
 export class TokenGroupDeclaration extends Node {
-  type!: "TokenGroupDeclaration"
-  constructor(start: number, end: number,
+  constructor(start: number,
               readonly rules: A<RuleDeclaration>,
               readonly groups: A<TokenGroupDeclaration>) {
-    super("TokenGroupDeclaration", start, end)
+    super(start)
   }
 }
 
 export class Identifier extends Node {
-  type!: "Identifier"
-  constructor(start: number, end: number, readonly name: string) {
-    super("Identifier", start, end)
+  constructor(start: number, readonly name: string) {
+    super(start)
   }
   toString() { return this.name }
 }
 
-export class NamedExpression extends Node {
-  type!: "NamedExpression"
-  constructor(start: number, end: number, readonly namespace: Identifier | null, readonly id: Identifier, readonly args: A<Expression>) {
-    super("NamedExpression", start, end)
+export class Expression extends Node {
+  walk(f: (expr: Expression) => Expression): Expression { return f(this) }
+  eq(other: Expression): boolean { return false }
+}
+
+export class NamedExpression extends Expression {
+  constructor(start: number, readonly namespace: Identifier | null, readonly id: Identifier, readonly args: A<Expression>) {
+    super(start)
   }
   toString() { return this.id.name + (this.args.length ? `<${this.args.join()}>` : "") }
   eq(other: NamedExpression) {
     return (this.namespace ? other.namespace != null && other.namespace.name == this.namespace.name : !other.namespace) &&
       this.id.name == other.id.name
   }
-  containsNames(names: ReadonlyArray<string>): boolean {
-    return this.namespace == null && names.includes(this.id.name)
+  walk(f: (expr: Expression) => Expression): Expression {
+    let args = walkExprs(this.args, f)
+    return f(args == this.args ? this : new NamedExpression(this.start, this.namespace, this.id, args))
   }
 }
 
-export class ChoiceExpression extends Node {
-  type!: "ChoiceExpression"
-  constructor(start: number, end: number, readonly exprs: A<Expression>) {
-    super("ChoiceExpression", start, end)
+export class ChoiceExpression extends Expression {
+  constructor(start: number, readonly exprs: A<Expression>) {
+    super(start)
   }
   toString() { return this.exprs.join(" | ") }
   eq(other: ChoiceExpression) {
     return exprsEq(this.exprs, other.exprs)
   }
-  containsNames(names: ReadonlyArray<string>): boolean {
-    return this.exprs.some(e => e.containsNames(names))
+  walk(f: (expr: Expression) => Expression): Expression {
+    let exprs = walkExprs(this.exprs, f)
+    return f(exprs == this.exprs ? this : new ChoiceExpression(this.start, exprs))
   }
 }
 
-export class SequenceExpression extends Node {
-  type!: "SequenceExpression"
-  constructor(start: number, end: number, readonly exprs: A<Expression>) {
-    super("SequenceExpression", start, end)
+export class SequenceExpression extends Expression {
+  constructor(start: number, readonly exprs: A<Expression>) {
+    super(start)
   }
   toString() { return this.exprs.join(" ") }
   eq(other: SequenceExpression) {
     return exprsEq(this.exprs, other.exprs)
   }
-  containsNames(names: ReadonlyArray<string>): boolean {
-    return this.exprs.some(e => e.containsNames(names))
+  walk(f: (expr: Expression) => Expression): Expression {
+    let exprs = walkExprs(this.exprs, f)
+    return f(exprs == this.exprs ? this : new SequenceExpression(this.start, exprs))
   }
 }
 
-export class RepeatExpression extends Node {
-  type!: "RepeatExpression"
-  constructor(start: number, end: number, readonly expr: Expression, readonly kind: "?" | "*" | "+") {
-    super("RepeatExpression", start, end)
+export class RepeatExpression extends Expression {
+  constructor(start: number, readonly expr: Expression, readonly kind: "?" | "*" | "+") {
+    super(start)
   }
   toString() { return this.expr + this.kind }
   eq(other: RepeatExpression) {
     return exprEq(this.expr, other.expr) && this.kind == other.kind
   }
-  containsNames(names: ReadonlyArray<string>): boolean {
-    return this.expr.containsNames(names)
+  walk(f: (expr: Expression) => Expression): Expression {
+    let expr: Expression = this.expr.walk(f)
+    return f(expr == this.expr ? this : new RepeatExpression(this.start, expr, this.kind))
   }
 }
 
-export class LiteralExpression extends Node {
-  type!: "LiteralExpression"
-  constructor(start: number, end: number, readonly value: string) {
-    super("LiteralExpression", start, end)
+export class LiteralExpression extends Expression {
+  constructor(start: number, readonly value: string) {
+    super(start)
   }
   toString() { return JSON.stringify(this.value) }
   eq(other: LiteralExpression) { return this.value == other.value }
-  containsNames() { return false }
 }
 
-export class SetExpression extends Node {
-  type!: "SetExpression"
-  constructor(start: number, end: number, readonly ranges: [number, number][], readonly inverted: boolean) {
-    super("SetExpression", start, end)
+export class SetExpression extends Expression {
+  constructor(start: number, readonly ranges: [number, number][], readonly inverted: boolean) {
+    super(start)
   }
   toString() {
     return `[${this.inverted ? "^" : ""}${this.ranges.map(([a, b]) => {
@@ -135,24 +132,28 @@ export class SetExpression extends Node {
     return this.inverted == other.inverted && this.ranges.length == other.ranges.length &&
       this.ranges.every(([a, b], i) => { let [x, y] = other.ranges[i]; return a == x && b == y })
   }
-  containsNames() { return false }
 }
 
-export class AnyExpression extends Node {
-  type!: "AnyExpression"
-  constructor(start: number, end: number) {
-    super("AnyExpression", start, end)
+export class AnyExpression extends Expression {
+  constructor(start: number) {
+    super(start)
   }
   toString() { return "_" }
   eq() { return true }
-  containsNames() { return false }
 }
 
-export type Expression = NamedExpression | ChoiceExpression | SequenceExpression | LiteralExpression |
-  RepeatExpression | SetExpression | AnyExpression
+function walkExprs(exprs: A<Expression>, f: (expr: Expression) => Expression): A<Expression> {
+  let result: Expression[] | null = null
+  for (let i = 0; i < exprs.length; i++) {
+    let expr = f(exprs[i])
+    if (expr != exprs[i] && !result) result = exprs.slice(0, i)
+    if (result) result.push(expr)
+  }
+  return result || exprs
+}
 
 export function exprEq(a: Expression, b: Expression): boolean {
-  return a.type == b.type && a.eq(b as any)
+  return a.constructor == b.constructor && a.eq(b as any)
 }
 
 export function exprsEq(a: A<Expression>, b: A<Expression>) {
