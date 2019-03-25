@@ -1,0 +1,9 @@
+program { foo<"x"> }
+
+foo<e> { Token<e> }
+
+tokens {
+  Token<x> { x "!" }
+}
+
+//! Can't reference local rule arguments in arguments passed to a token

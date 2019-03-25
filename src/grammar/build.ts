@@ -15,10 +15,14 @@ class Arg {
 }
 
 class Context {
+  argNames: ReadonlyArray<string>
+
   constructor(readonly b: Builder,
               readonly rule: RuleDeclaration,
               readonly precedence: Precedence | null = null,
-              readonly args: ReadonlyArray<Arg> = none) {}
+              readonly args: ReadonlyArray<Arg> = none) {
+    this.argNames = args.length ? args.map(a => a.name) : none
+  }
 
   newName() {
     return this.b.newName(this.rule.id.name)
@@ -45,11 +49,11 @@ class Context {
       return arg.value!
     } else {
       let innerPrec = expr.args.length ? this.precedence : null
-      if (!expr.args.some(e => e.containsNames(this.args.map(p => p.name)))) for (let built of this.b.built)
+      if (!expr.args.some(e => e.containsNames(this.argNames))) for (let built of this.b.built)
         if (built.matches(expr, innerPrec)) return [built.term]
 
       for (let tokens of this.b.tokenGroups) {
-        let found = tokens.getToken(expr)
+        let found = tokens.getToken(expr, this)
         if (found) return [found]
       }
 
@@ -118,7 +122,7 @@ class Context {
     let cx = new Context(this.b, rule, args.length ? this.precedence : null,
                          args.map((a, i) => this.resolveArg(rule.params[i].name, a)))
     let name = this.b.newName(rule.id.name, isTag(rule.id.name) || true)
-    if (!args.some(a => a.containsNames(this.args.map(a => a.name)))) // FIXME don't allocate this array
+    if (!args.some(a => a.containsNames(this.argNames)))
       this.b.built.push(new BuiltRule(rule.id.name, args, cx.precedence, name))
     return cx.defineRule(name, cx.normalizeTopExpr(rule.expr, name))
   }
@@ -290,11 +294,14 @@ class TokenGroup {
     }
   }
 
-  getToken(expr: NamedExpression) {
-    for (let built of this.built) if (built.matches(expr)) return built.term
+  getToken(expr: NamedExpression, cx: Context) {
+    let localArgs = expr.args.some(arg => arg.containsNames(cx.argNames))
+    if (!localArgs) for (let built of this.built) if (built.matches(expr)) return built.term
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
+    if (localArgs)
+      this.raise(`Can't reference local rule arguments in arguments passed to a token`, expr.start)
     let term = this.makeTerminal(name, isTag(name))
     let end = new State
     end.connect(this.buildRule(rule, expr, this.startState))
@@ -318,7 +325,6 @@ class TokenGroup {
     return this.b.input.raise(msg, pos)
   }
 
-  // FIXME reuse tail-called rules somehow
   buildRule(rule: RuleDeclaration, expr: NamedExpression, from: State, args: ReadonlyArray<TokenArg> = none): Edge[] {
     let name = expr.id.name
     if (rule.params.length != expr.args.length)
