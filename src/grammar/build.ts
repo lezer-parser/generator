@@ -1,6 +1,6 @@
-import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclaration,
+import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
-        ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, exprsEq} from "./node"
+        ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, MarkedExpression, exprsEq} from "./node"
 import {Term, TermSet, Precedence, Rule, Grammar, TokenContext} from "./grammar"
 import {Edge, State} from "./token"
 import {Input} from "./parse"
@@ -10,18 +10,39 @@ import {buildAutomaton, State as LRState} from "./automaton"
 
 const none: ReadonlyArray<any> = []
 
+class PrecTerm {
+  constructor(readonly term: Term, readonly prec: Precedence[]) {}
+
+  get terminal() { return this.term.terminal }
+  get name() { return this.term.name }
+
+  static from(term: Term$, prec: Precedence): Term$ {
+    if (term instanceof PrecTerm) return new PrecTerm(term.term, [prec].concat(term.prec))
+    else return new PrecTerm(term, [prec])
+  }
+}
+
+type Term$ = Term | PrecTerm
+
 class Context {
   constructor(readonly b: Builder,
-              readonly rule: RuleDeclaration,
-              readonly precedence: Precedence | null = null) {}
+              readonly rule: RuleDeclaration) {}
 
   newName() {
     return this.b.newName(this.rule.id.name)
   }
 
-  defineRule(name: Term, choices: Term[][]) {
-    for (let choice of choices)
-      this.b.rules.push(new Rule(name, choice, this.precedence))
+  defineRule(name: Term, choices: Term$[][]) {
+    for (let choice of choices) {
+      let precedences = none as Precedence[][]
+      let terms = choice.map((term, i) => {
+        if (!(term instanceof PrecTerm)) return term
+        if (precedences == none) precedences = []
+        precedences[i] = term.prec
+        return term.term
+      })
+      this.b.rules.push(new Rule(name, terms, precedences))
+    }
     return [name]
   }
 
@@ -34,8 +55,7 @@ class Context {
     } else if (expr.id.name == "specialize") {
       return this.resolveSpecialization(expr)
     } else {
-      let innerPrec = expr.args.length ? this.precedence : null
-      for (let built of this.b.built) if (built.matches(expr, innerPrec)) return [built.term]
+      for (let built of this.b.built) if (built.matches(expr)) return [built.term]
 
       for (let tokens of this.b.tokenGroups) {
         let found = tokens.getToken(expr, this)
@@ -51,37 +71,44 @@ class Context {
     }
   }
 
-  normalizeTopExpr(expr: Expression, self: Term): Term[][] {
+  normalizeTopExpr(expr: Expression, self: Term): Term$[][] {
     if (expr instanceof RepeatExpression && expr.kind == "?")
       return [[], ...this.normalizeTopExpr(expr.expr, self)]
     else if (expr instanceof RepeatExpression && expr.kind == "*")
       return [[], [self, ...this.normalizeExpr(expr.expr)]]
     else if (expr instanceof ChoiceExpression)
       return expr.exprs.map(e => this.normalizeExpr(e))
+    else if (expr instanceof MarkedExpression)
+      return this.normalizeTopExpr(expr.expr, self).map(terms => {
+        return terms.length ? [PrecTerm.from(terms[0], this.b.getPrecedence(expr))].concat(terms.slice(1)) : terms
+      })
     else
       return [this.normalizeExpr(expr)]
   }
 
-  normalizeExpr(expr: Expression): Term[] {
+  normalizeExpr(expr: Expression): Term$[] {
     if (expr instanceof RepeatExpression) {
       if (expr.kind == "?") {
         let name = this.newName()
-        return this.defineRule(this.newName(), [[] as Term[]].concat(this.normalizeTopExpr(expr.expr, name)))
+        return this.defineRule(this.newName(), [[] as Term$[]].concat(this.normalizeTopExpr(expr.expr, name)))
       } else {
         // FIXME is the duplication for + a good idea? Could also
         // factor expr into a rule.
         let inner = this.normalizeExpr(expr.expr), name = this.newName()
-        let result = this.defineRule(name, [[name].concat(inner), []])
+        let result = this.defineRule(name, [[name as Term$].concat(inner), []])
         return expr.kind == "*" ? result : inner.concat(result)
       }
     } else if (expr instanceof ChoiceExpression) {
       return this.defineRule(this.newName(), expr.exprs.map(e => this.normalizeExpr(e)))
     } else if (expr instanceof SequenceExpression) {
-      return expr.exprs.reduce((a, e) => a.concat(this.normalizeExpr(e)), [] as Term[])
+      return expr.exprs.reduce((a, e) => a.concat(this.normalizeExpr(e)), [] as Term$[])
     } else if (expr instanceof LiteralExpression) {
       return expr.value ? [this.b.tokenGroups[0].getLiteral(expr)] : []
     } else if (expr instanceof NamedExpression) {
       return this.resolve(expr)
+    } else if (expr instanceof MarkedExpression) {
+      let inner = this.normalizeExpr(expr.expr)
+      return inner.length ? [PrecTerm.from(inner[0], this.b.getPrecedence(expr))].concat(inner.slice(1)) : inner
     } else {
       return this.raise("This type of expression may not occur in non-token rules", expr.start)
     }
@@ -91,15 +118,11 @@ class Context {
     return this.b.input.raise(message, pos)
   }
 
-  withPrecedence(prec: Precedence | null) {
-    return new Context(this.b, this.rule, prec)
-  }
-
   buildRule(rule: RuleDeclaration, args: ReadonlyArray<Expression>): Term[] {
-    let cx = new Context(this.b, rule, args.length ? this.precedence : null)
+    let cx = new Context(this.b, rule)
     let expr = args.length ? this.b.substituteArgs(rule.expr, args, rule.params) : rule.expr
     let name = this.b.newName(rule.id.name, isTag(rule.id.name) || true)
-    this.b.built.push(new BuiltRule(rule.id.name, args, cx.precedence, name))
+    this.b.built.push(new BuiltRule(rule.id.name, args, name))
     return cx.defineRule(name, cx.normalizeTopExpr(expr, name))
   }
 
@@ -127,13 +150,10 @@ function isTag(name: string) {
 class BuiltRule {
   constructor(readonly id: string,
               readonly args: ReadonlyArray<Expression>,
-              readonly precedence: Precedence | null,
               readonly term: Term) {}
 
-  matches(expr: NamedExpression, prec: Precedence | null = null) {
-    return this.id == expr.id.name &&
-      (this.precedence ? prec && this.precedence.eq(prec) : !prec) &&
-      exprsEq(expr.args, this.args)
+  matches(expr: NamedExpression) {
+    return this.id == expr.id.name && exprsEq(expr.args, this.args)
   }
 }
 
@@ -156,10 +176,7 @@ class Builder {
     if (this.ast.tokens) this.gatherTokenGroups(this.ast.tokens)
     else this.tokenGroups.push(new TokenGroup(this, none, null))
 
-    this.defineNamespace("conflict", new ConflictNamespace)
     this.defineNamespace("tag", new TagNamespace)
-    for (let prec of this.ast.precedences)
-      this.defineNamespace(prec.id.name, new PrecNamespace(prec), prec.id.start)
 
     for (let rule of this.ast.rules) {
       this.unique(rule.id)
@@ -258,42 +275,23 @@ class Builder {
       return expr
     })
   }
-}
 
-let precID = 1
+  getPrecedence(expr: MarkedExpression): Precedence {
+    let decl = this.ast.precedences.find(d => d.id.name == expr.group.name)
+    if (expr.id) {
+      if (!decl) return this.input.raise(`No precedence declaration found for '${expr.group.name}'`, expr.start)
+      let index = decl.names.findIndex(id => id.name == expr.id!.name)
+      if (index < 0) this.input.raise(`Precedence declaration '${decl.id.name}' has no tag named '${expr.id!.name}'`, expr.id!.start)
+      return new Precedence(decl.assoc[index], decl.id.name, index)
+    } else {
+      if (decl) this.input.raise(`Conflict markers that refer to a precedence declaration need a tag name`, expr.start)
+      return new Precedence(null, expr.group.name, -1)
+    }
+  }
+}
 
 interface Namespace {
   resolve(expr: NamedExpression, cx: Context): Term[]
-}
-
-class PrecNamespace implements Namespace {
-  id: number = precID++
-
-  constructor(readonly ast: PrecDeclaration) {}
-
-  resolve(expr: NamedExpression, cx: Context): Term[] {
-    if (expr.args.length != 1)
-      cx.raise(`Precedence specifiers take a single argument`, expr.start)
-    let found = this.ast.names.findIndex(n => n.name == expr.id.name)
-    if (found < 0)
-      cx.raise(`Precedence group '${this.ast.id.name}' has no precedence named '${expr.id.name}'`, expr.id.start)
-    let name = cx.b.newName(`${expr.namespace!.name}-${expr.id.name}`, true)
-    cx = cx.withPrecedence(new Precedence(this.ast.assoc[found], this.id, found))
-    return cx.defineRule(name, [cx.normalizeExpr(expr.args[0])])
-  }
-}
-
-class ConflictNamespace implements Namespace {
-  groups: {[name: string]: number} = Object.create(null)
-
-  resolve(expr: NamedExpression, cx: Context): Term[] {
-    if (expr.args.length != 1)
-      cx.raise(`Conflict specifiers take a single argument`, expr.start)
-    let group = this.groups[expr.id.name] || (this.groups[expr.id.name] = precID++)
-    let name = cx.b.newName(`conflict-${expr.id.name}`, true)
-    cx = cx.withPrecedence(new Precedence(null, group, -1))
-    return cx.defineRule(name, cx.normalizeTopExpr(expr.args[0], name))
-  }
 }
 
 class TagNamespace implements Namespace {
@@ -339,7 +337,7 @@ class TokenGroup {
     let term = this.b.makeTerminal(name, isTag(name), this)
     let end = new State(term)
     end.connect(this.buildRule(rule, expr, this.startState))
-    this.built.push(new BuiltRule(name, expr.args, null, term))
+    this.built.push(new BuiltRule(name, expr.args, term))
     return term
   }
 
@@ -349,7 +347,7 @@ class TokenGroup {
     let term = this.b.makeTerminal(id, null, this)
     let end = new State(term)
     end.connect(this.build(expr, this.startState, none))
-    this.built.push(new BuiltRule(id, none, null, term))
+    this.built.push(new BuiltRule(id, none, term))
     return term
   }
 

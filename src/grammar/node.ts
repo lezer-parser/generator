@@ -29,7 +29,8 @@ export class RuleDeclaration extends Node {
 export class PrecDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
-              readonly assoc: ("left" | "right" | null)[], readonly names: A<Identifier>) {
+              readonly assoc: ("left" | "right" | null)[],
+              readonly names: A<Identifier>) {
     super(start)
   }
 }
@@ -140,6 +141,21 @@ export class AnyExpression extends Expression {
   }
   toString() { return "_" }
   eq() { return true }
+}
+
+export class MarkedExpression extends Expression {
+  constructor(start: number, readonly group: Identifier, readonly id: Identifier | null, readonly expr: Expression) {
+    super(start)
+  }
+  toString() { return `!${this.group.name}${this.id ? "." + this.id.name : ""} ${this.expr}` }
+  eq(other: MarkedExpression): boolean {
+    return other.group.name == this.group.name && (this.id ? this.id.name : "") == (other.id ? other.id.name : "") &&
+      exprEq(this.expr, other.expr)
+  }
+  walk(f: (expr: Expression) => Expression): Expression {
+    let expr: Expression = this.expr.walk(f)
+    return f(expr == this.expr ? this : new MarkedExpression(this.start, this.group, this.id, expr))
+  }
 }
 
 function walkExprs(exprs: A<Expression>, f: (expr: Expression) => Expression): A<Expression> {

@@ -2,20 +2,19 @@ program { expr+ }
 
 expr { ArrowExpr | ParenExpr | Identifier }
 
-ParenExpr { conflict.arrow<"(" expr ")"> }
+ParenExpr { "(" expr ")" }
 
-ArrowExpr { conflict.arrow<"(" ParamName ")" "=>" expr> }
+ArrowExpr { "(" ParamName ")" "=>" expr }
+
+Identifier { !arrow word }
+
+ParamName { !arrow word }
 
 tokens {
   skip { std.whitespace* }
 
-  Identifier { std.asciiLetter+ }
-
-  ParamName { std.asciiLetter+ }
+  word { std.asciiLetter+ }
 }
-
-// FIXME disabled until a better way to specify conflicts is implemented
-//! Overlapping tokens
 
 ---
 

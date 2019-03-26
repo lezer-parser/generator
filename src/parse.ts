@@ -1,5 +1,5 @@
 import {Term, Grammar} from "./grammar/grammar"
-import {State, Goto, Reduce} from "./grammar/automaton"
+import {State, Shift, Reduce} from "./grammar/automaton"
 
 class Frame {
   constructor(readonly prev: Frame | null,
@@ -135,7 +135,7 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
         let newState = newStack.state.getGoto(action.rule.name)!.target
         frame = new Frame(newStack, value, newState, start, pos)
       } else { // Shift
-        frame = new Frame(stack, Node.leaf(next.tag ? next : null, 1), (action as Goto).target, pos, nextEnd)
+        frame = new Frame(stack, Node.leaf(next.tag ? next : null, 1), (action as Shift).target, pos, nextEnd)
       }
       if (verbose) console.log(`${frame} (via ${next} ${action})`)
       addFrame(parses, frame)

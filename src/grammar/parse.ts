@@ -1,7 +1,7 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclaration,
         Identifier, Expression,
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
-        RepeatExpression, SetExpression, AnyExpression} from "./node"
+        RepeatExpression, SetExpression, AnyExpression, MarkedExpression} from "./node"
 
 const wordChar = /[\w_$]/ // FIXME international
 
@@ -59,7 +59,7 @@ export class Input {
       let end = this.match(start + 1, /^(?:\\.|[^\]])*\]/)
       if (end == -1) this.raise("Unterminated character set", start)
       return this.set("set", this.string.slice(start + 1, end - 1), start, end)
-    } else if (/[()&~!\-+*?{}<>\.,=|]/.test(next)) {
+    } else if (/[()!+*?{}<>\.,|]/.test(next)) {
       return this.set(next, null, start, start + 1)
     } else if (wordChar.test(next)) {
       let end = start + 1
@@ -209,12 +209,21 @@ function endOfSequence(input: Input) {
 }
 
 function parseExprSequence(input: Input) {
-  let start = input.start, first = parseExprSuffix(input)
+  let start = input.start, first = parseExprPrec(input)
   if (endOfSequence(input)) return first
   let exprs: Expression[] = [first]
-  do { exprs.push(parseExprSuffix(input)) }
+  do { exprs.push(parseExprPrec(input)) }
   while (!endOfSequence(input))
   return new SequenceExpression(start, exprs)
+}
+
+function parseExprPrec(input: Input) {
+  let start = input.start
+  if (!input.eat("!")) return parseExprSuffix(input)
+  let group = parseIdent(input)
+  let id = input.eat(".") ? parseIdent(input) : null
+  let expr = parseExprSuffix(input)
+  return new MarkedExpression(start, group, id, expr)
 }
 
 function parseExprChoice(input: Input) {

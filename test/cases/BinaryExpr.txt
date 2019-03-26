@@ -3,12 +3,13 @@ prec left binOp { mult, plus }
 program { expr }
 
 expr {
-  atom |
-  binOp.mult<BinaryExpr<MultOp>> |
-  binOp.plus<BinaryExpr<AddOp>>
+  atom | BinaryExpr
 }
 
-BinaryExpr<op> { expr op expr }
+BinaryExpr {
+  expr !binOp.mult MultOp expr |
+  expr !binOp.plus AddOp expr
+}
 
 atom { Symbol | "(" expr ")" }
 

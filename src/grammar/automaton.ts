@@ -1,18 +1,21 @@
- import {Term, TermSet, Precedence, Rule} from "./grammar"
+import {Term, TermSet, Precedence, Rule} from "./grammar"
 
 export class Pos {
-  constructor(readonly rule: Rule, readonly pos: number, public ahead: Term) {}
+  constructor(readonly rule: Rule,
+              readonly pos: number,
+              readonly ahead: Term,
+              readonly prec: ReadonlyArray<Precedence>) {}
 
   get next() {
     return this.pos < this.rule.parts.length ? this.rule.parts[this.pos] : null
   }
 
   advance() {
-    return new Pos(this.rule, this.pos + 1, this.ahead)
+    return new Pos(this.rule, this.pos + 1, this.ahead, this.prec)
   }
 
   cmp(pos: Pos) {
-    return this.cmpSimple(pos) || this.ahead.cmp(pos.ahead)
+    return this.cmpSimple(pos) || this.ahead.cmp(pos.ahead) || cmpSet(this.prec, pos.prec, (a, b) => a.cmp(b))
   }
 
   cmpSimple(pos: Pos) {
@@ -46,21 +49,19 @@ function advance(set: Pos[], expr: Term): Pos[] {
   return result
 }
 
-function advanceWithPrec(set: Pos[], expr: Term): {set: Pos[], prec: Precedence | null} {
-  let result = [], prec = null
+function advanceWithPrec(set: Pos[], expr: Term): {set: Pos[], prec: ReadonlyArray<Precedence>} {
+  let result = [], prec = none as Precedence[]
   for (let pos of set) if (pos.next == expr) {
-    if (pos.rule.precedence) {
-      if (prec && !prec.eq(pos.rule.precedence))
-        throw new Error(`Conflicting precedences for terminal ${expr.name} at ${set.join()}`)
-      prec = pos.rule.precedence
+    for (let p of pos.rule.precAt(pos.pos)) {
+      if (prec == none) prec = []
+      if (!prec.some(x => x.eq(p))) prec.push(p)
     }
     result.push(pos.advance())
   }
   return {set: result, prec}
 }
 
-function cmpSet<T extends {cmp(other: T): number}>(a: ReadonlyArray<T>, b: ReadonlyArray<T>,
-                                                   cmp: (a: T, b: T) => number = (a, b) => a.cmp(b)) {
+function cmpSet<T>(a: ReadonlyArray<T>, b: ReadonlyArray<T>, cmp: (a: T, b: T) => number) {
   if (a.length != b.length) return a.length - b.length
   for (let i = 0; i < a.length; i++) {
     let diff = cmp(a[i], b[i])
@@ -75,32 +76,30 @@ export interface Action {
   map(mapping: number[], states: State[]): Action
 }
 
-export class Goto implements Action {
+export class Shift implements Action {
   constructor(readonly term: Term, readonly target: State) {}
 
-  eq(other: Action): boolean { return other instanceof Goto && other.target == this.target }
+  eq(other: Action): boolean { return other instanceof Shift && other.target == this.target }
 
-  toString() { return "goto " + this.target.id }
+  toString() { return "s" + this.target.id }
 
-  map(mapping: number[], states: State[]) { return new Goto(this.term, states[mapping[this.target.id]]) }
+  map(mapping: number[], states: State[]) { return new Shift(this.term, states[mapping[this.target.id]]) }
 }
-
-export const Shift = Goto
 
 export class Reduce implements Action {
   constructor(readonly term: Term, readonly rule: Rule) {}
 
   eq(other: Action): boolean { return other instanceof Reduce && other.rule == this.rule }
 
-  toString() { return "reduce " + this.rule }
+  toString() { return this.rule.name }
 
   map() { return this }
 }
 
 export class State {
   terminals: Action[] = []
-  terminalPrec: (Precedence | null)[] = []
-  goto: Goto[] = []
+  terminalPrec: ReadonlyArray<Precedence>[] = []
+  goto: Shift[] = []
   ambiguous = false // FIXME maybe store per terminal
 
   constructor(readonly id: number, readonly set: ReadonlyArray<Pos>) {}
@@ -110,23 +109,25 @@ export class State {
       this.terminals.map(t => t.term + "=" + t).join(",") + "|" + this.goto.map(g => g.term + "=" + g).join(",")
   }
 
-  addAction(value: Action, prec: Precedence | null, pos?: Pos): boolean {
-    for (let i = 0; i < this.terminals.length; i++) {
+  addAction(value: Action, prec: ReadonlyArray<Precedence>, pos?: Pos): boolean {
+    check: for (let i = 0; i < this.terminals.length; i++) {
       let action = this.terminals[i]
       if (action.term == value.term) {
         if (action.eq(value)) return true
         this.ambiguous = true
         let prev = this.terminalPrec[i]
-        if (prev && prec && prev.group == prec.group) {
-          if (prec.precedence < 0) continue // This is marked as an intentional, allowed conflict
-          let override = prev.precedence - prec.precedence // Positive means we override, 0 means conflict
-          if (override == 0 && action instanceof Shift && prec.associativity)
-            override = prec.associativity == "left" ? 1 : -1
+        for (let p of prec) {
+          let match = prev.find(x => x.group == p.group)
+          if (!match) continue
+          if (p.precedence < 0) continue check // This is marked as an intentional, allowed conflict
+          let override = match.precedence - p.precedence // Positive means we override, 0 means conflict
+          if (override == 0 && action instanceof Shift && p.associativity)
+            override = p.associativity == "left" ? 1 : -1
           if (override > 0) {
             this.terminals.splice(i, 1)
             this.terminalPrec.splice(i, 1)
             i--
-            continue
+            continue check
           } else if (override < 0) {
             return true
           }
@@ -150,11 +151,12 @@ function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[n
   for (let pos of result) {
     let next = pos.next
     if (!next || next.terminal) continue
+    let nextPrec = pos.rule.precAt(pos.pos)
     let ahead = pos.termsAhead(first)
     for (let rule of rules) if (rule.name == next) {
       for (let a of ahead) {
         if (!result.some(p => p.rule == rule && p.pos == 0 && p.ahead == a))
-          result.push(new Pos(rule, 0, a))
+          result.push(new Pos(rule, 0, a, nextPrec))
       }
     }
   }
@@ -199,7 +201,7 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet) {
   function explore(set: Pos[]) {
     if (set.length == 0) return null
     set = closure(set, rules, first)
-    let state = states.find(s => cmpSet(s.set, set) == 0)
+    let state = states.find(s => cmpSet(s.set, set, (a, b) => a.cmp(b)) == 0)
     if (!state) {
       states.push(state = new State(states.length, set))
       for (let term of terms.terminals) {
@@ -209,18 +211,18 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet) {
       }
       for (let nt of terms.nonTerminals) {
         let goto = explore(advance(set, nt))
-        if (goto) state.goto.push(new Goto(nt, goto))
+        if (goto) state.goto.push(new Shift(nt, goto))
       }
       for (let pos of set) {
         let next = pos.next
         if (next == null)
-          state.addAction(new Reduce(pos.ahead, pos.rule), pos.rule.precedence, pos)
+          state.addAction(new Reduce(pos.ahead, pos.rule), pos.rule.rulePrec(), pos)
       }
     }
     return state
   }
 
-  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, terms.eof)))
+  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, terms.eof, none)))
   return states
 }
 
@@ -240,7 +242,7 @@ function markConflicts(mapping: number[], newID: number, oldStates: State[], new
   for (let i = 0; i < mapping.length; i++) if (mapping[i] == newID) {
     for (let j = 0; j < mapping.length; j++) if (j != i && mapping[j] == newID) {
       // Create a dummy state to determine whether there's a conflict
-      let state = new State(0, [])
+      let state = new State(0, none)
       mergeState(mapping, newStates, oldStates[i], state)
       if (!mergeState(mapping, newStates, oldStates[j], state)) conflicts.push(i, j)
     }
@@ -289,3 +291,5 @@ function collapseAutomaton(states: State[]): State[] {
 export function buildAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet) {
   return collapseAutomaton(buildFullAutomaton(rules, terms))
 }
+
+const none: ReadonlyArray<any> = []

@@ -4,7 +4,7 @@ program { expr }
 
 expr { RegExp | Symbol | BinOp }
 
-BinOp { binOp.div<expr "/" expr> }
+BinOp { expr !binOp.div "/" expr }
 
 tokens {
   skip { std.whitespace* }
