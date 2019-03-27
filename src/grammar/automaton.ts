@@ -91,18 +91,22 @@ export class Reduce implements Action {
 
   eq(other: Action): boolean { return other instanceof Reduce && other.rule == this.rule }
 
-  toString() { return this.rule.name }
+  toString() { return this.rule.name.name }
 
   map() { return this }
 }
+
+const ACCEPTING = 1, AMBIGUOUS = 2 // FIXME maybe store per terminal
 
 export class State {
   terminals: Action[] = []
   terminalPrec: ReadonlyArray<Precedence>[] = []
   goto: Shift[] = []
-  ambiguous = false // FIXME maybe store per terminal
 
-  constructor(readonly id: number, readonly set: ReadonlyArray<Pos>) {}
+  constructor(readonly id: number, readonly set: ReadonlyArray<Pos>, public flags = 0) {}
+
+  get ambiguous() { return (this.flags & AMBIGUOUS) > 0 }
+  get accepting() { return (this.flags & ACCEPTING) > 0 }
 
   toString() {
     return this.id + "=" + this.set.join() +  ": " +
@@ -114,7 +118,7 @@ export class State {
       let action = this.terminals[i]
       if (action.term == value.term) {
         if (action.eq(value)) return true
-        this.ambiguous = true
+        this.flags |= AMBIGUOUS
         let prev = this.terminalPrec[i]
         for (let p of prec) {
           let match = prev.find(x => x.group == p.group)
@@ -204,14 +208,20 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet) {
     let state = states.find(s => cmpSet(s.set, set, (a, b) => a.cmp(b)) == 0)
     if (!state) {
       states.push(state = new State(states.length, set))
-      for (let term of terms.terminals) {
-        if (term == terms.eof) continue
-        let {set: newSet, prec} = advanceWithPrec(set, term), shift = explore(newSet)
-        if (shift) state.addAction(new Shift(term, shift), prec)
+      for (let term of terms.terminals) if (!term.eof && !term.error) {
+        let {set: newSet, prec} = advanceWithPrec(set, term)
+        let next = explore(newSet)
+        if (next) state.addAction(new Shift(term, next), prec)
       }
       for (let nt of terms.nonTerminals) {
         let goto = explore(advance(set, nt))
         if (goto) state.goto.push(new Shift(nt, goto))
+      }
+      let program = state.set.findIndex(pos => pos.pos == 0 && pos.rule.name.program)
+      if (program > -1) {
+        let accepting = new State(states.length, none, ACCEPTING)
+        states.push(accepting)
+        state.goto.push(new Shift(state.set[program].rule.name, accepting))
       }
       for (let pos of set) {
         let next = pos.next
@@ -271,7 +281,9 @@ function collapseAutomaton(states: State[]): State[] {
       })
       if (newID < 0) {
         newID = newStates.length
-        newStates.push(new State(newID, set))
+        newStates.push(new State(newID, set, state.flags))
+      } else {
+        newStates[newID].flags |= state.flags
       }
       mapping.push(newID)
     }

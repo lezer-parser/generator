@@ -1,5 +1,5 @@
 import {Term, Grammar} from "./grammar/grammar"
-import {State, Shift, Reduce} from "./grammar/automaton"
+import {Action, State, Shift, Reduce} from "./grammar/automaton"
 
 class Frame {
   constructor(readonly prev: Frame | null,
@@ -110,34 +110,35 @@ class TreeCursor {
   }
 }
 
+function applyAction(stack: Frame, action: Action, next: Term, nextStart: number, nextEnd: number): Frame {
+  if (action instanceof Reduce) {
+    let newStack = stack, children = [], positions = []
+    for (let i = action.rule.parts.length; i > 0; i--) {
+      children.unshift(newStack.value!)
+      positions.unshift(newStack.start)
+      newStack = newStack.prev!
+    }
+    let start = positions.length ? positions[0] : stack.pos
+    for (let i = 0; i < positions.length; i++) positions[i] -= start
+    let value = children.length
+      ? Node.of(action.rule.name.tag ? action.rule.name : null, children, positions)
+      : Node.leaf(null, 0)
+    let newState = newStack.state.getGoto(action.rule.name)!.target
+    return new Frame(newStack, value, newState, start, stack.pos)
+  } else { // Shift
+    return new Frame(stack, Node.leaf(next.tag ? next : null, nextEnd - nextStart), (action as Shift).target, nextStart, nextEnd)
+  }
+}
+
 export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0), verbose = false): Node {
   let parses = [new Frame(null, null, grammar.table[0], 0, 0)]
   let cacheIter = new TreeCursor(cache)
 
-  function advance(stack: Frame, next: Term, nextEnd: number): Node | null {
-    let pos = stack.pos
+  function advance(stack: Frame, next: Term, nextStart: number, nextEnd: number): Node | null {
     for (let action of stack.state.terminals) if (action.term == next) {
-      let frame
-      if (action instanceof Reduce) {
-        let newStack = stack, children = [], positions = []
-        for (let i = action.rule.parts.length; i > 0; i--) {
-          children.unshift(newStack.value!)
-          positions.unshift(newStack.start)
-          newStack = newStack.prev!
-        }
-        let start = positions.length ? positions[0] : pos
-        for (let i = 0; i < positions.length; i++) positions[i] -= start
-        let value = children.length
-          ? Node.of(action.rule.name.tag ? action.rule.name : null, children, positions)
-          : Node.leaf(null, 0)
-        if (!newStack.prev && next.eof && action.rule.name.program) return value
-
-        let newState = newStack.state.getGoto(action.rule.name)!.target
-        frame = new Frame(newStack, value, newState, start, pos)
-      } else { // Shift
-        frame = new Frame(stack, Node.leaf(next.tag ? next : null, 1), (action as Shift).target, pos, nextEnd)
-      }
-      if (verbose) console.log(`${frame} (via ${next} ${action})`)
+      let frame = applyAction(stack, action, next, nextStart, nextEnd)
+      if (frame.state.accepting) return frame.value
+      if (verbose) console.log(`${frame} (via ${next} ${action})`, frame.state.accepting)
       addFrame(parses, frame)
     }
     return null
@@ -178,17 +179,17 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
         let specialized = grammar.specialized[token.name]
         if (specialized) {
           let value = specialized[input.slice(start, end)]
-          if (value) advance(stack, value, end)
+          if (value) advance(stack, value, start, end)
         }
       }
-      let result = advance(stack, token, end)
+      let result = advance(stack, token, start, end)
       if (result) return result
     }
     if (token == null) {
       token = grammar.terms.error
       start = maxStart
       end = maxStart + 1
-      advance(stack, token, end)
+      advance(stack, token, start, end)
     }
     if (!parses.length)
       throw new SyntaxError("No parse at " + start + " with " + token +
