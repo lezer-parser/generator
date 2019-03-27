@@ -1,13 +1,14 @@
 import {State} from "./token"
 import {State as TableState} from "./automaton"
 
-const TERMINAL = 1, EOF = 2, PROGRAM = 4
+const TERMINAL = 1, EOF = 2, ERROR = 4, PROGRAM = 8
 
 export class Term {
   constructor(readonly name: string, readonly flags: number, readonly tag: string | null) {}
   toString() { return this.name }
   get terminal() { return (this.flags & TERMINAL) > 0 }
   get eof() { return (this.flags & EOF) > 0 }
+  get error() { return (this.flags & ERROR) > 0 }
   get program() { return (this.flags & PROGRAM) > 0 }
   cmp(other: Term) { return this == other ? 0 : (this.name < other.name ? -1 : 1) || this.flags - other.flags }
 }
@@ -16,10 +17,11 @@ export class TermSet {
   nonTerminals: Term[] = []
   terminals: Term[] = []
   eof: Term
+  error: Term
 
   constructor() {
-    this.eof = new Term("␄", TERMINAL | EOF, null)
-    this.terminals.push(this.eof)
+    this.terminals.push(this.eof = new Term("␄", TERMINAL | EOF, null))
+    this.terminals.push(this.error = new Term("⚠", TERMINAL | ERROR, "⚠"))
   }
 
   makeTerminal(name: string, tag: string | null) {

@@ -157,11 +157,12 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
     }
 
     let token: Term | null = null, start = pos, end = pos, sawEof = false
+    let maxStart = pos
     for (let tokenCx of grammar.tokenTable[stack.state.id]) {
       let curPos = pos
       if (tokenCx.skip) {
         let skip = tokenCx.skip.simulate(input, curPos)
-        if (skip) curPos = skip.end
+        if (skip) { curPos = skip.end; maxStart = Math.max(maxStart, skip.end) }
       }
       if (curPos == input.length) {
         if (sawEof) continue
@@ -183,8 +184,14 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
       let result = advance(stack, token, end)
       if (result) return result
     }
+    if (token == null) {
+      token = grammar.terms.error
+      start = maxStart
+      end = maxStart + 1
+      advance(stack, token, end)
+    }
     if (!parses.length)
-      throw new SyntaxError("No parse at " + start + " with " + (token || "no valid token") +
+      throw new SyntaxError("No parse at " + start + " with " + token +
                             " (stack is " + stack + ")")
   }
 }
