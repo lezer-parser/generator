@@ -8,6 +8,12 @@ class Frame {
               readonly start: number,
               readonly pos: number) {}
 
+  get depth() {
+    let d = 0
+    for (let f: Frame | null = this; f; f = f.prev) d++
+    return d
+  }
+
   toString() {
     return this.prev ? `${this.prev} ${this.value} [${this.state.id}]` : `[${this.state.id}]`
   }
@@ -195,4 +201,58 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
       throw new SyntaxError("No parse at " + start + " with " + token +
                             " (stack is " + stack + ")")
   }
+}
+
+const MAX_INSERT_N = 3, MAX_INSERT_SEARCH = 2
+
+function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number) {
+  if (next.error) return
+  let found: Frame[] = []
+  
+  let work = [stack]
+  let depth = 0, lastItemAtDepth = 0
+  for (let i = 0; i < work.length; i++) {
+    let stack = work[i++]
+    let match = stack.state.terminals.find(action => action.term == next)
+    if (match) {
+      let depth = stack.depth
+      for (let i = 0; i < found.length; i++) {
+        let sameState = found[i].state == stack.state
+        if (found[i].depth > depth && (sameState || found.length == MAX_INSERT_N)) {
+          found[i] = stack
+          continue
+        } else if (sameState) {
+          continue
+        }
+      }
+      if (found.length < MAX_INSERT_N) found.push(stack)
+    } else {
+      for (let action of stack.state.terminals) {
+        for (;;) {
+          stack = applyAction(stack, action, grammar.terms.error, nextStart, nextStart)
+          if (action instanceof Shift && !work.some(s => s.state == stack.state)) {
+            work.push(stack)
+            break
+          }
+        }
+      }
+    }
+    if (i == lastItemAtDepth) {
+      depth++
+      if (depth == MAX_INSERT_SEARCH) break
+      lastItemAtDepth = work.length - 1
+    }
+  }
+
+  for (let stack of found) addFrame(parses, stack)
+}
+
+function recoverByDelete(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number) {
+  let value = stack.value!
+  let node = Node.leaf(next, nextEnd - nextStart)
+  if (value.name && value.name.error)
+    value = Node.of(value.name, value.children.concat(node), value.positions.concat(nextStart - stack.start)) // FIXME expensive
+  else
+    value = Node.of(grammar.terms.error, [value, node], [0, nextStart - stack.start])
+  addFrame(parses, new Frame(stack.prev, value, stack.state, stack.start, nextEnd))
 }
