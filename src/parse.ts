@@ -6,13 +6,17 @@ class Frame {
               readonly value: Node | null,
               readonly state: State,
               readonly start: number,
-              readonly pos: number) {}
+              readonly pos: number,
+              readonly errorCount: number,
+              readonly validCount: number) {}
 
   get depth() {
     let d = 0
     for (let f: Frame | null = this; f; f = f.prev) d++
     return d
   }
+
+  get score() { return this.validCount * 5 - this.errorCount }
 
   toString() {
     return this.prev ? `${this.prev} ${this.value} [${this.state.id}]` : `[${this.state.id}]`
@@ -28,8 +32,17 @@ import {takeFromHeap, addToHeap} from "./heap"
 
 function compareFrames(a: Frame, b: Frame) { return a.pos - b.pos }
 
-function addFrame(heap: Frame[], frame: Frame) {
-  if (!heap.some(f => f.eq(frame))) addToHeap(heap, frame, compareFrames)
+function addFrame(heap: Frame[], frame: Frame): boolean {
+  for (let i = 0; i < heap.length; i++) {
+    let other = heap[i]
+    if (other.state == frame.state && other.pos == frame.pos) {
+      let diff = other.score - frame.score || frame.depth - other.depth
+      if (diff < 0) heap[i] = frame
+      return false
+    }
+  }
+  addToHeap(heap, frame, compareFrames)
+  return true
 }
 
 const none: any[] = []
@@ -45,10 +58,11 @@ export class Node {
   }
 
   static leaf(name: Term | null, length: number) {
-    return new Node(name, length, none, none)
+    return new Node(name && name.tag ? name : null, length, none, none)
   }
 
   static of(name: Term | null, children: Node[], positions: number[]) {
+    if (!name && children.length == 1 && positions[0] == 0) return children[0]
     let length = positions[positions.length - 1] + children[children.length - 1].length
     if (children.some(ch => !ch.name)) {
       let flatChildren = [], flatPositions = []
@@ -116,7 +130,7 @@ class TreeCursor {
   }
 }
 
-function applyAction(stack: Frame, action: Action, next: Term, nextStart: number, nextEnd: number): Frame {
+function applyAction(stack: Frame, action: Action, next: Term, nextStart: number, nextEnd: number, isError = false): Frame {
   if (action instanceof Reduce) {
     let newStack = stack, children = [], positions = []
     for (let i = action.rule.parts.length; i > 0; i--) {
@@ -130,43 +144,50 @@ function applyAction(stack: Frame, action: Action, next: Term, nextStart: number
       ? Node.of(action.rule.name.tag ? action.rule.name : null, children, positions)
       : Node.leaf(null, 0)
     let newState = newStack.state.getGoto(action.rule.name)!.target
-    return new Frame(newStack, value, newState, start, stack.pos)
+    return new Frame(newStack, value, newState, start, stack.pos, stack.errorCount, stack.validCount)
   } else { // Shift
-    return new Frame(stack, Node.leaf(next.tag ? next : null, nextEnd - nextStart), (action as Shift).target, nextStart, nextEnd)
+    return new Frame(stack, Node.leaf(next, nextEnd - nextStart), (action as Shift).target,
+                     nextStart, nextEnd, stack.errorCount + (isError ? 1 : 0), isError ? 0 : stack.validCount + 1)
   }
 }
 
-export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0), verbose = false): Node {
-  let parses = [new Frame(null, null, grammar.table[0], 0, 0)]
+export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0),
+                      verbose = false, strict = false): Node {
+  let parses = [new Frame(null, null, grammar.table[0], 0, 0, 0, 0)]
   let cacheIter = new TreeCursor(cache)
 
-  function advance(stack: Frame, next: Term, nextStart: number, nextEnd: number): Node | null {
+  function advance(stack: Frame, next: Term, nextStart: number, nextEnd: number) {
+    let found = false
     for (let action of stack.state.terminals) if (action.term == next) {
       let frame = applyAction(stack, action, next, nextStart, nextEnd)
-      if (frame.state.accepting) return frame.value
-      if (verbose) console.log(`${frame} (via ${next} ${action})`, frame.state.accepting)
+      if (verbose) console.log(`${frame} (via ${next} ${action})`, input.slice(nextStart, nextEnd))
+      found = true
       addFrame(parses, frame)
     }
-    return null
+    return found
   }
 
   parse: for (;;) {
-    let stack = takeFromHeap(parses, compareFrames), pos = stack.pos
+    let stack = takeFromHeap(parses, compareFrames)
+    // FIXME there might be whitespace after stack.pos
+    if (stack.state.accepting && stack.pos == input.length) return stack.value!
+
     if (!stack.state.ambiguous) {
-      for (let cached = cacheIter.nodeAt(pos); cached;
+      for (let cached = cacheIter.nodeAt(stack.pos); cached;
            cached = cached.children.length && cached.positions[0] == 0 ? cached.children[0] : null) {
         let match = stack.state.getGoto(cached.name!)
         if (match) {
-          addFrame(parses, new Frame(stack, cached, match.target, pos /* FIXME */, pos + cached.length))
+          addFrame(parses, new Frame(stack, cached, match.target, stack.pos /* FIXME */, stack.pos + cached.length,
+                                     stack.errorCount, stack.validCount + 1)) // FIXME counting entire subtrees as 1
           continue parse
         }
       }
     }
 
-    let token: Term | null = null, start = pos, end = pos, sawEof = false
-    let maxStart = pos
+    let token: Term | null = null, start = stack.pos, end = start, sawEof = false
+    let maxStart = start, advanced = false
     for (let tokenCx of grammar.tokenTable[stack.state.id]) {
-      let curPos = pos
+      let curPos = stack.pos
       if (tokenCx.skip) {
         let skip = tokenCx.skip.simulate(input, curPos)
         if (skip) { curPos = skip.end; maxStart = Math.max(maxStart, skip.end) }
@@ -185,74 +206,53 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
         let specialized = grammar.specialized[token.name]
         if (specialized) {
           let value = specialized[input.slice(start, end)]
-          if (value) advance(stack, value, start, end)
-        }
-      }
-      let result = advance(stack, token, start, end)
-      if (result) return result
-    }
-    if (token == null) {
-      token = grammar.terms.error
-      start = maxStart
-      end = maxStart + 1
-      advance(stack, token, start, end)
-    }
-    if (!parses.length)
-      throw new SyntaxError("No parse at " + start + " with " + token +
-                            " (stack is " + stack + ")")
-  }
-}
-
-const MAX_INSERT_N = 3, MAX_INSERT_SEARCH = 2
-
-function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number) {
-  if (next.error) return
-  let found: Frame[] = []
-  
-  let work = [stack]
-  let depth = 0, lastItemAtDepth = 0
-  for (let i = 0; i < work.length; i++) {
-    let stack = work[i++]
-    let match = stack.state.terminals.find(action => action.term == next)
-    if (match) {
-      let depth = stack.depth
-      for (let i = 0; i < found.length; i++) {
-        let sameState = found[i].state == stack.state
-        if (found[i].depth > depth && (sameState || found.length == MAX_INSERT_N)) {
-          found[i] = stack
-          continue
-        } else if (sameState) {
-          continue
-        }
-      }
-      if (found.length < MAX_INSERT_N) found.push(stack)
-    } else {
-      for (let action of stack.state.terminals) {
-        for (;;) {
-          stack = applyAction(stack, action, grammar.terms.error, nextStart, nextStart)
-          if (action instanceof Shift && !work.some(s => s.state == stack.state)) {
-            work.push(stack)
-            break
+          if (value && advance(stack, value, start, end)) {
+            advanced = true
+            continue
           }
         }
       }
+      if (advance(stack, token, start, end)) advanced = true
     }
-    if (i == lastItemAtDepth) {
-      depth++
-      if (depth == MAX_INSERT_SEARCH) break
-      lastItemAtDepth = work.length - 1
+    if (!advanced && !strict && !parses.some(s => s.pos >= stack.pos && s.score >= stack.score)) {
+      if (!token) {
+        token = grammar.terms.error
+        start = maxStart
+        end = start + 1
+      }
+      // FIXME if we're at EOF, just combine all values on the stack and return
+      recoverByInsert(stack, parses, grammar, token, start, end)
+      recoverByDelete(stack, parses, grammar, token, start, end)
+    }
+    if (!parses.length)
+      throw new SyntaxError("No parse at " + start + " with " + token + " (stack is " + stack + ")")
+  }
+}
+
+function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number) {
+  if (next.error) return
+
+  function explore(stack: Frame) {
+    for (let action of stack.state.terminals) {
+      if (action instanceof Reduce && !action.term.eof) {
+        let newStack = applyAction(stack, action, grammar.terms.error, nextStart, nextStart)
+        if (addFrame(parses, newStack)) explore(newStack)
+      } else if (action instanceof Shift && action.target.terminals.some(a => a.term == next)) {
+        addFrame(parses, applyAction(stack, action, grammar.terms.error, nextStart, nextStart, true))
+      }
     }
   }
-
-  for (let stack of found) addFrame(parses, stack)
+  explore(stack)
 }
 
 function recoverByDelete(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number) {
   let value = stack.value!
   let node = Node.leaf(next, nextEnd - nextStart)
-  if (value.name && value.name.error)
+  if (value.name && value.name.error) {
     value = Node.of(value.name, value.children.concat(node), value.positions.concat(nextStart - stack.start)) // FIXME expensive
-  else
-    value = Node.of(grammar.terms.error, [value, node], [0, nextStart - stack.start])
-  addFrame(parses, new Frame(stack.prev, value, stack.state, stack.start, nextEnd))
+  } else {
+    if (!next.error) node = Node.of(grammar.terms.error, [node], [0])
+    value = Node.of(null, [value, node], [0, nextStart - stack.start])
+  }
+  addFrame(parses, new Frame(stack.prev, value, stack.state, stack.start, nextEnd, stack.errorCount + 1, 0))
 }

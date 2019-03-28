@@ -25,7 +25,7 @@ function fail(message: string, file: string, n: number = -1) {
 }
 
 function compressAST(ast: string, file: string) {
-  let token = /\s*($|[(),]|\"(?:\\.|[^"])*\"|\w+)/gy
+  let token = /\s*($|[(),]|\"(?:\\.|[^"])*\"|[\w⚠]+)/gy
   let result = ""
   for (;;) {
     let m = token.exec(ast)
@@ -83,8 +83,9 @@ for (let file of fs.readdirSync(caseDir)) {
       continue
     }
     let expected = compressAST(ast, file), parsed
+    let strict = expected.indexOf("⚠") < 0
     try {
-      parsed = parse(text.trim(), grammar, undefined, printParse).toString()
+      parsed = parse(text.trim(), grammar, undefined, printParse, strict).toString()
     } catch (e) {
       fail(e.message, file, i)
       if (!(e instanceof SyntaxError)) console.log(e.stack)

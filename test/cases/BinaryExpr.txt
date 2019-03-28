@@ -48,3 +48,21 @@ x*x+y/y
 (x+y)*x
 
 ==> BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),MultOp,Symbol)
+
+---
+
+x++y
+
+==> BinaryExpr(Symbol,AddOp,⚠(AddOp),Symbol)
+
+---
+
+x%+y
+
+==> BinaryExpr(Symbol,⚠,AddOp,Symbol)
+
+---
+
+xy
+
+==> BinaryExpr(Symbol,⚠,Symbol)
