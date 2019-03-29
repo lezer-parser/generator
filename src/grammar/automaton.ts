@@ -323,16 +323,17 @@ function findRecoveryRules(rules: ReadonlyArray<Rule>, terms: TermSet) {
       if (pos == 0) { startedBy.push(rule); top.push(true) }
     }
     for (let i = 0; i < top.length; i++) {
-      let rule = startedBy[i]
+      let rule: Rule = startedBy[i]
       for (let other of rules) {
-        if (other.parts.length && other.parts[0] == rule.name) {
+        if (other != rule && other.parts.length && other.parts[0] == rule.name &&
+            !rules.some(r => r.name == other.name && r.parts[0] != rule.name)) {
           top[i] = false
           if (!startedBy.includes(other)) { startedBy.push(other); top.push(true) }
         }
       }
     }
     let tops = startedBy.filter((_, i) => top[i])
-    if (tops.length == 1) found.push({rule: tops[0], term})
+    if (tops.length == 1 && tops[0].parts.length > 1) found.push({rule: tops[0], term})
   }
   return found
 }
@@ -343,21 +344,39 @@ function addRecoveryRules(table: State[], rules: ReadonlyArray<Rule>, terms: Ter
     for (let {rule, term} of recoverable) {
       let nearestPos = null, nearestDist = 1e9
       for (let pos of state.set) {
-        let found = pos.rule.parts.indexOf(rule.name, pos.pos + 1)
-        if (found > -1) {
-          let dist = found - pos.pos
-          if (dist < nearestDist) { nearestPos = pos; nearestDist = dist }
+        for (let i = pos.pos + 1; i < pos.rule.parts.length; i++) {
+          if (mayStartWith(pos.rule.parts[i], rule.name, rules)) {
+            let dist = i - pos.pos
+            if (dist < nearestDist) { nearestPos = pos; nearestDist = dist }
+            break
+          }
         }
       }
       // There's a position with rule.name ahead in this state
       if (nearestPos) {
         let recoverStates = [], cur = state
         for (let i = 0; i < nearestDist; i++) {
-          cur = cur.getGoto(nearestPos.rule.parts[nearestPos.pos + i])!.target
+          let next = nearestPos.rule.parts[nearestPos.pos + i]
+          if (next.terminal) cur = (cur.terminals.find(t => t.term == next) as Shift).target
+          else cur = cur.getGoto(next)!.target
           recoverStates.push(cur)
         }
         state.recover.push(new Recover(term, recoverStates))
       }
     }
   }
+}
+
+function mayStartWith(goal: Term, term: Term, rules: ReadonlyArray<Rule>) {
+  if (goal.terminal) return false
+  let seen: Term[] = []
+  function search(goal: Term) {
+    if (goal == term) return true
+    if (seen.includes(goal)) return false
+    seen.push(goal)
+    for (let rule of rules)
+      if (rule.name == goal && rule.parts.length && search(rule.parts[0])) return true
+    return false
+  }
+  return search(goal)
 }
