@@ -1,0 +1,15 @@
+program { (Class | Block)* }
+
+Class { "class" "{" "classitem"* "}" }
+
+Block { "{" (Block | "statement")* "}" }
+
+tokens {
+  skip { std.whitespace* }
+}
+
+---
+
+{ { { class { classitem }
+
+==> ⚠,Class
