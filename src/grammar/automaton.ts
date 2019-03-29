@@ -96,12 +96,17 @@ export class Reduce implements Action {
   map() { return this }
 }
 
+export class Recover {
+  constructor(readonly term: Term, readonly states: ReadonlyArray<State>) {}
+}
+
 const ACCEPTING = 1, AMBIGUOUS = 2 // FIXME maybe store per terminal
 
 export class State {
   terminals: Action[] = []
   terminalPrec: ReadonlyArray<Precedence>[] = []
   goto: Shift[] = []
+  recover: Recover[] = []
 
   constructor(readonly id: number, readonly set: ReadonlyArray<Pos>, public flags = 0) {}
 
@@ -301,7 +306,58 @@ function collapseAutomaton(states: State[]): State[] {
 }
 
 export function buildAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet) {
-  return collapseAutomaton(buildFullAutomaton(rules, terms))
+  let table = collapseAutomaton(buildFullAutomaton(rules, terms))
+  addRecoveryRules(table, rules, terms)
+  return table
 }
 
 const none: ReadonlyArray<any> = []
+
+function findRecoveryRules(rules: ReadonlyArray<Rule>, terms: TermSet) {
+  let found: {rule: Rule, term: Term}[] = []
+  terms: for (let term of terms.terminals) {
+    let startedBy = [], top: boolean[] = []
+    for (let rule of rules) {
+      let pos = rule.parts.indexOf(term)
+      if (pos > 0) continue terms
+      if (pos == 0) { startedBy.push(rule); top.push(true) }
+    }
+    for (let i = 0; i < top.length; i++) {
+      let rule = startedBy[i]
+      for (let other of rules) {
+        if (other.parts.length && other.parts[0] == rule.name) {
+          top[i] = false
+          if (!startedBy.includes(other)) { startedBy.push(other); top.push(true) }
+        }
+      }
+    }
+    let tops = startedBy.filter((_, i) => top[i])
+    if (tops.length == 1) found.push({rule: tops[0], term})
+  }
+  return found
+}
+
+function addRecoveryRules(table: State[], rules: ReadonlyArray<Rule>, terms: TermSet) {
+  let recoverable = findRecoveryRules(rules, terms)
+  for (let state of table) {
+    for (let {rule, term} of recoverable) {
+      let nearestPos = null, nearestDist = 1e9
+      for (let pos of state.set) {
+        let found = pos.rule.parts.indexOf(rule.name, pos.pos + 1)
+        if (found > -1) {
+          let dist = found - pos.pos
+          if (dist < nearestDist) { nearestPos = pos; nearestDist = dist }
+        }
+      }
+      // There's a position with rule.name ahead in this state
+      if (nearestPos) {
+        let recoverStates = [], cur = state
+        for (let i = 0; i < nearestDist; i++) {
+          cur = cur.getGoto(nearestPos.rule.parts[nearestPos.pos + i])!.target
+          recoverStates.push(cur)
+        }
+        state.recover.push(new Recover(term, recoverStates))
+      }
+    }
+  }
+}
