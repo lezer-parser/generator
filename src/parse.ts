@@ -1,22 +1,49 @@
 import {Term, Grammar} from "./grammar/grammar"
 import {Action, State, Shift, Reduce} from "./grammar/automaton"
 
+const BADNESS_DELETE = 110, BADNESS_INSERT = 100
+const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between stacks are less agressively pruned
+
+// (FIXME: this will go out of date before I know it, revisit at some
+// point)
+//
+// Badness is a measure of how off-the-rails a given parse is. It is
+// bumped when a recovery strategy is applied, and then reduced (by
+// multiplication with a constant < 1) for every successful (real)
+// token shifted.
+//
+// Stacks with a low badness are relatively credible parses that have
+// shift matching the input in their recent history. Stacks with a
+// high badness are deeply in the weeds and likely wrong. For each of
+// these, we prune agressively by dropping stacks when another stack
+// at the same position is looking better.
+//
+// For those in the BADNESS_STABILIZING - BADNESS_WILD range, we
+// assume that they are in the process of trying to recover and allow
+// a bunch of them to continue alongside each other to see which one
+// works out better.
+//
+// Stacks with the same low badness score are likely to be valid GLR
+// parsing branches, so in that case it's often a good idea to let
+// both continue.
+//
+// When a stack fails to find an advancing action, recovery is only
+// applied when its badness is < BADNESS_WILD, or no better parse
+// exists at that point.
+
 class Frame {
   constructor(readonly prev: Frame | null,
               readonly value: Node | null,
               readonly state: State,
               readonly start: number,
               readonly pos: number,
-              readonly errorCount: number,
-              readonly validCount: number) {}
+              readonly badness: number) {}
 
   get depth() {
     let d = 0
     for (let f: Frame | null = this; f; f = f.prev) d++
     return d
   }
-
-  get score() { return this.validCount * 5 - this.errorCount }
 
   toString() {
     return this.prev ? `${this.prev} ${this.value} [${this.state.id}]` : `[${this.state.id}]`
@@ -32,13 +59,13 @@ import {takeFromHeap, addToHeap} from "./heap"
 
 function compareFrames(a: Frame, b: Frame) { return a.pos - b.pos }
 
-function addFrame(heap: Frame[], frame: Frame): boolean {
+function addFrame(heap: Frame[], frame: Frame, strict = frame.badness < BADNESS_STABILIZING || frame.badness > BADNESS_WILD): boolean {
   for (let i = 0; i < heap.length; i++) {
     let other = heap[i]
-    if (other.state == frame.state && other.pos == frame.pos) {
-      let diff = other.score - frame.score || frame.depth - other.depth
-      if (diff < 0) heap[i] = frame
-      return false
+    if ((strict || other.state == frame.state) && other.pos == frame.pos) {
+      let diff = frame.badness - other.badness || (frame.badness < BADNESS_STABILIZING ? 0 : frame.depth - other.depth)
+      if (diff < 0) { heap[i] = frame; return true }
+      else if (diff > 0) return false
     }
   }
   addToHeap(heap, frame, compareFrames)
@@ -130,7 +157,7 @@ class TreeCursor {
   }
 }
 
-function applyAction(stack: Frame, action: Action, next: Term, nextStart: number, nextEnd: number, isError = false): Frame {
+function applyAction(stack: Frame, action: Action, next: Term, nextStart: number, nextEnd: number, badness = 0): Frame {
   if (action instanceof Reduce) {
     let newStack = stack, children = [], positions = []
     for (let i = action.rule.parts.length; i > 0; i--) {
@@ -144,16 +171,16 @@ function applyAction(stack: Frame, action: Action, next: Term, nextStart: number
       ? Node.of(action.rule.name.tag ? action.rule.name : null, children, positions)
       : Node.leaf(null, 0)
     let newState = newStack.state.getGoto(action.rule.name)!.target
-    return new Frame(newStack, value, newState, start, stack.pos, stack.errorCount, stack.validCount)
+    return new Frame(newStack, value, newState, start, stack.pos, stack.badness)
   } else { // Shift
     return new Frame(stack, Node.leaf(next, nextEnd - nextStart), (action as Shift).target,
-                     nextStart, nextEnd, stack.errorCount + (isError ? 1 : 0), isError ? 0 : stack.validCount + 1)
+                     nextStart, nextEnd, badness ? stack.badness + badness : (stack.badness >> 1) + (stack.badness >> 2)) // (* 0.75)
   }
 }
 
 export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0),
                       verbose = false, strict = false): Node {
-  let parses = [new Frame(null, null, grammar.table[0], 0, 0, 0, 0)]
+  let parses = [new Frame(null, null, grammar.table[0], 0, 0, 0)]
   let cacheIter = new TreeCursor(cache)
 
   function advance(stack: Frame, next: Term, nextStart: number, nextEnd: number) {
@@ -162,7 +189,7 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
       let frame = applyAction(stack, action, next, nextStart, nextEnd)
       if (verbose) console.log(`${frame} (via ${next} ${action})`, input.slice(nextStart, nextEnd))
       found = true
-      addFrame(parses, frame)
+      addFrame(parses, frame, action instanceof Shift)
     }
     return found
   }
@@ -178,7 +205,7 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
         let match = stack.state.getGoto(cached.name!)
         if (match) {
           addFrame(parses, new Frame(stack, cached, match.target, stack.pos /* FIXME */, stack.pos + cached.length,
-                                     stack.errorCount, stack.validCount + 1)) // FIXME counting entire subtrees as 1
+                                     stack.badness >> 1)) // FIXME how to adjust badness for a whole tree? zero it?
           continue parse
         }
       }
@@ -186,6 +213,7 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
 
     let token: Term | null = null, start = stack.pos, end = start, sawEof = false
     let maxStart = start, advanced = false
+    // FIXME cache token info
     for (let tokenCx of grammar.tokenTable[stack.state.id]) {
       let curPos = stack.pos
       if (tokenCx.skip) {
@@ -214,14 +242,16 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
       }
       if (advance(stack, token, start, end)) advanced = true
     }
-    if (!advanced && !strict && !parses.some(s => s.pos >= stack.pos && s.score >= stack.score)) {
+    if (!advanced && !strict &&
+        !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
       if (!token) {
         token = grammar.terms.error
         start = maxStart
         end = start + 1
       }
       // FIXME if we're at EOF, just combine all values on the stack and return
-      recoverByInsert(stack, parses, grammar, token, start, end)
+      if (stack.badness < BADNESS_WILD)
+        recoverByInsert(stack, parses, grammar, token, start, end)
       recoverByDelete(stack, parses, grammar, token, start, end)
     }
     if (!parses.length)
@@ -238,7 +268,7 @@ function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: 
         let newStack = applyAction(stack, action, grammar.terms.error, nextStart, nextStart)
         if (addFrame(parses, newStack)) explore(newStack)
       } else if (action instanceof Shift && action.target.terminals.some(a => a.term == next)) {
-        addFrame(parses, applyAction(stack, action, grammar.terms.error, nextStart, nextStart, true))
+        addFrame(parses, applyAction(stack, action, grammar.terms.error, nextStart, nextStart, BADNESS_INSERT))
       }
     }
   }
@@ -254,5 +284,5 @@ function recoverByDelete(stack: Frame, parses: Frame[], grammar: Grammar, next: 
     if (!next.error) node = Node.of(grammar.terms.error, [node], [0])
     value = Node.of(null, [value, node], [0, nextStart - stack.start])
   }
-  addFrame(parses, new Frame(stack.prev, value, stack.state, stack.start, nextEnd, stack.errorCount + 1, 0))
+  addFrame(parses, new Frame(stack.prev, value, stack.state, stack.start, nextEnd, stack.badness + BADNESS_DELETE))
 }
