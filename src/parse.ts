@@ -1,7 +1,7 @@
 import {Term, Grammar} from "./grammar/grammar"
 import {Action, State, Shift, Reduce} from "./grammar/automaton"
 
-const BADNESS_DELETE = 110, BADNESS_INSERT = 100, BADNESS_RECOVER = 90
+const BADNESS_DELETE = 110, BADNESS_RECOVER = 90
 const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between stacks are less agressively pruned
 
 // (FIXME: this will go out of date before I know it, revisit at some
@@ -45,12 +45,6 @@ class Frame {
     return d
   }
 
-  parent(n: number) {
-    let stack: Frame = this
-    for (let i = 0; i < n; i++) stack = stack.prev!
-    return stack
-  }
-
   toString() {
     return this.prev ? `${this.prev} ${this.value} [${this.state.id}]` : `[${this.state.id}]`
   }
@@ -62,9 +56,11 @@ class Frame {
 
   reduce(depth: number, name: Term, badness = this.badness, nextState: State | null = null): Frame {
     // FIXME destructively update when depth==1?
-    let prev = this.parent(depth)
+    let prev = this as Frame, start!: number
+    for (let i = 0; i < depth; i++) { start = prev.start; prev = prev.prev! }
+    if (!prev.state.getGoto(name)) console.log("no goto for", name  + " in " + prev.state.id)
     return new Frame(prev, Node.fromStack(this, depth, name),
-                     nextState || prev.state.getGoto(name)!.target, prev.start, this.pos, badness)
+                     nextState || prev.state.getGoto(name)!.target, start, this.pos, badness)
   }
 }
 
@@ -258,32 +254,12 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
         end = start + (maxStart == input.length ? 0 : 1)
       }
 
-      // Prefer recovering with a recovery table, only use insert when
-      // that doesn't work and the stack's badness is low
-      if (!recoverByTable(stack, parses, grammar, token, start, end) &&
-          stack.badness < BADNESS_WILD)
-        recoverByInsert(stack, parses, grammar, token, start)
+      recoverByInsert(stack, parses, grammar, token, start, end)
       recoverByDelete(stack, parses, grammar, token, start, end)
     }
     if (!parses.length)
       throw new SyntaxError("No parse at " + start + " with " + token + " (stack is " + stack + ")")
   }
-}
-
-function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number) {
-  if (next.error) return
-
-  function explore(stack: Frame) {
-    for (let action of stack.state.terminals) {
-      if (action instanceof Reduce && !action.term.eof) {
-        let newStack = applyAction(stack, action, grammar.terms.error, nextStart, nextStart)
-        if (addFrame(parses, newStack)) explore(newStack)
-      } else if (action instanceof Shift && action.target.terminals.some(a => a.term == next)) {
-        addFrame(parses, applyAction(stack, action, grammar.terms.error, nextStart, nextStart, BADNESS_INSERT))
-      }
-    }
-  }
-  explore(stack)
 }
 
 function recoverByDelete(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number) {
@@ -302,20 +278,62 @@ function recoverByDelete(stack: Frame, parses: Frame[], grammar: Grammar, next: 
   addFrame(parses, new Frame(stack.prev, value, stack.state, stack.start, nextEnd, stack.badness + BADNESS_DELETE))
 }
 
-function recoverByTable(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number) {
-  for (let depth = 0, cur: Frame | null = stack; cur; cur = cur.prev, depth++) {
-    let action = cur.state.recover.find(a => a.term == next)
-    if (action) {
-      let newStack = cur
-      for (let state of action.states) {
-        if (newStack == cur && depth > 0)
-          newStack = stack.reduce(depth, grammar.terms.error, BADNESS_RECOVER, state)
-        else
-          newStack = new Frame(newStack, Node.leaf(grammar.terms.error, 0), state, stack.pos, stack.pos, BADNESS_RECOVER)
+function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number) {
+  // Scan for a state that has either a direct action or a recovery
+  // action for next, without actually building up a new stack
+  let found = false 
+  for (let top = stack.state, rest = stack.prev!;;) {
+    if (top.terminals.some(a => a.term == next) ||
+        top.recover.some(a => a.term == next)) {
+      found = true
+      break
+    }
+    // Find a way to reduce from here
+    let term, n
+    let direct = top.terminals.find(a => a instanceof Reduce) as Reduce, pos
+    if (direct) {
+      term = direct.rule.name
+      n = direct.rule.parts.length
+    } else if (pos = top.set.find(p => p.pos > 0)) { // FIXME store this in the run-time states
+      term = pos.rule.name
+      n = pos.pos
+    } else {
+      break
+    }
+    if (n == 0) break
+    for (let i = 1; i < n; i++) rest = rest.prev!
+    let goto = rest.state.getGoto(term)
+    if (!goto) break
+    top = goto.target
+  }
+  if (!found) return
+
+  // Now that we know there's a recovery to be found, do it again, the
+  // expensive way, to get a new stack
+  let result = stack
+  for (;;) {
+    for (;;) {
+      if (result.state.terminals.some(a => a.term == next)) {
+        addFrame(parses, result)
+        return
       }
-      addFrame(parses, newStack)
-      return true
+      let recover = result.state.recover.find(a => a.term == next)
+      if (!recover) break
+      result = new Frame(result, Node.leaf(grammar.terms.error, 0), recover.target,
+                         result.pos, result.pos, result.badness + BADNESS_RECOVER)
+    }
+ 
+    let direct = result.state.terminals.find(a => a instanceof Reduce) as Reduce, pos
+    if (direct) {
+      result = result.reduce(direct.rule.parts.length, direct.rule.name)
+    } else if (pos = result.state.set.find(p => p.pos > 0)) {
+      let value = result.value!, prev = result.prev!, start = result.start
+      if (pos.pos != 1 || value.name != grammar.terms.error) {
+        for (let i = 1; i < pos.pos; i++) { start = prev.start; prev = prev.prev! }
+        value = Node.fromStack(result, pos.pos, grammar.terms.error)
+      }
+      let newState = prev.state.getGoto(pos.rule.name)!.target
+      result = new Frame(prev, value, newState, start, result.pos, result.badness)
     }
   }
-  return false
 }
