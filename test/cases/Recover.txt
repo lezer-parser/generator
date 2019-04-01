@@ -12,4 +12,4 @@ tokens {
 
 { { { class { classitem }
 
-==> ⚠,Class
+==> Block(Block(Block(⚠),⚠),⚠),Class

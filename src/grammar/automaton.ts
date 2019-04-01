@@ -91,7 +91,7 @@ export class Reduce implements Action {
 
   eq(other: Action): boolean { return other instanceof Reduce && other.rule == this.rule }
 
-  toString() { return this.rule.name.name }
+  toString() { return `${this.rule.name.name}(${this.rule.parts.length})` }
 
   map() { return this }
 }

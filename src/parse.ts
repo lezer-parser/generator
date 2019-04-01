@@ -1,7 +1,7 @@
 import {Term, Grammar} from "./grammar/grammar"
 import {Action, State, Shift, Reduce} from "./grammar/automaton"
 
-const BADNESS_DELETE = 110, BADNESS_RECOVER = 90
+const BADNESS_DELETE = 100, BADNESS_RECOVER = 100
 const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between stacks are less agressively pruned
 
 // (FIXME: this will go out of date before I know it, revisit at some
@@ -58,7 +58,6 @@ class Frame {
     // FIXME destructively update when depth==1?
     let prev = this as Frame, start!: number
     for (let i = 0; i < depth; i++) { start = prev.start; prev = prev.prev! }
-    if (!prev.state.getGoto(name)) console.log("no goto for", name  + " in " + prev.state.id)
     return new Frame(prev, Node.fromStack(this, depth, name),
                      nextState || prev.state.getGoto(name)!.target, start, this.pos, badness)
   }
@@ -98,7 +97,17 @@ export class Node {
     return name || length ? new Node(name, length, none, none) : Node.empty
   }
 
-  static fromStack(stack: Frame, depth: number, name: Term | null) {
+  flattenTo(nodes: Node[], positions: number[], offset: number, name: Term | null) {
+    if (this.name && !(this.name == name && name.error)) {
+      nodes.push(this)
+      positions.push(offset)
+    } else {
+      for (let i = 0; i < this.children.length; i++)
+        this.children[i].flattenTo(nodes, positions, offset + this.positions[i], name)
+    }
+  }
+
+  static fromStack(stack: Frame, depth: number, name: Term | null, append?: Node) {
     if (depth == 0) return Node.leaf(name, 0)
     if (name && !name.tag) name = null
     if (depth == 1 && !name) return stack.value!
@@ -107,18 +116,12 @@ export class Node {
     let children: Node[] = [], positions: number[] = []
     let start = frames[frames.length - 1].start
     for (let i = frames.length - 1; i >= 0; i--) {
-      let frame = frames[i], value = frame.value!
-      if (value.name) {
-        children.push(value)
-        positions.push(frame.start - start)
-      } else {
-        for (let i = 0; i < value.children.length; i++) {
-          children.push(value.children[i])
-          positions.push(frame.start + value.positions[i] - start)
-        }
-      }
+      let frame = frames[i]
+      frame.value!.flattenTo(children, positions, frame.start - start, name)
     }
-    return new Node(name, stack.start + stack.value!.length, children, positions)
+    let length = stack.start + stack.value!.length - start
+    if (append) { children.push(append); positions.push(length) }
+    return new Node(name, length, children, positions)
   }
 
   partial(start: number, end: number, offset: number, target: Node) {
@@ -254,15 +257,16 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
         end = start + (maxStart == input.length ? 0 : 1)
       }
 
-      recoverByInsert(stack, parses, grammar, token, start, end)
-      recoverByDelete(stack, parses, grammar, token, start, end)
+      recoverByInsert(stack, parses, grammar, token, start, end, verbose)
+      recoverByDelete(stack, parses, grammar, token, start, end, verbose)
     }
     if (!parses.length)
       throw new SyntaxError("No parse at " + start + " with " + token + " (stack is " + stack + ")")
   }
 }
 
-function recoverByDelete(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number) {
+function recoverByDelete(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number,
+                         verbose: boolean) {
   let value = stack.value!
   // Don't do anything when adding an error token to an error or when the token doesn't have a tag
   if (next.tag && !(next.error && value.name && value.name.error)) {
@@ -275,13 +279,16 @@ function recoverByDelete(stack: Frame, parses: Frame[], grammar: Grammar, next: 
       value = new Node(null, value.length + (nextEnd - stack.pos), [value, node], [0, nextStart - stack.start])
     }
   }
-  addFrame(parses, new Frame(stack.prev, value, stack.state, stack.start, nextEnd, stack.badness + BADNESS_DELETE))
+  let result = new Frame(stack.prev, value, stack.state, stack.start, nextEnd, stack.badness + BADNESS_DELETE)
+  if (verbose) console.log("delete token " + next + ": " + result)
+  addFrame(parses, result)
 }
 
-function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number) {
+function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number,
+                         verbose: boolean) {
   // Scan for a state that has either a direct action or a recovery
   // action for next, without actually building up a new stack
-  let found = false 
+  let found = false
   for (let top = stack.state, rest = stack.prev!;;) {
     if (top.terminals.some(a => a.term == next) ||
         top.recover.some(a => a.term == next)) {
@@ -300,7 +307,7 @@ function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: 
     } else {
       break
     }
-    if (n == 0) break
+    if (n == 0) rest = new Frame(rest, null, top, 0, 0, 0) // FIXME kludgey
     for (let i = 1; i < n; i++) rest = rest.prev!
     let goto = rest.state.getGoto(term)
     if (!goto) break
@@ -310,17 +317,19 @@ function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: 
 
   // Now that we know there's a recovery to be found, do it again, the
   // expensive way, to get a new stack
-  let result = stack
+  let result = stack, badness = stack.badness + BADNESS_RECOVER
   for (;;) {
     for (;;) {
       if (result.state.terminals.some(a => a.term == next)) {
+        if (verbose) console.log("recovered to " + result)
         addFrame(parses, result)
         return
       }
       let recover = result.state.recover.find(a => a.term == next)
       if (!recover) break
+      if (verbose) console.log("skip from state " + result.state.id + " to " + recover.target.id)
       result = new Frame(result, Node.leaf(grammar.terms.error, 0), recover.target,
-                         result.pos, result.pos, result.badness + BADNESS_RECOVER)
+                         result.pos, result.pos, badness)
     }
  
     let direct = result.state.terminals.find(a => a instanceof Reduce) as Reduce, pos
@@ -330,7 +339,7 @@ function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: 
       let value = result.value!, prev = result.prev!, start = result.start
       if (pos.pos != 1 || value.name != grammar.terms.error) {
         for (let i = 1; i < pos.pos; i++) { start = prev.start; prev = prev.prev! }
-        value = Node.fromStack(result, pos.pos, grammar.terms.error)
+        value = Node.fromStack(result, pos.pos, pos.rule.name, Node.leaf(grammar.terms.error, 0))
       }
       let newState = prev.state.getGoto(pos.rule.name)!.target
       result = new Frame(prev, value, newState, start, result.pos, result.badness)
