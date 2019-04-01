@@ -114,8 +114,9 @@ export class State {
   get accepting() { return (this.flags & ACCEPTING) > 0 }
 
   toString() {
-    return this.id + "=" + this.set.join() +  ": " +
-      this.terminals.map(t => t.term + "=" + t).join(",") + "|" + this.goto.map(g => g.term + "=" + g).join(",")
+    let actions = this.terminals.map(t => t.term + "=" + t).join(",") +
+      (this.goto.length ? " | " + this.goto.map(g => g.term + "=" + g).join(",") : "")
+    return this.id + ": " + this.set.filter(p => p.pos > 0).join() + (actions.length ? "\n  " + actions : "")
   }
 
   addAction(value: Action, prec: ReadonlyArray<Precedence>, pos?: Pos): boolean {
