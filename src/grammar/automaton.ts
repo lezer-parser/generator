@@ -70,26 +70,20 @@ function cmpSet<T>(a: ReadonlyArray<T>, b: ReadonlyArray<T>, cmp: (a: T, b: T) =
   return 0
 }
 
-export interface Action {
-  term: Term
-  eq(other: Action): boolean
-  map(mapping: number[], states: State[]): Action
-}
-
-export class Shift implements Action {
+export class Shift {
   constructor(readonly term: Term, readonly target: State) {}
 
-  eq(other: Action): boolean { return other instanceof Shift && other.target == this.target }
+  eq(other: Shift | Reduce): boolean { return other instanceof Shift && other.target == this.target }
 
   toString() { return "s" + this.target.id }
 
   map(mapping: number[], states: State[]) { return new Shift(this.term, states[mapping[this.target.id]]) }
 }
 
-export class Reduce implements Action {
+export class Reduce {
   constructor(readonly term: Term, readonly rule: Rule) {}
 
-  eq(other: Action): boolean { return other instanceof Reduce && other.rule == this.rule }
+  eq(other: Shift | Reduce): boolean { return other instanceof Reduce && other.rule == this.rule }
 
   toString() { return `${this.rule.name.name}(${this.rule.parts.length})` }
 
@@ -99,7 +93,7 @@ export class Reduce implements Action {
 const ACCEPTING = 1, AMBIGUOUS = 2 // FIXME maybe store per terminal
 
 export class State {
-  terminals: Action[] = []
+  terminals: (Shift | Reduce)[] = []
   terminalPrec: ReadonlyArray<Precedence>[] = []
   goto: Shift[] = []
   recover: Shift[] = []
@@ -115,7 +109,7 @@ export class State {
     return this.id + ": " + this.set.filter(p => p.pos > 0).join() + (actions.length ? "\n  " + actions : "")
   }
 
-  addAction(value: Action, prec: ReadonlyArray<Precedence>, pos?: Pos): boolean {
+  addAction(value: Shift | Reduce, prec: ReadonlyArray<Precedence>, pos?: Pos): boolean {
     check: for (let i = 0; i < this.terminals.length; i++) {
       let action = this.terminals[i]
       if (action.term == value.term) {

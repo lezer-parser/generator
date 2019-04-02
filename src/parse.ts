@@ -1,5 +1,5 @@
 import {Term, Grammar} from "./grammar/grammar"
-import {Action, State, Shift, Reduce} from "./grammar/automaton"
+import {State, Shift, Reduce} from "./grammar/automaton"
 
 const BADNESS_DELETE = 100, BADNESS_RECOVER = 100
 const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between stacks are less agressively pruned
@@ -32,51 +32,80 @@ const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between stacks a
 // exists at that point.
 
 class Frame {
-  constructor(readonly prev: Frame | null,
-              readonly value: Node | null,
+  constructor(readonly rest: Frame | null,
+              readonly value: Node,
               readonly state: State,
-              readonly start: number,
-              readonly pos: number,
-              readonly badness: number) {}
+              readonly start: number) {}
+}
+
+class Stack {
+  constructor(public rest: Frame | null,
+              public pos: number,
+              public badness: number,
+              public state: State) {}
 
   get depth() {
     let d = 0
-    for (let f: Frame | null = this; f; f = f.prev) d++
+    for (let f: Frame | null = this.rest; f; f = f.rest) d++
     return d
   }
 
   toString() {
-    return this.prev ? `${this.prev} ${this.value} [${this.state.id}]` : `[${this.state.id}]`
+    let result = `[${this.state.id}]`
+    for (let f: Frame | null = this.rest; f; f = f.rest)
+      result = `[${f.state.id}] ${f.value} ` + result
+    return result
   }
 
-  eq(other: Frame): boolean {
-    return this.state == other.state && this.pos == other.pos &&
-      (this.prev == other.prev || (this.prev && other.prev ? this.prev.eq(other.prev) : false))
-  }
-
-  reduce(depth: number, name: Term, badness = this.badness, nextState: State | null = null): Frame {
+  reduce(depth: number, name: Term, badness = this.badness, nextState: State | null = null) {
     // FIXME destructively update when depth==1?
-    let prev = this as Frame, start!: number
-    for (let i = 0; i < depth; i++) { start = prev.start; prev = prev.prev! }
-    return new Frame(prev, Node.fromStack(this, depth, name),
-                     nextState || prev.state.getGoto(name)!.target, start, this.pos, badness)
+    let newValue = Node.fromFrames(this.rest!, depth, name)
+    let lastFrame = this.rest!
+    if (depth == 0) lastFrame = new Frame(lastFrame, newValue, this.state, lastFrame.start)
+    else for (let i = 1; i < depth; i++) lastFrame = lastFrame.rest!
+    this.rest = new Frame(lastFrame.rest, newValue, lastFrame.state, lastFrame.start)
+    this.state = nextState || lastFrame.state.getGoto(name)!.target
+    this.badness = badness
+  }
+
+  apply(action: Shift | Reduce, next: Term, nextStart: number, nextEnd: number, badness = 0) {
+    if (action instanceof Reduce) {
+      this.reduce(action.rule.parts.length, action.rule.name)
+    } else { // Shift
+      this.rest = new Frame(this.rest, Node.leaf(next, nextEnd - nextStart), this.state, nextStart)
+      this.state = action.target
+      this.pos = nextEnd
+      if (badness) this.badness += badness
+      else this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
+    }
+  }
+
+  useCached(value: Node, next: State) {
+    this.rest = new Frame(this.rest, value, this.state, this.pos /* FIXME */)
+    this.state = next
+    this.pos += value.length // FIXME
+    this.badness >> 1 // FIXME
+  }
+
+  split() {
+    return new Stack(this.rest, this.pos, this.badness, this.state)
   }
 }
 
 import {takeFromHeap, addToHeap} from "./heap"
 
-function compareFrames(a: Frame, b: Frame) { return a.pos - b.pos }
+function compareStacks(a: Stack, b: Stack) { return a.pos - b.pos }
 
-function addFrame(heap: Frame[], frame: Frame, strict = frame.badness < BADNESS_STABILIZING || frame.badness > BADNESS_WILD): boolean {
+function addStack(heap: Stack[], stack: Stack, strict = stack.badness < BADNESS_STABILIZING || stack.badness > BADNESS_WILD): boolean {
   for (let i = 0; i < heap.length; i++) {
     let other = heap[i]
-    if ((strict || other.state == frame.state) && other.pos == frame.pos) {
-      let diff = frame.badness - other.badness || (frame.badness < BADNESS_STABILIZING ? 0 : frame.depth - other.depth)
-      if (diff < 0) { heap[i] = frame; return true }
+    if ((strict || other.state == stack.state) && other.pos == stack.pos) {
+      let diff = stack.badness - other.badness || (stack.badness < BADNESS_STABILIZING ? 0 : stack.depth - stack.depth)
+      if (diff < 0) { heap[i] = stack; return true }
       else if (diff > 0) return false
     }
   }
-  addToHeap(heap, frame, compareFrames)
+  addToHeap(heap, stack, compareStacks)
   return true
 }
 
@@ -107,12 +136,12 @@ export class Node {
     }
   }
 
-  static fromStack(stack: Frame, depth: number, name: Term | null, append?: Node) {
+  static fromFrames(stack: Frame, depth: number, name: Term | null, append?: Node) {
     if (depth == 0) return Node.leaf(name, 0)
     if (name && !name.tag) name = null
     if (depth == 1 && !name) return stack.value!
     let frames: Frame[] = []
-    for (let i = 0, s = stack; i < depth; s = s.prev!, i++) frames.push(s)
+    for (let i = 0, s = stack; i < depth; s = s.rest!, i++) frames.push(s)
     let children: Node[] = [], positions: number[] = []
     let start = frames[frames.length - 1].start
     for (let i = frames.length - 1; i >= 0; i--) {
@@ -173,48 +202,46 @@ class TreeCursor {
   }
 }
 
-function applyAction(stack: Frame, action: Action, next: Term, nextStart: number, nextEnd: number, badness = 0): Frame {
-  if (action instanceof Reduce) {
-    return stack.reduce(action.rule.parts.length, action.rule.name)
-  } else { // Shift
-    return new Frame(stack, Node.leaf(next, nextEnd - nextStart), (action as Shift).target,
-                     nextStart, nextEnd, badness ? stack.badness + badness : (stack.badness >> 1) + (stack.badness >> 2)) // (* 0.75)
-  }
-}
-
 export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0),
                       verbose = false, strict = false): Node {
-  let parses = [new Frame(null, null, grammar.table[0], 0, 0, 0)]
+  let parses = [new Stack(null, 0, 0, grammar.table[0])]
   let cacheIter = new TreeCursor(cache)
 
-  function advance(stack: Frame, next: Term, nextStart: number, nextEnd: number) {
-    let found = false
-    for (let action of stack.state.terminals) if (action.term == next) {
-      let frame = applyAction(stack, action, next, nextStart, nextEnd)
-      if (verbose) console.log(`${frame} (via ${next} ${action})`, input.slice(nextStart, nextEnd))
-      found = true
-      addFrame(parses, frame, action instanceof Shift)
+  function advance(stack: Stack, next: Term, nextStart: number, nextEnd: number) {
+    let used = false
+    for (let i = 0, actions = stack.state.terminals; i < actions.length; i++) {
+      let action = actions[i]
+      if (action.term != next) continue
+      let local = stack
+      for (let j = i + 1; j < actions.length; j++) if (actions[j].term == next) {
+        local = stack.split()
+        break
+      }
+      used = true
+      local.apply(action, next, nextStart, nextEnd)
+      if (verbose) console.log(`${local} (via ${next} ${action})`, input.slice(nextStart, nextEnd))
+      addStack(parses, local, action instanceof Shift)
     }
-    return found
+    return used
   }
 
   parse: for (;;) {
-    let stack = takeFromHeap(parses, compareFrames)
+    let stack = takeFromHeap(parses, compareStacks)
 
-    if (!stack.state.ambiguous) {
+    if (!stack.state.ambiguous) { // FIXME this isn't robust
       for (let cached = cacheIter.nodeAt(stack.pos); cached;
            cached = cached.children.length && cached.positions[0] == 0 ? cached.children[0] : null) {
         let match = stack.state.getGoto(cached.name!)
         if (match) {
-          addFrame(parses, new Frame(stack, cached, match.target, stack.pos /* FIXME */, stack.pos + cached.length,
-                                     stack.badness >> 1)) // FIXME how to adjust badness for a whole tree? zero it?
+          stack.useCached(cached, match.target)
+          addStack(parses, stack)
           continue parse
         }
       }
     }
 
     let token: Term | null = null, start = stack.pos, end = start, sawEof = false
-    let maxStart = start, advanced = false
+    let maxStart = start
     // FIXME cache token info
     for (let tokenCx of grammar.tokenTable[stack.state.id]) {
       let curPos = stack.pos
@@ -236,20 +263,20 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
         let specialized = grammar.specialized[token.name]
         if (specialized) {
           let value = specialized[input.slice(start, end)]
-          if (value && advance(stack, value, start, end)) {
-            advanced = true
-            continue
-          }
+          if (value && advance(stack, value, start, end)) continue
         }
       }
-      if (advance(stack, token, start, end)) advanced = true
-    }
-    if (!advanced && maxStart == input.length) {
-      if (!stack.prev!.prev) return stack.value!
-      return Node.fromStack(stack, stack.depth - 1, null)
+      if (advance(stack, token, start, end)) continue
     }
 
-    if (!advanced && !strict &&
+    // If we're here, the stack failed to advance
+
+    if (maxStart == input.length) {
+      if (!stack.rest!.rest) return stack.rest!.value
+      else if (!strict) return Node.fromFrames(stack.rest!, stack.depth, null)
+    }
+
+    if (!strict &&
         !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
       if (!token) {
         token = maxStart == input.length ? grammar.terms.eof : grammar.terms.error
@@ -265,31 +292,34 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
   }
 }
 
-function recoverByDelete(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number,
+function recoverByDelete(stack: Stack, parses: Stack[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number,
                          verbose: boolean) {
-  let value = stack.value!
-  // Don't do anything when adding an error token to an error or when the token doesn't have a tag
+  let top = stack.rest!, value = top.value
+  // Don't do anything with the value when adding an error token to an
+  // error or when the token doesn't have a tag
   if (next.tag && !(next.error && value.name && value.name.error)) {
     let node = Node.leaf(next, nextEnd - nextStart)
     if (value.name && value.name.error) {
       value = new Node(value.name, value.length + (nextEnd - stack.pos),
-                       value.children.concat(node), value.positions.concat(nextStart - stack.start))
+                       value.children.concat(node), value.positions.concat(nextStart - top.start))
     } else {
       if (!next.error) node = new Node(grammar.terms.error, node.length, [node], [0])
-      value = new Node(null, value.length + (nextEnd - stack.pos), [value, node], [0, nextStart - stack.start])
+      value = new Node(null, value.length + (nextEnd - stack.pos), [value, node], [0, nextStart - top.start])
     }
   }
-  let result = new Frame(stack.prev, value, stack.state, stack.start, nextEnd, stack.badness + BADNESS_DELETE)
-  if (verbose) console.log("delete token " + next + ": " + result)
-  addFrame(parses, result)
+  stack.rest = new Frame(top.rest, value, top.state, top.start)
+  stack.pos = nextEnd
+  stack.badness += BADNESS_DELETE
+  if (verbose) console.log("delete token " + next + ": " + stack)
+  addStack(parses, stack)
 }
 
-function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number,
+function recoverByInsert(stack: Stack, parses: Stack[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number,
                          verbose: boolean) {
   // Scan for a state that has either a direct action or a recovery
   // action for next, without actually building up a new stack
   let found = false
-  for (let top = stack.state, rest = stack.prev!;;) {
+  for (let top = stack.state, rest = stack.rest!;;) {
     if (top.terminals.some(a => a.term == next) ||
         top.recover.some(a => a.term == next)) {
       found = true
@@ -307,8 +337,8 @@ function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: 
     } else {
       break
     }
-    if (n == 0) rest = new Frame(rest, null, top, 0, 0, 0) // FIXME kludgey
-    for (let i = 1; i < n; i++) rest = rest.prev!
+    if (n == 0) rest = new Frame(rest, null as any as Node, top, 0)
+    for (let i = 1; i < n; i++) rest = rest.rest!
     let goto = rest.state.getGoto(term)
     if (!goto) break
     top = goto.target
@@ -317,32 +347,33 @@ function recoverByInsert(stack: Frame, parses: Frame[], grammar: Grammar, next: 
 
   // Now that we know there's a recovery to be found, do it again, the
   // expensive way, to get a new stack
-  let result = stack, badness = stack.badness + BADNESS_RECOVER
+  let result = stack.split()
+  result.badness += BADNESS_RECOVER
   for (;;) {
     for (;;) {
       if (result.state.terminals.some(a => a.term == next)) {
         if (verbose) console.log("recovered to " + result)
-        addFrame(parses, result)
+        addStack(parses, result)
         return
       }
       let recover = result.state.recover.find(a => a.term == next)
       if (!recover) break
       if (verbose) console.log("skip from state " + result.state.id + " to " + recover.target.id)
-      result = new Frame(result, Node.leaf(grammar.terms.error, 0), recover.target,
-                         result.pos, result.pos, badness)
+      result.rest = new Frame(result.rest, Node.leaf(grammar.terms.error, 0), result.state, result.rest!.start)
+      result.state = recover.target
     }
  
     let direct = result.state.terminals.find(a => a instanceof Reduce) as Reduce, pos
     if (direct) {
-      result = result.reduce(direct.rule.parts.length, direct.rule.name)
+      result.reduce(direct.rule.parts.length, direct.rule.name)
     } else if (pos = result.state.set.find(p => p.pos > 0)) {
-      let value = result.value!, prev = result.prev!, start = result.start
+      let rest = result.rest!, value = rest.value
       if (pos.pos != 1 || value.name != grammar.terms.error) {
-        for (let i = 1; i < pos.pos; i++) { start = prev.start; prev = prev.prev! }
-        value = Node.fromStack(result, pos.pos, pos.rule.name, Node.leaf(grammar.terms.error, 0))
+        value = Node.fromFrames(rest, pos.pos, pos.rule.name, Node.leaf(grammar.terms.error, 0))
+        for (let i = 1; i < pos.pos; i++) rest = rest.rest!
       }
-      let newState = prev.state.getGoto(pos.rule.name)!.target
-      result = new Frame(prev, value, newState, start, result.pos, result.badness)
+      result.rest = rest
+      result.state = rest.state.getGoto(pos.rule.name)!.target
     }
   }
 }
