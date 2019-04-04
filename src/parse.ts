@@ -243,6 +243,8 @@ export class Node {
   }*/
 }
 
+//const MAX_BUFFER = 8192
+
 // Node buffers contain type,start,end triplets for each node. They
 // are stored in postfix order (with parent nodes being written after
 // child nodes).
@@ -252,28 +254,31 @@ export class NodeBuffer {
   static build(source: number[], start: number, offset: number) {
     if (!Array.isArray(source)) throw new Error("X")
     let buffer = new Uint16Array(source.length - start)
-    for (let i = start, j = 0; i < source.length;) {
-      buffer[j++] = source[i++]
-      buffer[j++] = source[i++] - offset
-      buffer[j++] = source[i++] - offset
+    let i = buffer.length
+    function build(pos: number) {
+      let to = source[--pos], from = source[--pos], tag = source[--pos]
+      while (pos > start && source[pos - 1] > from) pos = build(pos)
+      buffer[--i] = to; buffer[--i] = from; buffer[--i] = tag
+      return pos
     }
+    for (let pos = source.length; pos > start;) pos = build(pos)
     return new NodeBuffer(buffer)
   }
 
   toString() {
-    let part = (start: number, end: number) => {
-      let result: string[] = []
-      for (let i = end - 3; i >= start;) {
-        let from = this.buffer[i + 1], j = i
-        let name = termTable[this.buffer[i]].tag!
-        while (j > start && this.buffer[j - 1] > from) j -= 3
-        if (j == i) result.push(name)
-        else result.push(name + "(" + part(j, i) + ")")
-        i = j - 3
-      }
-      return result.reverse().join(",")
+    let pos = 0
+    let next = () => {
+      let tag = this.buffer[pos], to = this.buffer[pos+2]
+      pos += 3
+      let children = ""
+      while (pos < this.buffer.length && this.buffer[pos + 1] < to)
+        children += (children ? "," : "") + next()
+      return termTable[tag].tag! + (children ? "(" + children + ")" : "")
     }
-    return part(0, this.buffer.length)
+    let result = ""
+    while (pos < this.buffer.length) result += (result ? "," : "") + next()
+
+    return result
   }
 }
 
@@ -374,7 +379,7 @@ export function parse(input: string, grammar: Grammar, cache = null, verbose = f
           if (value && advance(stack, value, start, end)) continue parse
         }
       }
-      if (advance(stack, token, start, end)) continue parse // FIXME allow advancement via multiple tokenizers?
+      if (advance(stack, token, start, end)) continue parse // FIXME allow advancement via multiple tokens?
     }
 
     // If we're here, the stack failed to advance
