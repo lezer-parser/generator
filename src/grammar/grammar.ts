@@ -3,8 +3,15 @@ import {State as TableState} from "./automaton"
 
 const TERMINAL = 1, EOF = 2, ERROR = 4, PROGRAM = 8
 
+export const termTable: Term[] = []
+let termID = 0, taglessTermID = 1e9
+
 export class Term {
-  constructor(readonly name: string, readonly flags: number, readonly tag: string | null) {}
+  id: number
+  constructor(readonly name: string, readonly flags: number, readonly tag: string | null) {
+    this.id = tag ? termID++ : taglessTermID--
+    if (tag) termTable[this.id] = this
+  }
   toString() { return this.name }
   get terminal() { return (this.flags & TERMINAL) > 0 }
   get eof() { return (this.flags & EOF) > 0 }

@@ -1,4 +1,4 @@
-import {Term, Grammar} from "./grammar/grammar"
+import {Term, Grammar, termTable} from "./grammar/grammar"
 import {State, Shift, Reduce} from "./grammar/automaton"
 
 const BADNESS_DELETE = 100, BADNESS_RECOVER = 100
@@ -33,8 +33,9 @@ const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which st
 
 class Stack {
   constructor(readonly grammar: Grammar,
-              public stack: number[], // Holds state, pos pairs, length = (values.length + 1) * 2
-              public values: Node[],
+              public stack: number[], // Holds state, pos pairs
+              public values: (Node | number[])[],
+              public valueStarts: number[],
               public badness: number) {}
 
   get state() {
@@ -43,74 +44,159 @@ class Stack {
 
   get pos() { return this.stack[this.stack.length - 1] }
 
-  set pos(value: number) { this.stack[this.stack.length - 1] = value }
-
   get depth() { return this.values.length }
 
-  get topValue() { return this.values[this.values.length - 1] }
-
-  set topValue(value: Node) { this.values[this.values.length - 1] = value }
-
-  get topStart() { return this.stack[this.stack.length - 3] }
-
   toString() {
-    let result = ""
-    for (let i = 0;; i++) {
-      result += `[${this.stack[i << 1]}]`
-      if (i == this.values.length) break
-      result += ` ${this.values[i]} `
-    }
-    return result
+    return "[" + this.stack.filter((_, i) => i % 2 == 0).join(",") + "] " +
+      this.values.map(v => v instanceof Node ? v : NodeBuffer.build(v, 0, 0)).join(",")
   }
 
   static start(grammar: Grammar) {
-    return new Stack(grammar, [0, 0], [], 0)
+    return new Stack(grammar, [0, 0], [[]], [0], 0)
   }
 
-  reduceValue(depth: number, name: Term | null, append?: Node) {
-    if (depth == 0) return Node.leaf(name, 0)
-    if (name && !name.tag) name = null
-    if (depth == 1 && !name) return this.values[this.values.length - 1]
-    let children: Node[] = [], positions: number[] = []
-    let startPos = this.values.length - depth, start = this.stack[(startPos << 1) + 1]
-    for (let i = this.values.length - depth; i < this.values.length; i++) {
-      this.values[i].flattenTo(children, positions, this.stack[(i << 1) + 1] - start, name)
+  reduceValue(start: number, name: Term) {
+    let children: (Node | NodeBuffer)[] = [], positions: number[] = []
+    for (;;) {
+      let value = this.values.pop()!, valueStart = this.valueStarts.pop()!
+      if (valueStart >= start) {
+        positions.push(valueStart - start)
+        children.push(value instanceof Node ? value : NodeBuffer.build(value, 0, valueStart))
+      } else {
+        let buffer = value as number[], index = 0
+        while (index < buffer.length && buffer[index + 1] < start) index += 3
+        positions.push(0)
+        children.push(NodeBuffer.build(buffer, index, start))
+        buffer.length = index
+        this.values.push(value)
+        this.valueStarts.push(valueStart)
+      }
+      if (valueStart <= start) break
     }
-    let length = this.stack[this.stack.length - 1] - start
-    if (append) { children.push(append); positions.push(length); length += append.length }
-    return new Node(name, length, children, positions)
+    this.values.push(new Node(name, this.pos - start, children, positions))
+    this.valueStarts.push(start)
   }
 
-  reduce(depth: number, name: Term, badness = this.badness, nextState: State | null = null) {
-    let newValue = this.reduceValue(depth, name)
-    let pos = this.stack[this.stack.length - 1]
-    this.stack.length -= depth * 2
-    this.stack.push((nextState || this.state.getGoto(name)!.target).id, pos)
-    this.values.length -= depth
-    this.values.push(newValue)
-    this.badness = badness
+  reduce(depth: number, name: Term) {
+    let pos = this.pos
+    if (depth) {
+      let newLen = this.stack.length - (depth << 1)
+      let start = this.stack[newLen - 1]
+      this.stack.length = newLen
+      let last = this.values[this.values.length - 1]
+      if (name.tag) {
+        if (Array.isArray(last) && this.valueStarts[this.values.length - 1] <= start)
+          last.push(name.id, start, pos)
+        else
+          this.reduceValue(start, name)
+      }
+    }
+    this.stack.push(this.state.getGoto(name)!.target.id, pos)
   }
 
-  apply(action: Shift | Reduce, next: Term, nextStart: number, nextEnd: number, badness = 0) {
+  shiftValue(term: Term, start: number, end: number) {
+    let last = this.values[this.values.length - 1]
+    if (!Array.isArray(last)) {
+      this.values.push(last = [])
+      this.valueStarts.push(start)
+    }
+    if (term.error && last.length && last[last.length - 3] == term.id &&
+        (start == end || last[last.length - 2] == start)) return
+    last.push(term.id, start, end)
+  }
+
+  apply(action: Shift | Reduce, next: Term, nextStart: number, nextEnd: number) {
     if (action instanceof Reduce) {
       this.reduce(action.rule.parts.length, action.rule.name)
     } else { // Shift
       this.stack.pop()
       this.stack.push(nextStart, action.target.id, nextEnd)
-      this.values.push(Node.leaf(next, nextEnd - nextStart))
-      if (badness) this.badness += badness
-      else this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
+      if (next.tag) this.shiftValue(next, nextStart, nextEnd)
+      this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     }
   }
 
-  useCached(value: Node, next: State) {
-    this.stack.push(next.id, this.pos + value.length /* FIXME */)
+  useCached(value: Node, start: number, next: State) {
+    this.stack.push(next.id, start + value.length /* FIXME */)
     this.values.push(value)
+    this.valueStarts.push(start)
     this.badness >> 1 // FIXME
   }
 
   split() {
-    return new Stack(this.grammar, this.stack.slice(), this.values.slice(), this.badness)
+    return new Stack(this.grammar, this.stack.slice(), this.values.map(v => Array.isArray(v) ? v.slice() : v),
+                     this.valueStarts.slice(), this.badness)
+  }
+
+  recoverByDelete(next: Term, nextStart: number, nextEnd: number, verbose: boolean) {
+    if (next.tag) this.shiftValue(next, nextStart, nextEnd)
+    // FIXME merge errors?
+    this.shiftValue(this.grammar.terms.error, nextStart, nextEnd)
+    this.stack[this.stack.length - 1] = nextEnd
+    this.badness += BADNESS_DELETE
+    if (verbose) console.log("delete token " + next + ": " + this, nextStart, nextEnd)
+  }
+
+  canRecover(next: Term) {
+    // Scan for a state that has either a direct action or a recovery
+    // action for next, without actually building up a new stack
+    for (let top = this.state, rest = this.stack, offset = rest.length - 2;;) {
+      if (top.terminals.some(a => a.term == next) ||
+          top.recover.some(a => a.term == next)) return true
+      // Find a way to reduce from here
+      let term, n
+      let direct = top.terminals.find(a => a instanceof Reduce) as Reduce, pos
+      if (direct) {
+        term = direct.rule.name
+        n = direct.rule.parts.length
+      } else if (pos = top.set.find(p => p.pos > 0)) { // FIXME store this in the run-time states
+        term = pos.rule.name
+        n = pos.pos
+      } else {
+        return false
+      }
+      if (n == 0) { // FIXME
+        rest = rest.slice()
+        rest.push(top.id, 0)
+        offset += 2
+      } else {
+        offset -= (n - 1) << 1
+      }
+      let goto = this.grammar.table[rest[offset - 2]].getGoto(term)
+      if (!goto) return false
+      top = goto.target
+    }
+  }
+
+  recoverByInsert(next: Term, nextStart: number, nextEnd: number, verbose: boolean): Stack | null {
+    if (!this.canRecover(next)) return null
+    // Now that we know there's a recovery to be found, run the
+    // reduces again, the expensive way, updating the stack
+
+    let result = this.split()
+    result.badness += BADNESS_RECOVER
+    for (;;) {
+      for (;;) {
+        if (result.state.terminals.some(a => a.term == next)) {
+          if (verbose) console.log("recovered to " + result)
+          return result
+        }
+        let recover = result.state.recover.find(a => a.term == next)
+        if (!recover) break
+        if (verbose) console.log("skip from state " + result.state.id + " to " + recover.target.id)
+        result.shiftValue(this.grammar.terms.error, result.pos, result.pos) // FIXME zero-length nodes are tricky
+        result.stack.push(recover.target.id, result.pos)
+      }
+      
+      let direct = result.state.terminals.find(a => a instanceof Reduce) as Reduce, pos
+      if (direct) {
+        result.reduce(direct.rule.parts.length, direct.rule.name)
+      } else if (pos = result.state.set.find(p => p.pos > 0)) {
+        // Force a reduce using this position
+        result.shiftValue(this.grammar.terms.error, result.pos, result.pos)
+        result.reduce(pos.pos, pos.rule.name)
+      }
+    }
   }
 }
 
@@ -131,33 +217,17 @@ function addStack(heap: Stack[], stack: Stack, strict = stack.badness < BADNESS_
   return true
 }
 
-const none: any[] = []
-
 export class Node {
   constructor(readonly name: Term | null,
               readonly length: number,
-              readonly children: Node[],
+              readonly children: (Node | NodeBuffer)[],
               readonly positions: number[]) {}
 
   toString() {
     return this.name ? (this.children.length ? this.name.tag + "(" + this.children + ")" : this.name.tag!) : this.children.join()
   }
 
-  static leaf(name: Term | null, length: number) {
-    if (name && !name.tag) name = null
-    return name || length ? new Node(name, length, none, none) : Node.empty
-  }
-
-  flattenTo(nodes: Node[], positions: number[], offset: number, name: Term | null) {
-    if (this.name && !(this.name == name && name.error)) {
-      nodes.push(this)
-      positions.push(offset)
-    } else {
-      for (let i = 0; i < this.children.length; i++)
-        this.children[i].flattenTo(nodes, positions, offset + this.positions[i], name)
-    }
-  }
-
+/* FIXME restore
   partial(start: number, end: number, offset: number, target: Node) {
     if (start <= 0 && end >= this.length) {
       target.children.push(this)
@@ -170,11 +240,44 @@ export class Node {
         if (to > start) child.partial(start - from, end - from, offset + from, target)
       }
     }
-  }
-
-  static empty = new Node(null, 0, none, none)
+  }*/
 }
 
+// Node buffers contain type,start,end triplets for each node. They
+// are stored in postfix order (with parent nodes being written after
+// child nodes).
+export class NodeBuffer {
+  constructor(readonly buffer: Uint16Array) {}
+
+  static build(source: number[], start: number, offset: number) {
+    if (!Array.isArray(source)) throw new Error("X")
+    let buffer = new Uint16Array(source.length - start)
+    for (let i = start, j = 0; i < source.length;) {
+      buffer[j++] = source[i++]
+      buffer[j++] = source[i++] - offset
+      buffer[j++] = source[i++] - offset
+    }
+    return new NodeBuffer(buffer)
+  }
+
+  toString() {
+    let part = (start: number, end: number) => {
+      let result: string[] = []
+      for (let i = end - 3; i >= start;) {
+        let from = this.buffer[i + 1], j = i
+        let name = termTable[this.buffer[i]].tag!
+        while (j > start && this.buffer[j - 1] > from) j -= 3
+        if (j == i) result.push(name)
+        else result.push(name + "(" + part(j, i) + ")")
+        i = j - 3
+      }
+      return result.reverse().join(",")
+    }
+    return part(0, this.buffer.length)
+  }
+}
+
+/*
 class TreeCursor {
   nodes: Node[]
   start = [0]
@@ -206,11 +309,11 @@ class TreeCursor {
     }
   }
 }
+*/
 
-export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0),
-                      verbose = false, strict = false): Node {
+export function parse(input: string, grammar: Grammar, cache = null, verbose = false, strict = false): Node {
   let parses = [Stack.start(grammar)]
-  let cacheIter = new TreeCursor(cache)
+//  let cacheIter = new TreeCursor(cache)
 
   function advance(stack: Stack, next: Term, nextStart: number, nextEnd: number) {
     let used = false
@@ -233,7 +336,7 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
   parse: for (;;) {
     let stack = takeFromHeap(parses, compareStacks)
 
-    if (!stack.state.ambiguous) { // FIXME this isn't robust
+/*    if (!stack.state.ambiguous) { // FIXME this isn't robust
       for (let cached = cacheIter.nodeAt(stack.pos); cached;
            cached = cached.children.length && cached.positions[0] == 0 ? cached.children[0] : null) {
         let match = stack.state.getGoto(cached.name!)
@@ -243,7 +346,7 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
           continue parse
         }
       }
-    }
+    }*/
 
     let token: Term | null = null, start = stack.pos, end = start, sawEof = false
     let maxStart = start
@@ -277,8 +380,9 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
     // If we're here, the stack failed to advance
 
     if (maxStart == input.length) {
-      if (stack.depth == 1) return stack.values[0]
-      else if (!strict) return stack.reduceValue(stack.depth, null)
+      if (stack.depth != 1) stack.reduce(stack.depth, grammar.terms.error)
+      let value = stack.values[0]
+      return Array.isArray(value) ? NodeBuffer.build(value, 0, 0) as any as Node : value
     }
 
     if (!strict &&
@@ -289,97 +393,12 @@ export function parse(input: string, grammar: Grammar, cache = Node.leaf(null, 0
         end = start + (maxStart == input.length ? 0 : 1)
       }
 
-      recoverByInsert(stack, parses, grammar, token, start, end, verbose)
-      recoverByDelete(stack, parses, grammar, token, start, end, verbose)
+      let inserted = stack.recoverByInsert(token, start, end, verbose)
+      if (inserted) addStack(parses, inserted)
+      stack.recoverByDelete(token, start, end, verbose)
+      addStack(parses, stack)
     }
     if (!parses.length)
       throw new SyntaxError("No parse at " + start + " with " + token + " (stack is " + stack + ")")
-  }
-}
-
-// FIXME move to stack method
-function recoverByDelete(stack: Stack, parses: Stack[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number,
-                         verbose: boolean) {
-  let value = stack.topValue, valueStart = stack.topStart
-  // Don't do anything with the value when adding an error token to an
-  // error or when the token doesn't have a tag
-  if (next.tag && !(next.error && value.name && value.name.error)) {
-    let node = Node.leaf(next, nextEnd - nextStart)
-    if (value.name && value.name.error) {
-      value = new Node(value.name, value.length + (nextEnd - stack.pos),
-                       value.children.concat(node), value.positions.concat(nextStart - valueStart))
-    } else {
-      if (!next.error) node = new Node(grammar.terms.error, node.length, [node], [0])
-      value = new Node(null, value.length + (nextEnd - stack.pos), [value, node], [0, nextStart - valueStart])
-    }
-  }
-  stack.topValue = value
-  stack.pos = nextEnd
-  stack.badness += BADNESS_DELETE
-  if (verbose) console.log("delete token " + next + ": " + stack, nextStart, nextEnd)
-  addStack(parses, stack)
-}
-
-function recoverByInsert(stack: Stack, parses: Stack[], grammar: Grammar, next: Term, nextStart: number, nextEnd: number,
-                         verbose: boolean) {
-  // Scan for a state that has either a direct action or a recovery
-  // action for next, without actually building up a new stack
-  for (let top = stack.state, rest = stack.stack, offset = rest.length - 2;;) {
-    if (top.terminals.some(a => a.term == next) ||
-        top.recover.some(a => a.term == next)) break
-    // Find a way to reduce from here
-    let term, n
-    let direct = top.terminals.find(a => a instanceof Reduce) as Reduce, pos
-    if (direct) {
-      term = direct.rule.name
-      n = direct.rule.parts.length
-    } else if (pos = top.set.find(p => p.pos > 0)) { // FIXME store this in the run-time states
-      term = pos.rule.name
-      n = pos.pos
-    } else {
-      return
-    }
-    if (n == 0) { // FIXME
-      rest = rest.slice()
-      rest.push(top.id, 0)
-      offset += 2
-    } else {
-      offset -= (n - 1) << 1
-    }
-    let goto = grammar.table[rest[offset - 2]].getGoto(term)
-    if (!goto) return
-    top = goto.target
-  }
-
-  // Now that we know there's a recovery to be found, do it again, the
-  // expensive way, to get a new stack
-  let result = stack.split()
-  result.badness += BADNESS_RECOVER
-  for (;;) {
-    for (;;) {
-      if (result.state.terminals.some(a => a.term == next)) {
-        if (verbose) console.log("recovered to " + result)
-        addStack(parses, result)
-        return
-      }
-      let recover = result.state.recover.find(a => a.term == next)
-      if (!recover) break
-      if (verbose) console.log("skip from state " + result.state.id + " to " + recover.target.id)
-      result.values.push(Node.leaf(grammar.terms.error, 0))
-      result.stack.push(recover.target.id, result.pos)
-    }
- 
-    let direct = result.state.terminals.find(a => a instanceof Reduce) as Reduce, pos
-    if (direct) {
-      result.reduce(direct.rule.parts.length, direct.rule.name)
-    } else if (pos = result.state.set.find(p => p.pos > 0)) {
-      // Force a reduce using this position
-      let value = result.reduceValue(pos.pos, pos.rule.name, Node.leaf(grammar.terms.error, 0))
-      result.values.length -= pos.pos
-      result.values.push(value)
-      let stackPos = result.pos
-      result.stack.length -= pos.pos << 1
-      result.stack.push(result.state.getGoto(pos.rule.name)!.target.id, stackPos)
-    }
   }
 }
