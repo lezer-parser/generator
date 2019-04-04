@@ -33,106 +33,108 @@ const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which st
 
 class Stack {
   constructor(readonly grammar: Grammar,
-              public stack: number[], // Holds state, pos pairs
+              public stack: number[], // Holds state, pos, node count triplets
               public values: (Node | number[])[],
-              public valueStarts: number[],
               public badness: number) {}
 
-  get state() {
-    return this.grammar.table[this.stack[this.stack.length - 2]]
-  }
+  get state() { return this.grammar.table[this.stack[this.stack.length - 3]] }
 
-  get pos() { return this.stack[this.stack.length - 1] }
+  get pos() { return this.stack[this.stack.length - 2] }
 
-  get depth() { return this.values.length }
+  get nodeCount() { return this.stack[this.stack.length - 1] }
 
   toString() {
-    return "[" + this.stack.filter((_, i) => i % 2 == 0).join(",") + "] " +
+    return "[" + this.stack.filter((_, i) => i % 3 == 0).join(",") + "] " +
       this.values.map(v => v instanceof Node ? v : NodeBuffer.build(v, 0, 0)).join(",")
   }
 
   static start(grammar: Grammar) {
-    return new Stack(grammar, [0, 0], [[]], [0], 0)
+    return new Stack(grammar, [0, 0, 0], [[]], 0)
   }
 
-  reduceValue(start: number, name: Term) {
+  reduceValue(name: Term, childCount: number, start: number) {
     let children: (Node | NodeBuffer)[] = [], positions: number[] = []
-    for (;;) {
-      let value = this.values.pop()!, valueStart = this.valueStarts.pop()!
-      if (valueStart >= start) {
-        positions.push(valueStart - start)
-        children.push(value instanceof Node ? value : NodeBuffer.build(value, 0, valueStart))
-      } else {
-        let buffer = value as number[], index = 0
-        while (index < buffer.length && buffer[index + 1] < start) index += 3
-        positions.push(0)
-        children.push(NodeBuffer.build(buffer, index, start))
-        buffer.length = index
-        this.values.push(value)
-        this.valueStarts.push(valueStart)
+    for (let remaining = childCount;;) {
+      let value = this.values.pop()!
+      if (value instanceof Node) {
+        children.push(value)
+        let countHere = this.nodeCount - childCount + remaining
+        for (let i = this.stack.length - 1;; i -= 3) {
+          if (this.stack[i] == countHere) { positions.push(this.stack[i - 1] - start); break }
+        }
+        remaining -= value.size
+        if (remaining == 0) break
+      } else { // A buffer
+        let size = value.length >> 2, startIndex = Math.max(0, (size - remaining) << 2)
+        if (startIndex < value.length) {
+          let nodeStart = value[startIndex + 1]
+          children.push(NodeBuffer.build(value, startIndex, nodeStart))
+          positions.push(nodeStart)
+        }
+        remaining -= size
+        if (remaining <= 0) {
+          value.length = startIndex
+          this.values.push(value)
+          break
+        }
       }
-      if (valueStart <= start) break
     }
-    this.values.push(new Node(name, this.pos - start, children, positions))
-    this.valueStarts.push(start)
+    this.values.push(new Node(name, this.pos - start, childCount, children, positions))
   }
 
   reduce(depth: number, name: Term) {
-    let pos = this.pos
+    let {pos, nodeCount} = this
     if (depth) {
-      let newLen = this.stack.length - (depth << 1)
-      let start = this.stack[newLen - 1]
-      this.stack.length = newLen
-      let last = this.values[this.values.length - 1]
+      let newLen = this.stack.length - (depth * 3)
+      let start = this.stack[newLen - 2], count = nodeCount - this.stack[newLen - 1]
       if (name.tag) {
-        if (Array.isArray(last) && this.valueStarts[this.values.length - 1] <= start)
-          last.push(name.id, start, pos)
-        else
-          this.reduceValue(start, name)
+        let last = this.values[this.values.length - 1]
+        if (Array.isArray(last) && last.length >= count) {
+          last.push(name.id, start, pos, count)
+        } else
+          this.reduceValue(name, count, start)
+        nodeCount++
       }
+      this.stack.length = newLen
     }
-    this.stack.push(this.state.getGoto(name)!.target.id, pos)
+    this.stack.push(this.state.getGoto(name)!.target.id, pos, nodeCount)
   }
 
-  shiftValue(term: Term, start: number, end: number) {
+  shiftValue(term: Term, start: number, end: number, count = 0) {
     let last = this.values[this.values.length - 1]
-    if (!Array.isArray(last)) {
-      this.values.push(last = [])
-      this.valueStarts.push(start)
-    }
-    if (term.error && last.length && last[last.length - 3] == term.id &&
-        (start == end || last[last.length - 2] == start)) return
-    last.push(term.id, start, end)
+    if (!Array.isArray(last)) this.values.push(last = [])
+    if (term.error && last.length && last[last.length - 4] == term.id &&
+        (start == end || last[last.length - 3] == start)) return
+    last.push(term.id, start, end, count)
+    this.stack[this.stack.length - 1]++
   }
 
   apply(action: Shift | Reduce, next: Term, nextStart: number, nextEnd: number) {
     if (action instanceof Reduce) {
       this.reduce(action.rule.parts.length, action.rule.name)
     } else { // Shift
-      this.stack.pop()
-      this.stack.push(nextStart, action.target.id, nextEnd)
+      this.stack[this.stack.length - 2] = nextStart
+      this.stack.push(action.target.id, nextEnd, this.nodeCount)
       if (next.tag) this.shiftValue(next, nextStart, nextEnd)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     }
   }
 
   useCached(value: Node, start: number, next: State) {
-    this.stack.push(next.id, start + value.length /* FIXME */)
+    this.stack.push(next.id, start + value.length /* FIXME */, this.nodeCount + value.size)
     this.values.push(value)
-    this.valueStarts.push(start)
     this.badness >> 1 // FIXME
   }
 
   split() {
-    return new Stack(this.grammar, this.stack.slice(), this.values.map(v => Array.isArray(v) ? v.slice() : v),
-                     this.valueStarts.slice(), this.badness)
+    return new Stack(this.grammar, this.stack.slice(), this.values.map(v => Array.isArray(v) ? v.slice() : v), this.badness)
   }
 
   recoverByDelete(next: Term, nextStart: number, nextEnd: number, verbose: boolean) {
     if (next.tag) this.shiftValue(next, nextStart, nextEnd)
     // FIXME merge errors?
-    this.shiftValue(this.grammar.terms.error, nextStart, nextEnd)
-    this.stack[this.stack.length - 1] = nextEnd
+    this.shiftValue(this.grammar.terms.error, nextStart, nextEnd, next.tag ? 1 : 0)
+    this.stack[this.stack.length - 2] = nextEnd
     this.badness += BADNESS_DELETE
     if (verbose) console.log("delete token " + next + ": " + this, nextStart, nextEnd)
   }
@@ -140,7 +142,7 @@ class Stack {
   canRecover(next: Term) {
     // Scan for a state that has either a direct action or a recovery
     // action for next, without actually building up a new stack
-    for (let top = this.state, rest = this.stack, offset = rest.length - 2;;) {
+    for (let top = this.state, rest = this.stack, offset = rest.length - 3;;) {
       if (top.terminals.some(a => a.term == next) ||
           top.recover.some(a => a.term == next)) return true
       // Find a way to reduce from here
@@ -157,12 +159,12 @@ class Stack {
       }
       if (n == 0) { // FIXME
         rest = rest.slice()
-        rest.push(top.id, 0)
-        offset += 2
+        rest.push(top.id, 0, 0)
+        offset += 3
       } else {
-        offset -= (n - 1) << 1
+        offset -= (n - 1) * 3
       }
-      let goto = this.grammar.table[rest[offset - 2]].getGoto(term)
+      let goto = this.grammar.table[rest[offset - 3]].getGoto(term)
       if (!goto) return false
       top = goto.target
     }
@@ -184,8 +186,9 @@ class Stack {
         let recover = result.state.recover.find(a => a.term == next)
         if (!recover) break
         if (verbose) console.log("skip from state " + result.state.id + " to " + recover.target.id)
-        result.shiftValue(this.grammar.terms.error, result.pos, result.pos) // FIXME zero-length nodes are tricky
-        result.stack.push(recover.target.id, result.pos)
+        let pos = result.pos
+        result.stack.push(recover.target.id, pos, result.nodeCount)
+        result.shiftValue(this.grammar.terms.error, pos, pos)
       }
       
       let direct = result.state.terminals.find(a => a instanceof Reduce) as Reduce, pos
@@ -208,7 +211,7 @@ function addStack(heap: Stack[], stack: Stack, strict = stack.badness < BADNESS_
   for (let i = 0; i < heap.length; i++) {
     let other = heap[i]
     if ((strict || other.state == stack.state) && other.pos == stack.pos) {
-      let diff = stack.badness - other.badness || (stack.badness < BADNESS_STABILIZING ? 0 : stack.depth - stack.depth)
+      let diff = stack.badness - other.badness || (stack.badness < BADNESS_STABILIZING ? 0 : stack.stack.length - other.stack.length)
       if (diff < 0) { heap[i] = stack; return true }
       else if (diff > 0) return false
     }
@@ -220,6 +223,7 @@ function addStack(heap: Stack[], stack: Stack, strict = stack.badness < BADNESS_
 export class Node {
   constructor(readonly name: Term | null,
               readonly length: number,
+              readonly size: number,
               readonly children: (Node | NodeBuffer)[],
               readonly positions: number[]) {}
 
@@ -245,39 +249,39 @@ export class Node {
 
 //const MAX_BUFFER = 8192
 
-// Node buffers contain type,start,end triplets for each node. They
-// are stored in postfix order (with parent nodes being written after
-// child nodes).
+// Node buffers contain type,start,end,childCount quads for each node. The
+// nodes are built in postfix order (with parent nodes being written
+// after child nodes), but converted to prefix order when wrapped in a
+// NodeBuffer.
 export class NodeBuffer {
   constructor(readonly buffer: Uint16Array) {}
 
+  get size() { return this.buffer.length >> 2 }
+
   static build(source: number[], start: number, offset: number) {
-    if (!Array.isArray(source)) throw new Error("X")
     let buffer = new Uint16Array(source.length - start)
-    let i = buffer.length
-    function build(pos: number) {
-      let to = source[--pos], from = source[--pos], tag = source[--pos]
-      while (pos > start && source[pos - 1] > from) pos = build(pos)
-      buffer[--i] = to; buffer[--i] = from; buffer[--i] = tag
-      return pos
+    let i = buffer.length, pos = source.length
+    function build() {
+      let count = source[--pos], to = source[--pos], from = source[--pos], tag = source[--pos]
+      let toPos = pos - (count << 2)
+      while (pos > toPos) build()
+      buffer[--i] = count; buffer[--i] = to; buffer[--i] = from; buffer[--i] = tag
     }
-    for (let pos = source.length; pos > start;) pos = build(pos)
+    while (pos > start) build()
     return new NodeBuffer(buffer)
   }
 
   toString() {
     let pos = 0
     let next = () => {
-      let tag = this.buffer[pos], to = this.buffer[pos+2]
-      pos += 3
-      let children = ""
-      while (pos < this.buffer.length && this.buffer[pos + 1] < to)
-        children += (children ? "," : "") + next()
+      let tag = this.buffer[pos], count = this.buffer[pos+3]
+      pos += 4
+      let children = "", end = pos + (count << 2)
+      while (pos < end) children += (children ? "," : "") + next()
       return termTable[tag].tag! + (children ? "(" + children + ")" : "")
     }
     let result = ""
     while (pos < this.buffer.length) result += (result ? "," : "") + next()
-
     return result
   }
 }
@@ -385,7 +389,7 @@ export function parse(input: string, grammar: Grammar, cache = null, verbose = f
     // If we're here, the stack failed to advance
 
     if (maxStart == input.length) {
-      if (stack.depth != 1) stack.reduce(stack.depth, grammar.terms.error)
+      if (stack.stack.length != 6) stack.reduce(stack.stack.length / 3 - 1, grammar.terms.error)
       let value = stack.values[0]
       return Array.isArray(value) ? NodeBuffer.build(value, 0, 0) as any as Node : value
     }
