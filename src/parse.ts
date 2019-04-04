@@ -45,15 +45,17 @@ class Stack {
 
   toString() {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).join(",") + "] " +
-      this.values.map(v => v instanceof Node ? v : NodeBuffer.build(v, 0, 0)).join(",")
+      this.values.map(v => v instanceof Node ? v : TreeBuffer.build(v, 0, 0)).join(",")
   }
 
   static start(grammar: Grammar) {
     return new Stack(grammar, [0, 0, 0], [[]], 0)
   }
 
-  reduceValue(name: Term, childCount: number, start: number) {
-    let children: (Node | NodeBuffer)[] = [], positions: number[] = []
+  reduceValue(childCount: number, start: number): Tree;
+  reduceValue(childCount: number, start: number, name: Term): Node;
+  reduceValue(childCount: number, start: number, name?: Term): Node | Tree {
+    let children: (Node | TreeBuffer)[] = [], positions: number[] = []
     for (let remaining = childCount;;) {
       let value = this.values.pop()!
       if (value instanceof Node) {
@@ -68,7 +70,7 @@ class Stack {
         let size = value.length >> 2, startIndex = Math.max(0, (size - remaining) << 2)
         if (startIndex < value.length) {
           let nodeStart = value[startIndex + 1]
-          children.push(NodeBuffer.build(value, startIndex, nodeStart))
+          children.push(TreeBuffer.build(value, startIndex, nodeStart))
           positions.push(nodeStart)
         }
         remaining -= size
@@ -79,7 +81,8 @@ class Stack {
         }
       }
     }
-    this.values.push(new Node(name, this.pos - start, childCount, children, positions))
+    return name ? new Node(name, this.pos - start, childCount, children, positions) :
+      new Tree(childCount, children, positions)
   }
 
   reduce(depth: number, name: Term) {
@@ -89,10 +92,10 @@ class Stack {
       let start = this.stack[newLen - 2], count = nodeCount - this.stack[newLen - 1]
       if (name.tag) {
         let last = this.values[this.values.length - 1]
-        if (Array.isArray(last) && last.length >= count) {
+        if (Array.isArray(last) && last.length >= count)
           last.push(name.id, start, pos, count)
-        } else
-          this.reduceValue(name, count, start)
+        else
+          this.values.push(this.reduceValue(count, start, name))
         nodeCount++
       }
       this.stack.length = newLen
@@ -201,6 +204,11 @@ class Stack {
       }
     }
   }
+
+  toTree(): SyntaxTree {
+    return this.values.length == 1 && Array.isArray(this.values[0]) ? TreeBuffer.build(this.values[0] as number[], 0, 0)
+      : this.reduceValue(this.nodeCount, 0)
+  }
 }
 
 import {takeFromHeap, addToHeap} from "./heap"
@@ -220,15 +228,13 @@ function addStack(heap: Stack[], stack: Stack, strict = stack.badness < BADNESS_
   return true
 }
 
-export class Node {
-  constructor(readonly name: Term | null,
-              readonly length: number,
-              readonly size: number,
-              readonly children: (Node | NodeBuffer)[],
+export class Tree {
+  constructor(readonly size: number,
+              readonly children: (Node | TreeBuffer)[],
               readonly positions: number[]) {}
 
   toString() {
-    return this.name ? (this.children.length ? this.name.tag + "(" + this.children + ")" : this.name.tag!) : this.children.join()
+    return this.children.join()
   }
 
 /* FIXME restore
@@ -247,13 +253,29 @@ export class Node {
   }*/
 }
 
+export type SyntaxTree = TreeBuffer | Tree
+
+export class Node extends Tree {
+  constructor(readonly name: Term,
+              readonly length: number,
+              size: number,
+              children: (Node | TreeBuffer)[],
+              positions: number[]) {
+    super(size, children, positions)
+  }
+
+  toString() {
+    return this.children.length ? this.name.tag + "(" + this.children + ")" : this.name.tag!
+  }
+}
+
 //const MAX_BUFFER = 8192
 
-// Node buffers contain type,start,end,childCount quads for each node. The
-// nodes are built in postfix order (with parent nodes being written
-// after child nodes), but converted to prefix order when wrapped in a
-// NodeBuffer.
-export class NodeBuffer {
+// Tree buffers contain type,start,end,childCount quads for each node.
+// The nodes are built in postfix order (with parent nodes being
+// written after child nodes), but converted to prefix order when
+// wrapped in a TreeBuffer.
+export class TreeBuffer {
   constructor(readonly buffer: Uint16Array) {}
 
   get size() { return this.buffer.length >> 2 }
@@ -268,7 +290,7 @@ export class NodeBuffer {
       buffer[--i] = count; buffer[--i] = to; buffer[--i] = from; buffer[--i] = tag
     }
     while (pos > start) build()
-    return new NodeBuffer(buffer)
+    return new TreeBuffer(buffer)
   }
 
   toString() {
@@ -320,27 +342,27 @@ class TreeCursor {
 }
 */
 
-export function parse(input: string, grammar: Grammar, cache = null, verbose = false, strict = false): Node {
+function advance(parses: Stack[], stack: Stack, next: Term, nextStart: number, nextEnd: number, verbose: boolean) {
+  let used = false
+  for (let i = 0, actions = stack.state.terminals; i < actions.length; i++) {
+    let action = actions[i]
+    if (action.term != next) continue
+    let local = stack
+    for (let j = i + 1; j < actions.length; j++) if (actions[j].term == next) {
+      local = stack.split()
+      break
+    }
+    used = true
+    local.apply(action, next, nextStart, nextEnd)
+    if (verbose) console.log(`${local} (via ${next} ${action})`)
+    addStack(parses, local, action instanceof Shift)
+  }
+  return used
+}
+
+export function parse(input: string, grammar: Grammar, cache = null, verbose = false, strict = false): SyntaxTree {
   let parses = [Stack.start(grammar)]
 //  let cacheIter = new TreeCursor(cache)
-
-  function advance(stack: Stack, next: Term, nextStart: number, nextEnd: number) {
-    let used = false
-    for (let i = 0, actions = stack.state.terminals; i < actions.length; i++) {
-      let action = actions[i]
-      if (action.term != next) continue
-      let local = stack
-      for (let j = i + 1; j < actions.length; j++) if (actions[j].term == next) {
-        local = stack.split()
-        break
-      }
-      used = true
-      local.apply(action, next, nextStart, nextEnd)
-      if (verbose) console.log(`${local} (via ${next} ${action})`, input.slice(nextStart, nextEnd))
-      addStack(parses, local, action instanceof Shift)
-    }
-    return used
-  }
 
   parse: for (;;) {
     let stack = takeFromHeap(parses, compareStacks)
@@ -380,19 +402,15 @@ export function parse(input: string, grammar: Grammar, cache = null, verbose = f
         let specialized = grammar.specialized[token.name]
         if (specialized) {
           let value = specialized[input.slice(start, end)]
-          if (value && advance(stack, value, start, end)) continue parse
+          if (value && advance(parses, stack, value, start, end, verbose)) continue parse
         }
       }
-      if (advance(stack, token, start, end)) continue parse // FIXME allow advancement via multiple tokens?
+      if (advance(parses, stack, token, start, end, verbose)) continue parse // FIXME allow advancement via multiple tokens?
     }
 
-    // If we're here, the stack failed to advance
+    // If we're here, the stack failed to advance normally
 
-    if (maxStart == input.length) {
-      if (stack.stack.length != 6) stack.reduce(stack.stack.length / 3 - 1, grammar.terms.error)
-      let value = stack.values[0]
-      return Array.isArray(value) ? NodeBuffer.build(value, 0, 0) as any as Node : value
-    }
+    if (maxStart == input.length) return stack.toTree()
 
     if (!strict &&
         !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
