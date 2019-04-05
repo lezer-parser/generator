@@ -4,6 +4,7 @@ import {State as TableState} from "./automaton"
 const TERMINAL = 1, EOF = 2, ERROR = 4, PROGRAM = 8
 
 export const termTable: Term[] = []
+// FIXME termIDs must wrap on 2^16 to fit in tree buffers. Store only names in the table, and start appending them when overflowing?
 let termID = 0, taglessTermID = 1e9
 
 export class Term {
