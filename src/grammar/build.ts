@@ -79,8 +79,7 @@ class Context {
     if (expr instanceof RepeatExpression && expr.kind == "?") {
       return [[], ...this.normalizeTopExpr(expr.expr, self)]
     } else if (expr instanceof RepeatExpression && !self.tag) {
-      self.repeats = true
-      return this.normalizeRepeat(expr)
+      return this.normalizeRepeat(expr, self)
     } else if (expr instanceof ChoiceExpression) {
       return expr.exprs.map(e => this.normalizeExpr(e))
     } else if (expr instanceof MarkedExpression) {
@@ -99,8 +98,8 @@ class Context {
   // (With the ε part gone for + expressions.)
   //
   // Returns the terms that make up the outer rule.
-  normalizeRepeat(expr: RepeatExpression) {
-    let inner = this.newName(expr.kind)
+  normalizeRepeat(expr: RepeatExpression, outer: Term) {
+    let inner = outer.repeats = this.newName(expr.kind)
     let exprPrec = new Precedence(null, inner.name, 1)
     let top = this.normalizeTopExpr(expr.expr, inner).map(choice => PrecTerm.onFirst(choice, exprPrec))
     top.push([inner, PrecTerm.from(inner, new Precedence(null, inner.name, 2))])
@@ -114,8 +113,7 @@ class Context {
       return this.defineRule(name, [[] as Term$[]].concat(this.normalizeTopExpr(expr.expr, name)))
     } else if (expr instanceof RepeatExpression) {
       let outer = this.newName("wrap-" + expr.kind)
-      outer.repeats = true
-      this.defineRule(outer, this.normalizeRepeat(expr))
+      this.defineRule(outer, this.normalizeRepeat(expr, outer))
       return [outer]
     } else if (expr instanceof ChoiceExpression) {
       return this.defineRule(this.newName(), expr.exprs.map(e => this.normalizeExpr(e)))

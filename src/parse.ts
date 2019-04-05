@@ -4,6 +4,10 @@ import {State, Shift, Reduce} from "./grammar/automaton"
 const BADNESS_DELETE = 100, BADNESS_RECOVER = 100
 const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which stacks are less agressively pruned
 
+const MAX_BUFFER_LENGTH = 2048
+
+const BALANCE_LEAF_COUNT = MAX_BUFFER_LENGTH, BALANCE_BRANCH_FACTOR = 5
+
 // (FIXME: this will go out of date before I know it, revisit at some
 // point)
 //
@@ -45,28 +49,18 @@ class Stack {
 
   toString() {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).join(",") + "] " +
-      this.values.map(v => v instanceof Node ? v : TreeBuffer.build(v, 0, 0)).join(",")
+      this.values.map(v => Array.isArray(v) ? TreeBuffer.build(v, 0, 0) : v).join(",")
   }
 
   static start(grammar: Grammar) {
     return new Stack(grammar, [0, 0, 0], [[]], 0)
   }
 
-  reduceValue(childCount: number, start: number): Tree;
-  reduceValue(childCount: number, start: number, name: Term): Node;
-  reduceValue(childCount: number, start: number, name?: Term): Node | Tree {
+  reduceValue(childCount: number, start: number): Tree {
     let children: (Node | TreeBuffer)[] = [], positions: number[] = []
     for (let remaining = childCount;;) {
       let value = this.values.pop()!
-      if (value instanceof Node) {
-        children.push(value)
-        let countHere = this.nodeCount - childCount + remaining
-        for (let i = this.stack.length - 1;; i -= 3) {
-          if (this.stack[i] == countHere) { positions.push(this.stack[i - 1] - start); break }
-        }
-        remaining -= value.size
-        if (remaining == 0) break
-      } else { // A buffer
+      if (Array.isArray(value)) {
         let size = value.length >> 2, startIndex = Math.max(0, (size - remaining) << 2)
         if (startIndex < value.length) {
           let nodeStart = value[startIndex + 1]
@@ -79,10 +73,17 @@ class Stack {
           this.values.push(value)
           break
         }
+      } else {
+        children.push(value)
+        let countHere = this.nodeCount - childCount + remaining
+        for (let i = this.stack.length - 1;; i -= 3) {
+          if (this.stack[i] == countHere) { positions.push(this.stack[i - 1] - start); break }
+        }
+        remaining -= value.nodeCount
+        if (remaining == 0) break
       }
     }
-    return name ? new Node(name, this.pos - start, childCount, children, positions) :
-      new Tree(childCount, children, positions)
+    return new Tree(childCount, children, positions)
   }
 
   reduce(depth: number, name: Term) {
@@ -95,8 +96,12 @@ class Stack {
         if (Array.isArray(last) && last.length >= count)
           last.push(name.id, start, pos, count)
         else
-          this.values.push(this.reduceValue(count, start, name))
+          this.values.push(this.reduceValue(count, start).toNode(name, this.pos - start))
         nodeCount++
+      } else if (name.repeats && count > BALANCE_LEAF_COUNT) {
+        let balanced = this.reduceValue(count, start).balance(name.repeats)
+        this.values.push(balanced)
+        nodeCount += balanced.nodeCount - count
       }
       this.stack.length = newLen
     }
@@ -124,7 +129,7 @@ class Stack {
   }
 
   useCached(value: Node, start: number, next: State) {
-    this.stack.push(next.id, start + value.length /* FIXME */, this.nodeCount + value.size)
+    this.stack.push(next.id, start + value.length /* FIXME */, this.nodeCount + value.nodeCount)
     this.values.push(value)
     this.badness >> 1 // FIXME
   }
@@ -229,12 +234,43 @@ function addStack(heap: Stack[], stack: Stack, strict = stack.badness < BADNESS_
 }
 
 export class Tree {
-  constructor(readonly size: number,
+  constructor(readonly nodeCount: number,
               readonly children: (Node | TreeBuffer)[],
               readonly positions: number[]) {}
 
   toString() {
     return this.children.join()
+  }
+
+  toNode(name: Term, length: number) {
+    return new Node(name, length, this.nodeCount + 1, this.children, this.positions)
+  }
+
+  get length() {
+    let last = this.children.length - 1
+    return last < 0 ? 0 : this.positions[last] + this.children[last].length
+  }
+
+  balance(name: Term): Node {
+    let maxChild = Math.ceil(this.nodeCount / BALANCE_BRANCH_FACTOR)
+    let balance = (from: number, to: number): Node => {
+      let children = [], positions = [], size = 1
+      for (let i = from; i < to;) {
+        let groupStart = i, count = this.children[i++].nodeCount
+        while (i < to) {
+          let next = count + this.children[i].nodeCount
+          if (next > maxChild) break
+          count = next
+        }
+        let sub = i == groupStart + 1 ? this.children[groupStart] : balance(groupStart, i)
+        size += sub.nodeCount
+        children.push(sub)
+        positions.push(this.positions[groupStart])
+      }
+      return new Node(name, positions[children.length - 1] + children[children.length - 1].length - this.positions[from],
+                      size, children, positions)
+    }
+    return balance(0, this.children.length)
   }
 
 /* FIXME restore
@@ -257,17 +293,22 @@ export type SyntaxTree = TreeBuffer | Tree
 
 export class Node extends Tree {
   constructor(readonly name: Term,
-              readonly length: number,
-              size: number,
+              private _length: number,
+              nodeCount: number,
               children: (Node | TreeBuffer)[],
               positions: number[]) {
-    super(size, children, positions)
+    super(nodeCount, children, positions)
   }
 
+  get length() { return this._length } // Because super class already has a getter
+
   toString() {
-    return this.children.length ? this.name.tag + "(" + this.children + ")" : this.name.tag!
+    let name = this.name.tag || this.name.name
+    return this.children.length ? name + "(" + this.children + ")" : name
   }
 }
+
+new Node(null as any, 0, 0, [], [])
 
 //const MAX_BUFFER = 8192
 
@@ -278,7 +319,9 @@ export class Node extends Tree {
 export class TreeBuffer {
   constructor(readonly buffer: Uint16Array) {}
 
-  get size() { return this.buffer.length >> 2 }
+  get nodeCount() { return this.buffer.length >> 2 }
+
+  get length() { return this.buffer[this.buffer.length - 2] }
 
   static build(source: number[], start: number, offset: number) {
     let buffer = new Uint16Array(source.length - start)

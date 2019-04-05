@@ -1,13 +1,14 @@
 import {State} from "./token"
 import {State as TableState} from "./automaton"
 
-const TERMINAL = 1, EOF = 2, ERROR = 4, PROGRAM = 8, REPEAT = 16
+const TERMINAL = 1, EOF = 2, ERROR = 4, PROGRAM = 8
 
 export const termTable: Term[] = []
 let termID = 0, taglessTermID = 1e9
 
 export class Term {
   id: number
+  public repeats: Term | null = null
   constructor(readonly name: string, private flags: number, readonly tag: string | null) {
     this.id = tag ? termID++ : taglessTermID--
     if (tag) termTable[this.id] = this
@@ -17,8 +18,6 @@ export class Term {
   get eof() { return (this.flags & EOF) > 0 }
   get error() { return (this.flags & ERROR) > 0 }
   get program() { return (this.flags & PROGRAM) > 0 }
-  get repeats() { return (this.flags & REPEAT) > 0 }
-  set repeats(value: boolean) { this.flags = (this.flags & ~REPEAT) + (value ? 0 : REPEAT) }
   cmp(other: Term) { return this == other ? 0 : (this.name < other.name ? -1 : 1) || this.flags - other.flags }
 }
 
