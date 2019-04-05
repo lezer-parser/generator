@@ -1,4 +1,5 @@
 import {Term, Grammar, termTable} from "./grammar/grammar"
+import {Token, Tokenizer} from "./grammar/token"
 import {State, Shift, Reduce} from "./grammar/automaton"
 
 const BADNESS_DELETE = 100, BADNESS_RECOVER = 100
@@ -42,7 +43,9 @@ class Stack {
               public valueStarts: number[],
               public badness: number) {}
 
-  get state() { return this.grammar.table[this.stack[this.stack.length - 3]] }
+  get state() { return this.grammar.table[this.stateID] }
+
+  get stateID() { return this.stack[this.stack.length - 3] }
 
   get pos() { return this.stack[this.stack.length - 2] }
 
@@ -393,30 +396,64 @@ class TreeCursor {
 }
 */
 
-function advance(parses: Stack[], stack: Stack, next: Term, nextStart: number, nextEnd: number, verbose: boolean) {
-  let used = false
-  for (let i = 0, actions = stack.state.terminals; i < actions.length; i++) {
-    let action = actions[i]
-    if (action.term != next) continue
-    let local = stack
-    for (let j = i + 1; j < actions.length; j++) if (actions[j].term == next) {
-      local = stack.split()
-      break
+class TokenCache { // FIXME cache whitespace separately for improved reuse and incremental parsing
+  tokens: Token[] = []
+  tokenizers: Tokenizer[] = []
+  pos = 0
+  index = 0
+
+  update(grammar: Grammar, tokenizers: ReadonlyArray<Tokenizer>, input: string, pos: number) {
+    if (pos > this.pos) { this.index = 0; this.pos = pos }
+    tokenize: for (let tokenizer of tokenizers) {
+      for (let i = 0; i < this.index; i++) if (this.tokenizers[i] == tokenizer) continue tokenize
+      let token
+      if (this.tokens.length <= this.index) this.tokens.push(token = new Token)
+      else token = this.tokens[this.index]
+      this.tokenizers[this.index++] = tokenizer
+      if (!tokenizer.simulate(input, pos, token)) {
+        if (token.start == input.length) {
+          token.end = token.start
+          token.term = grammar.terms.eof
+        } else {
+          token.end = token.start + 1
+          token.term = grammar.terms.error
+        }
+      }
     }
-    used = true
-    local.apply(action, next, nextStart, nextEnd)
-    if (verbose) console.log(`${local} (via ${next} ${action})`)
-    addStack(parses, local, action instanceof Shift)
   }
-  return used
+
+  hasOtherMatch(state: State, tokenIndex: number, sawEof: boolean) {
+    for (let i = tokenIndex; i < this.index; i++) {
+      let token = this.tokens[i]
+      if (token.term.error || token.term.eof && sawEof) continue
+      if (token.specialized && state.terminals.some(a => a.term == token.specialized) ||
+          state.terminals.some(a => a.term == token.term)) return true
+    }
+    return false
+  }
+
+  some() {
+    for (let i = 0; i < this.index; i++) if (!this.tokens[i].term.error) return this.tokens[i]
+    return this.tokens[0]
+  }
+}
+
+function hasOtherMatchInState(state: State, actionIndex: number, token: Token) {
+  for (let i = actionIndex; i < state.terminals.length; i++) {
+    let term = state.terminals[i].term
+    if (term == token.term || term == token.specialized) return true
+  }
+  return false
 }
 
 export function parse(input: string, grammar: Grammar, cache = null, verbose = false, strict = false): SyntaxTree {
   let parses = [Stack.start(grammar)]
 //  let cacheIter = new TreeCursor(cache)
 
+  let tokens = new TokenCache
+
   parse: for (;;) {
-    let stack = takeFromHeap(parses, compareStacks)
+    let stack = takeFromHeap(parses, compareStacks), pos = stack.pos
 
 /*    if (!stack.state.ambiguous) { // FIXME this isn't robust
       // FIXME need position after whitespace
@@ -431,53 +468,46 @@ export function parse(input: string, grammar: Grammar, cache = null, verbose = f
       }
     }*/
 
-    let token: Term | null = null, start = stack.pos, end = start, sawEof = false
-    let maxStart = start
-    // FIXME cache token info
-    for (let tokenCx of grammar.tokenTable[stack.state.id]) {
-      let curPos = stack.pos
-      if (tokenCx.skip) {
-        let skip = tokenCx.skip.simulate(input, curPos)
-        if (skip) { curPos = skip.end; maxStart = Math.max(maxStart, skip.end) }
-      }
-      if (curPos == input.length) {
-        if (sawEof) continue
-        sawEof = true
-        token = grammar.terms.eof
-        start = end = curPos
-      } else {
-        let found = tokenCx.tokens.simulate(input, curPos)
-        if (!found) continue
-        start = curPos
-        end = found.end
-        token = found.term
-        let specialized = grammar.specialized[token.name]
-        if (specialized) {
-          let value = specialized[input.slice(start, end)]
-          if (value && advance(parses, stack, value, start, end, verbose)) continue parse
+    tokens.update(grammar, grammar.tokenTable[stack.stateID], input, pos)
+
+    let sawEof = false, state = stack.state, advanced = false
+    for (let i = 0; i < tokens.index; i++) {
+      let token = tokens.tokens[i]
+      if (token.term == grammar.terms.error) continue
+      if (sawEof && token.term == grammar.terms.eof) continue
+      for (let j = token.specialized ? 1 : 0; j >= 0; j--) {
+        let term = j ? token.specialized : token.term
+        for (let k = 0, actions = state.terminals; k < actions.length; k++) {
+          let action = actions[k]
+          if (action.term != term) continue
+          if (term.eof) sawEof = true
+          advanced = true
+          let localStack = stack
+          if (hasOtherMatchInState(state, k + 1, token) || tokens.hasOtherMatch(state, i + 1, sawEof))
+            localStack = localStack.split()
+          localStack.apply(action, term, token.start, token.end)
+          if (verbose) console.log(`${localStack} (via ${term} ${action}${localStack == stack ? "" : ", split"})`)
+          addStack(parses, localStack, action instanceof Shift)
+          j = 0 // Don't try a non-specialized version of a token when the specialized one matches
         }
       }
-      if (advance(parses, stack, token, start, end, verbose)) continue parse // FIXME allow advancement via multiple tokens?
     }
+    if (advanced) continue
 
     // If we're here, the stack failed to advance normally
 
-    if (maxStart == input.length) return stack.toTree()
+    let token = tokens.some(), term = token.specialized || token.term
+    if (term.eof) return stack.toTree()
 
     if (!strict &&
         !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
-      if (!token) {
-        token = maxStart == input.length ? grammar.terms.eof : grammar.terms.error
-        start = maxStart
-        end = start + (maxStart == input.length ? 0 : 1)
-      }
-
-      let inserted = stack.recoverByInsert(token, start, end, verbose)
+      
+      let inserted = stack.recoverByInsert(term, token.start, token.end, verbose)
       if (inserted) addStack(parses, inserted)
-      stack.recoverByDelete(token, start, end, verbose)
+      stack.recoverByDelete(term, token.start, token.end, verbose)
       addStack(parses, stack)
     }
     if (!parses.length)
-      throw new SyntaxError("No parse at " + start + " with " + token + " (stack is " + stack + ")")
+      throw new SyntaxError("No parse at " + token.start + " with " + term + " (stack is " + stack + ")")
   }
 }

@@ -61,11 +61,11 @@ for (let file of fs.readdirSync(caseDir)) {
   if (printSkip || printTokens) {
     let seen: any[] = []
     for (let tokens of grammar.tokenTable) {
-      for (let cx of tokens) {
-        if (!seen.includes(cx)) {
-          if (printSkip && cx.skip) console.log(cx.skip.toString())
-          if (printTokens) console.log(cx.tokens.toString())
-          seen.push(cx)
+      for (let tokenizer of tokens) {
+        if (!seen.includes(tokenizer)) {
+          if (printSkip && tokenizer.skip) console.log(tokenizer.skip.toString())
+          if (printTokens) console.log(tokenizer.startState.toString())
+          seen.push(tokenizer)
         }
       }
     }

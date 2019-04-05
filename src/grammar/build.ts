@@ -1,8 +1,8 @@
 import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, MarkedExpression, exprsEq} from "./node"
-import {Term, TermSet, Precedence, Rule, Grammar, TokenContext} from "./grammar"
-import {Edge, State} from "./token"
+import {Term, TermSet, Precedence, Rule, Grammar} from "./grammar"
+import {Edge, State, Tokenizer} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState} from "./automaton"
 
@@ -236,17 +236,17 @@ class Builder {
   getGrammar() {
     let table = buildAutomaton(this.rules, this.terms)
     // FIXME merge equivalent skip directives
-    let tokenContexts: TokenContext[] = []
+    let tokenizers: Tokenizer[] = []
     for (let group of this.tokenGroups) {
-      let skip = group.skipState ? group.skipState.compile() : group.parent ? tokenContexts[this.tokenGroups.indexOf(group.parent)].skip : null
-      let cx = new TokenContext(skip, group.startState.compile())
-      if (cx.tokens.accepting)
-        this.input.raise(`Grammar contains zero-length tokens (in '${cx.tokens.accepting.name}')`,
-                         group.rules.find(r => r.id.name == cx.tokens.accepting!.name)!.start)
-      tokenContexts.push(cx)
+      let skip = group.skipState ? group.skipState.compile() : group.parent ? tokenizers[this.tokenGroups.indexOf(group.parent)].skip : null
+      let tokenizer = new Tokenizer(skip, group.startState.compile(), this.specialized) // FIXME separate specialized per tokenizer
+      if (tokenizer.startState.accepting)
+        this.input.raise(`Grammar contains zero-length tokens (in '${tokenizer.startState.accepting.name}')`,
+                         group.rules.find(r => r.id.name == tokenizer.startState.accepting!.name)!.start)
+      tokenizers.push(tokenizer)
     }
-    let tokenTable = table.map(state => this.tokensForState(state, tokenContexts))
-    return new Grammar(this.rules, this.terms, this.specialized, table, tokenTable)
+    let tokenTable = table.map(state => this.tokensForState(state, tokenizers))
+    return new Grammar(this.rules, this.terms, table, tokenTable)
   }
 
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
@@ -264,13 +264,13 @@ class Builder {
     }
   }
 
-  tokensForState(state: LRState, contexts: ReadonlyArray<TokenContext>) {
-    let found: TokenContext[] = []
+  tokensForState(state: LRState, tokenizers: ReadonlyArray<Tokenizer>) {
+    let found: Tokenizer[] = []
     for (let action of state.terminals) {
-      if (action.term.eof) return contexts // Try all possible whitespace before eof
+      if (action.term.eof) return tokenizers // Try all possible whitespace before eof
       let group = this.tokens[action.term.name]
-      let context = contexts[this.tokenGroups.indexOf(group)]
-      if (!found.includes(context)) found.push(context)
+      let tokenizer = tokenizers[this.tokenGroups.indexOf(group)]
+      if (!found.includes(tokenizer)) found.push(tokenizer)
     }
     return found
   }

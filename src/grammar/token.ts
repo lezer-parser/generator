@@ -19,6 +19,13 @@ function charFor(n: number) {
 
 let stateID = 1
 
+export class Token {
+  public start = 0
+  public end = 0
+  public term: Term = null as any
+  public specialized: Term | null = null
+}
+
 export class State {
   edges: Edge[] = []
   // FIXME number per automaton?
@@ -82,18 +89,6 @@ export class State {
     return result
   }
 
-  simulate(input: string, pos: number): {term: Term, end: number} | null {
-    let state: State = this
-    for (; pos < input.length;) {
-      let next = input.codePointAt(pos)!
-      let edge = state.edges.find(e => e.from <= next && e.to > next)
-      if (!edge) break
-      state = edge.target
-      pos += next > 0xffff ? 2 : 1
-    }
-    return state.accepting ? {term: state.accepting, end: pos} : null
-  }
-
   toString() {
     return `digraph {\n${this.toGraphViz([this])}}`
   }
@@ -112,7 +107,45 @@ export class State {
     }
     return out
   }
+
+  // Runs the state machine on input, returns the accepting term if it
+  // found one, or null otherwise. Updates `target.end` to the end of
+  // the token when returning successfull.
+  simulate(input: string, pos: number, target: Token): Term | null {
+    let state: State = this
+    for (; pos < input.length;) {
+      let next = input.codePointAt(pos)!
+      let edge = state.edges.find(e => e.from <= next && e.to > next)
+      if (!edge) break
+      state = edge.target
+      pos += next > 0xffff ? 2 : 1
+    }
+    if (state.accepting) { target.end = pos; return state.accepting }
+    return null
+  }
 }
+
+export class Tokenizer {
+  constructor(readonly skip: State | null,
+              readonly startState: State,
+              readonly specialized: {[terminal: string]: {[value: string]: Term}}) {}
+
+  toString() { return this.startState.toString() }
+
+  // Tries to fill in a token and write it to `target`. `.start` is
+  // always updated with the position after the whitespace. The other
+  // fields are left as they are when no token is found.
+  simulate(input: string, pos: number, target: Token): boolean {
+    if (this.skip && this.skip.simulate(input, pos, target)) pos = target.end
+    target.start = pos
+    let found = this.startState.simulate(input, pos, target)
+    if (!found) return false
+    target.term = found
+    let spec = this.specialized[found.name]
+    target.specialized = spec && spec[input.slice(target.start, target.end)] || null
+    return true
+  }
+}  
 
 function ids(states: State[]) {
   let result = ""

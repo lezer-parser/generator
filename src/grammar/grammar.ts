@@ -1,4 +1,4 @@
-import {State} from "./token"
+import {Tokenizer} from "./token"
 import {State as TableState} from "./automaton"
 
 const TERMINAL = 1, EOF = 2, ERROR = 4, PROGRAM = 8
@@ -105,17 +105,11 @@ export class Rule {
   }
 }
 
-export class TokenContext {
-  constructor(readonly skip: State | null,
-              readonly tokens: State) {}
-}
-
 export class Grammar {
   constructor(readonly rules: Rule[],
               readonly terms: TermSet,
-              readonly specialized: {[terminal: string]: {[value: string]: Term}},
               readonly table: ReadonlyArray<TableState>,
-              readonly tokenTable: ReadonlyArray<ReadonlyArray<TokenContext>>) {}
+              readonly tokenTable: ReadonlyArray<ReadonlyArray<Tokenizer>>) {}
 
   toString() { return this.rules.join("\n") }
 }
