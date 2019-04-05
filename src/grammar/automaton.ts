@@ -11,7 +11,7 @@ export class Pos {
   }
 
   advance() {
-    return new Pos(this.rule, this.pos + 1, this.ahead, this.prec)
+    return new Pos(this.rule, this.pos + 1, this.ahead, this.rule.precedence[this.pos + 1] || none)
   }
 
   cmp(pos: Pos) {
@@ -52,7 +52,7 @@ function advance(set: Pos[], expr: Term): Pos[] {
 function advanceWithPrec(set: Pos[], expr: Term): {set: Pos[], prec: ReadonlyArray<Precedence>} {
   let result = [], prec = none as Precedence[]
   for (let pos of set) if (pos.next == expr) {
-    for (let p of pos.rule.precAt(pos.pos)) {
+    for (let p of pos.prec) {
       if (prec == none) prec = []
       if (!prec.some(x => x.eq(p))) prec.push(p)
     }
@@ -151,12 +151,11 @@ function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[n
   for (let pos of result) {
     let next = pos.next
     if (!next || next.terminal) continue
-    let nextPrec = pos.rule.precAt(pos.pos)
     let ahead = pos.termsAhead(first)
     for (let rule of rules) if (rule.name == next) {
       for (let a of ahead) {
         if (!result.some(p => p.rule == rule && p.pos == 0 && p.ahead == a))
-          result.push(new Pos(rule, 0, a, nextPrec))
+          result.push(new Pos(rule, 0, a, Precedence.join(pos.prec, rule.precAt(0))))
       }
     }
   }
@@ -218,16 +217,14 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, f
         states.push(accepting)
         state.goto.push(new Shift(state.set[program].rule.name, accepting))
       }
-      for (let pos of set) {
-        let next = pos.next
-        if (next == null)
-          state.addAction(new Reduce(pos.ahead, pos.rule), pos.rule.rulePrec(), pos)
+      for (let pos of set) if (pos.next == null) {
+        state.addAction(new Reduce(pos.ahead, pos.rule), pos.rule.rulePrec(), pos)
       }
     }
     return state
   }
 
-  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, terms.eof, none)))
+  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, terms.eof, rule.precAt(0))))
   return states
 }
 
@@ -295,13 +292,6 @@ function collapseAutomaton(states: State[]): State[] {
   }
 }
 
-export function buildAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet) {
-  let first = computeFirst(rules, terms.nonTerminals)
-  let table = collapseAutomaton(buildFullAutomaton(rules, terms, first))
-  addRecoveryRules(table, rules, first)
-  return table
-}
-
 const none: ReadonlyArray<any> = []
 
 function addRecoveryRules(table: State[], rules: ReadonlyArray<Rule>, first: {[name: string]: Term[]}) {
@@ -318,4 +308,11 @@ function addRecoveryRules(table: State[], rules: ReadonlyArray<Rule>, first: {[n
       }
     }
   }
+}
+
+export function buildAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet) {
+  let first = computeFirst(rules, terms.nonTerminals)
+  let table = collapseAutomaton(buildFullAutomaton(rules, terms, first))
+  addRecoveryRules(table, rules, first)
+  return table
 }

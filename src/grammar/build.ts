@@ -20,6 +20,10 @@ class PrecTerm {
     if (term instanceof PrecTerm) return new PrecTerm(term.term, [prec].concat(term.prec))
     else return new PrecTerm(term, [prec])
   }
+
+  static onFirst(terms: Term$[], prec: Precedence): Term$[] {
+    return terms.length ? [PrecTerm.from(terms[0], prec)].concat(terms.slice(1)) : terms
+  }
 }
 
 type Term$ = Term | PrecTerm
@@ -28,8 +32,8 @@ class Context {
   constructor(readonly b: Builder,
               readonly rule: RuleDeclaration) {}
 
-  newName() {
-    return this.b.newName(this.rule.id.name)
+  newName(deco?: string) {
+    return this.b.newName(this.rule.id.name + (deco ? "-" + deco : ""), deco ? true : null)
   }
 
   defineRule(name: Term, choices: Term$[][]) {
@@ -72,32 +76,47 @@ class Context {
   }
 
   normalizeTopExpr(expr: Expression, self: Term): Term$[][] {
-    if (expr instanceof RepeatExpression && expr.kind == "?")
+    if (expr instanceof RepeatExpression && expr.kind == "?") {
       return [[], ...this.normalizeTopExpr(expr.expr, self)]
-    else if (expr instanceof RepeatExpression && expr.kind == "*")
-      return [[], [self, ...this.normalizeExpr(expr.expr)]]
-    else if (expr instanceof ChoiceExpression)
+    } else if (expr instanceof RepeatExpression && !self.tag) {
+      self.repeats = true
+      return this.normalizeRepeat(expr)
+    } else if (expr instanceof ChoiceExpression) {
       return expr.exprs.map(e => this.normalizeExpr(e))
-    else if (expr instanceof MarkedExpression)
-      return this.normalizeTopExpr(expr.expr, self).map(terms => {
-        return terms.length ? [PrecTerm.from(terms[0], this.b.getPrecedence(expr))].concat(terms.slice(1)) : terms
-      })
-    else
+    } else if (expr instanceof MarkedExpression) {
+      return this.normalizeTopExpr(expr.expr, self).map(terms => PrecTerm.onFirst(terms, this.b.getPrecedence(expr)))
+    } else {
       return [this.normalizeExpr(expr)]
+    }
+  }
+
+  // For tree-balancing reasons, repeat expressions X* have to be
+  // normalized to something like
+  //
+  //     Outer -> ε | Inner
+  //     Inner -> X | Inner Inner
+  //
+  // (With the ε part gone for + expressions.)
+  //
+  // Returns the terms that make up the outer rule.
+  normalizeRepeat(expr: RepeatExpression) {
+    let inner = this.newName(expr.kind)
+    let exprPrec = new Precedence(null, inner.name, 1)
+    let top = this.normalizeTopExpr(expr.expr, inner).map(choice => PrecTerm.onFirst(choice, exprPrec))
+    top.push([inner, PrecTerm.from(inner, new Precedence(null, inner.name, 2))])
+    this.defineRule(inner, top)
+    return expr.kind == "+" ? [[inner]] : [[], [inner]]
   }
 
   normalizeExpr(expr: Expression): Term$[] {
-    if (expr instanceof RepeatExpression) {
-      if (expr.kind == "?") {
-        let name = this.newName()
-        return this.defineRule(this.newName(), [[] as Term$[]].concat(this.normalizeTopExpr(expr.expr, name)))
-      } else {
-        // FIXME is the duplication for + a good idea? Could also
-        // factor expr into a rule.
-        let inner = this.normalizeExpr(expr.expr), name = this.newName()
-        let result = this.defineRule(name, [[name as Term$].concat(inner), []])
-        return expr.kind == "*" ? result : inner.concat(result)
-      }
+    if (expr instanceof RepeatExpression && expr.kind == "?") {
+      let name = this.newName("?")
+      return this.defineRule(name, [[] as Term$[]].concat(this.normalizeTopExpr(expr.expr, name)))
+    } else if (expr instanceof RepeatExpression) {
+      let outer = this.newName("wrap-" + expr.kind)
+      outer.repeats = true
+      this.defineRule(outer, this.normalizeRepeat(expr))
+      return [outer]
     } else if (expr instanceof ChoiceExpression) {
       return this.defineRule(this.newName(), expr.exprs.map(e => this.normalizeExpr(e)))
     } else if (expr instanceof SequenceExpression) {
@@ -107,8 +126,7 @@ class Context {
     } else if (expr instanceof NamedExpression) {
       return this.resolve(expr)
     } else if (expr instanceof MarkedExpression) {
-      let inner = this.normalizeExpr(expr.expr)
-      return inner.length ? [PrecTerm.from(inner[0], this.b.getPrecedence(expr))].concat(inner.slice(1)) : inner
+      return PrecTerm.onFirst(this.normalizeExpr(expr.expr), this.b.getPrecedence(expr))
     } else {
       return this.raise("This type of expression may not occur in non-token rules", expr.start)
     }
