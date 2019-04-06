@@ -7,7 +7,7 @@ const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which st
 
 const MAX_BUFFER_LENGTH = 2048
 
-const BALANCE_LEAF_COUNT = MAX_BUFFER_LENGTH, BALANCE_BRANCH_FACTOR = 5
+const BALANCE_LEAF_LENGTH = MAX_BUFFER_LENGTH, BALANCE_BRANCH_FACTOR = 5
 
 // (FIXME: this will go out of date before I know it, revisit at some
 // point)
@@ -90,20 +90,20 @@ class Stack {
     let {pos, nodeCount} = this
     if (depth) {
       let newLen = this.stack.length - (depth * 3)
-      let start = this.stack[newLen - 2], size = this.pos - start
+      let start = this.stack[newLen - 2], length = this.pos - start
       let count = nodeCount - this.stack[newLen - 1]
       if (name.tag) {
         let last
-        if (size < MAX_BUFFER_LENGTH &&
+        if (length <= MAX_BUFFER_LENGTH &&
             Array.isArray(last = this.values[this.values.length - 1] as number[]) &&
-            last.length >= count) {
+            (last.length >> 2) >= count) {
           last.push(name.id, start, pos, count)
         } else {
-          this.values.push(this.reduceValue(count, start).toNode(name, this.pos - start))
+          this.values.push(this.reduceValue(count, start).toNode(name, length))
           this.valueStarts.push(start)
         }
         nodeCount++
-      } else if (name.repeats && count > BALANCE_LEAF_COUNT) {
+      } else if (name.repeats && length > BALANCE_LEAF_LENGTH) {
         let balanced = this.reduceValue(count, start).balance(name.repeats)
         this.values.push(balanced)
         this.valueStarts.push(start)
@@ -263,23 +263,23 @@ export class Tree {
   }
 
   balance(name: Term): Node {
-    let maxChild = Math.ceil(this.nodeCount / BALANCE_BRANCH_FACTOR)
     let balance = (from: number, to: number): Node => {
-      let children = [], positions = [], size = 1
+      let length = this.positions[to - 1] + this.children[to - 1].length - this.positions[from]
+      let maxChild = Math.max(BALANCE_LEAF_LENGTH, Math.ceil(length / BALANCE_BRANCH_FACTOR))
+      let children = [], positions = [], size = 0
       for (let i = from; i < to;) {
-        let groupStart = i, count = this.children[i++].nodeCount
-        while (i < to) {
-          let next = count + this.children[i].nodeCount
-          if (next > maxChild) break
-          count = next
+        let groupFrom = i, groupStart = this.positions[i]
+        i++
+        for (; i < to; i++) {
+          let nextEnd = this.positions[i] + this.children[i].length
+          if (nextEnd - groupStart > maxChild) break
         }
-        let sub = i == groupStart + 1 ? this.children[groupStart] : balance(groupStart, i)
+        let sub = i == groupFrom + 1 ? this.children[groupFrom] : balance(groupFrom, i)
         size += sub.nodeCount
         children.push(sub)
-        positions.push(this.positions[groupStart])
+        positions.push(groupStart)
       }
-      return new Node(name, positions[children.length - 1] + children[children.length - 1].length - this.positions[from],
-                      size, children, positions)
+      return new Node(name, length, size, children, positions)
     }
     return balance(0, this.children.length)
   }
