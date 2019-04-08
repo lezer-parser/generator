@@ -262,42 +262,37 @@ export class Tree {
     return last < 0 ? 0 : this.positions[last] + this.children[last].length
   }
 
-  balance(name: Term): Node {
-    let balance = (from: number, to: number): Node => {
-      let length = this.positions[to - 1] + this.children[to - 1].length - this.positions[from]
-      let maxChild = Math.max(BALANCE_LEAF_LENGTH, Math.ceil(length / BALANCE_BRANCH_FACTOR))
-      let children = [], positions = [], size = 0
-      for (let i = from; i < to;) {
-        let groupFrom = i, groupStart = this.positions[i]
-        i++
-        for (; i < to; i++) {
-          let nextEnd = this.positions[i] + this.children[i].length
-          if (nextEnd - groupStart > maxChild) break
-        }
-        let sub = i == groupFrom + 1 ? this.children[groupFrom] : balance(groupFrom, i)
-        size += sub.nodeCount
-        children.push(sub)
-        positions.push(groupStart)
+  balanceRange(name: Term, from: number, to: number): Node {
+    let length = this.positions[to - 1] + this.children[to - 1].length - this.positions[from]
+    let maxChild = Math.max(BALANCE_LEAF_LENGTH, Math.ceil(length / BALANCE_BRANCH_FACTOR))
+    let children = [], positions = [], size = 0
+    for (let i = from; i < to;) {
+      let groupFrom = i, groupStart = this.positions[i]
+      i++
+      for (; i < to; i++) {
+        let nextEnd = this.positions[i] + this.children[i].length
+        if (nextEnd - groupStart > maxChild) break
       }
-      return new Node(name, length, size, children, positions)
+      let sub = i == groupFrom + 1 ? this.children[groupFrom] : this.balanceRange(name, groupFrom, i)
+      size += sub.nodeCount
+      children.push(sub)
+      positions.push(groupStart)
     }
-    return balance(0, this.children.length)
+    return new Node(name, length, size, children, positions)
   }
 
-/* FIXME restore
+  balance(name: Term): Node {
+    return this.balanceRange(name, 0, this.children.length)
+  }
+
   partial(start: number, end: number, offset: number, target: Node) {
-    if (start <= 0 && end >= this.length) {
-      target.children.push(this)
-      target.positions.push(offset)
-    } else {
-      for (let i = 0; i < this.children.length; i++) {
-        let from = this.positions[i]
-        if (from >= end) break
-        let child = this.children[i], to = from + child.length
-        if (to > start) child.partial(start - from, end - from, offset + from, target)
-      }
+    for (let i = 0; i < this.children.length; i++) {
+      let from = this.positions[i]
+      if (from >= end) break
+      let child = this.children[i], to = from + child.length
+      if (to > start) child.partial(start - from, end - from, offset + from, target)
     }
-  }*/
+  }
 }
 
 export type SyntaxTree = TreeBuffer | Tree
@@ -316,6 +311,15 @@ export class Node extends Tree {
   toString() {
     let name = this.name.tag
     return !name ? this.children.join() : name + (this.children.length ? "(" + this.children + ")" : "")
+  }
+
+  partial(start: number, end: number, offset: number, target: Node) {
+    if (start <= 0 && end >= this.length) {
+      target.children.push(this)
+      target.positions.push(offset)
+    } else {
+      super.partial(start, end, offset, target)
+    }
   }
 }
 
@@ -359,6 +363,13 @@ export class TreeBuffer {
     let result = ""
     while (pos < this.buffer.length) result += (result ? "," : "") + next()
     return result
+  }
+
+  partial(start: number, end: number, offset: number, target: Node) {
+    if (start <= 0 && end >= this.length) {
+      target.children.push(this)
+      target.positions.push(offset)
+    }    
   }
 }
 
