@@ -373,39 +373,49 @@ export class TreeBuffer {
   }
 }
 
-/*
-class TreeCursor {
-  nodes: Node[]
+class CacheCursor {
+  trees: Tree[]
   start = [0]
   index = [0]
+  nextStart: number = 0
 
-  constructor(node: Node) { this.nodes = [node] }
+  constructor(tree: Tree) { this.trees = [tree] }
 
   // `pos` must be >= any previously given `pos` for this cursor
   nodeAt(pos: number) {
+    if (pos < this.nextStart) return null
+
     for (;;) {
-      let last = this.nodes.length - 1
-      if (last < 0) return null
-      let top = this.nodes[last], index = this.index[last]
+      let last = this.trees.length - 1
+      if (last < 0) { // End of tree
+        this.nextStart = 1e9
+        return null
+      }
+      let top = this.trees[last], index = this.index[last]
       if (index == top.children.length) {
-        this.nodes.pop()
+        this.trees.pop()
         this.start.pop()
         this.index.pop()
         continue
       }
       let next = top.children[index]
       let start = this.start[last] + top.positions[index]
-      if (start >= pos) return start == pos ? next : null
-      this.index[last]++
-      if (start + next.length >= pos) { // Enter this node
-        this.nodes.push(next)
-        this.start.push(start)
-        this.index.push(0)
+      if (next instanceof TreeBuffer) {
+        this.index[last]++
+        this.nextStart = start + next.length
+      } else if (start >= pos) {
+        return start == pos ? next : null
+      } else {
+        this.index[last]++
+        if (start + next.length >= pos) { // Enter this node
+          this.trees.push(next)
+          this.start.push(start)
+          this.index.push(0)
+        }
       }
     }
   }
 }
-*/
 
 class TokenCache { // FIXME cache whitespace separately for improved reuse and incremental parsing
   tokens: Token[] = []
@@ -457,27 +467,30 @@ function hasOtherMatchInState(state: State, actionIndex: number, token: Token) {
   return false
 }
 
-export function parse(input: string, grammar: Grammar, cache = null, verbose = false, strict = false): SyntaxTree {
+export function parse(input: string, grammar: Grammar, cache: Tree | null = null, verbose = false, strict = false): SyntaxTree {
   let parses = [Stack.start(grammar)]
-//  let cacheIter = new TreeCursor(cache)
+  let cacheCursor = cache && new CacheCursor(cache)
 
   let tokens = new TokenCache
 
   parse: for (;;) {
     let stack = takeFromHeap(parses, compareStacks), pos = stack.pos
 
-/*    if (!stack.state.ambiguous) { // FIXME this isn't robust
-      // FIXME need position after whitespace
-      for (let cached = cacheIter.nodeAt(stack.pos); cached;
-           cached = cached.children.length && cached.positions[0] == 0 ? cached.children[0] : null) {
+    if (cacheCursor && !stack.state.ambiguous) { // FIXME this isn't robust
+      // FIXME need position after whitespace, not stack.pos
+      for (let cached = cacheCursor.nodeAt(stack.pos); cached;) {
         let match = stack.state.getGoto(cached.name!)
         if (match) {
-          stack.useCached(cached, match.target)
+          stack.useCached(cached, stack.pos, match.target)
           addStack(parses, stack)
           continue parse
         }
+        if (cached.children.length == 0 || cached.positions[0] > 0) break
+        let inner = cached.children[0]
+        if (inner instanceof Node) cached = inner
+        else break
       }
-    }*/
+    }
 
     tokens.update(grammar, grammar.tokenTable[stack.stateID], input, pos)
 
