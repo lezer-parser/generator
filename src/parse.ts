@@ -53,7 +53,7 @@ class Stack {
 
   toString() {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).join(",") + "] " +
-      this.values.map(v => Array.isArray(v) ? TreeBuffer.build(v, 0, 0) : v).join(",")
+      this.values.map(v => Array.isArray(v) ? Tree.fromBuffer(v, 0) : v).join(",")
   }
 
   static start(grammar: Grammar) {
@@ -66,11 +66,8 @@ class Stack {
       let value = this.values.pop()!, valueStart = this.valueStarts.pop()!
       if (Array.isArray(value)) {
         let size = value.length >> 2, startIndex = Math.max(0, (size - remaining) << 2)
-        if (startIndex < value.length) {
-          let nodeStart = value[startIndex + 1]
-          children.push(TreeBuffer.build(value, startIndex, nodeStart))
-          positions.push(nodeStart)
-        }
+        if (startIndex < value.length)
+          TreeBuffer.build(value, startIndex, start, children, positions)
         remaining -= size
         if (startIndex > 0) {
           value.length = startIndex
@@ -222,8 +219,7 @@ class Stack {
   }
 
   toTree(): SyntaxTree {
-    return this.values.length == 1 && Array.isArray(this.values[0]) ? TreeBuffer.build(this.values[0] as number[], 0, 0)
-      : this.reduceValue(this.nodeCount, 0)
+    return this.reduceValue(this.nodeCount, 0)
   }
 }
 
@@ -263,20 +259,29 @@ export class Tree {
   }
 
   balanceRange(name: Term, from: number, to: number): Node {
-    let length = this.positions[to - 1] + this.children[to - 1].length - this.positions[from]
-    let maxChild = Math.max(BALANCE_LEAF_LENGTH, Math.ceil(length / BALANCE_BRANCH_FACTOR))
-    let children = [], positions = [], size = 0
-    for (let i = from; i < to;) {
-      let groupFrom = i, groupStart = this.positions[i]
-      i++
-      for (; i < to; i++) {
-        let nextEnd = this.positions[i] + this.children[i].length
-        if (nextEnd - groupStart > maxChild) break
+    let start = this.positions[from], length = (this.positions[to - 1] + this.children[to - 1].length) - start
+    let children = [], positions = [], size = 1
+    if (length <= BALANCE_LEAF_LENGTH) {
+      for (let i = from; i < to; i++) {
+        let child = this.children[i]
+        size += child.nodeCount
+        children.push(child)
+        positions.push(this.positions[i] - start)
       }
-      let sub = i == groupFrom + 1 ? this.children[groupFrom] : this.balanceRange(name, groupFrom, i)
-      size += sub.nodeCount
-      children.push(sub)
-      positions.push(groupStart)
+    } else {
+      let maxChild = Math.max(BALANCE_LEAF_LENGTH, Math.ceil(length / BALANCE_BRANCH_FACTOR))
+      for (let i = from; i < to;) {
+        let groupFrom = i, groupStart = this.positions[i]
+        i++
+        for (; i < to; i++) {
+          let nextEnd = this.positions[i] + this.children[i].length
+          if (nextEnd - groupStart > maxChild) break
+        }
+        let sub = i == groupFrom + 1 ? this.children[groupFrom] : this.balanceRange(name, groupFrom, i)
+        size += sub.nodeCount
+        children.push(sub)
+        positions.push(groupStart - start)
+      }
     }
     return new Node(name, length, size, children, positions)
   }
@@ -292,6 +297,12 @@ export class Tree {
       let child = this.children[i], to = from + child.length
       if (to > start) child.partial(start - from, end - from, offset + from, target)
     }
+  }
+
+  static fromBuffer(buffer: number[], start: number) {
+    let children: (Node | TreeBuffer)[] = [], positions: number[] = []
+    TreeBuffer.build(buffer, 0, start, children, positions)
+    return new Tree(buffer.length >> 2, children, positions)
   }
 }
 
@@ -323,10 +334,6 @@ export class Node extends Tree {
   }
 }
 
-new Node(null as any, 0, 0, [], [])
-
-//const MAX_BUFFER = 8192
-
 // Tree buffers contain type,start,end,childCount quads for each node.
 // The nodes are built in postfix order (with parent nodes being
 // written after child nodes), but converted to prefix order when
@@ -338,17 +345,34 @@ export class TreeBuffer {
 
   get length() { return this.buffer[this.buffer.length - 2] }
 
-  static build(source: number[], start: number, offset: number) {
-    let buffer = new Uint16Array(source.length - start)
-    let i = buffer.length, pos = source.length
+  static copy(source: number[], startIndex: number, endIndex: number, startOffset: number): TreeBuffer {
+    let buffer = new Uint16Array(endIndex - startIndex)
+    let i = buffer.length, pos = endIndex
     function build() {
       let count = source[--pos], to = source[--pos], from = source[--pos], tag = source[--pos]
       let toPos = pos - (count << 2)
       while (pos > toPos) build()
-      buffer[--i] = count; buffer[--i] = to; buffer[--i] = from; buffer[--i] = tag
+      buffer[--i] = count; buffer[--i] = to - startOffset; buffer[--i] = from - startOffset; buffer[--i] = tag
     }
-    while (pos > start) build()
+    while (pos > startIndex) build()
     return new TreeBuffer(buffer)
+  }
+
+  static build(source: number[], startIndex: number, startOffset: number, children: (Node | TreeBuffer)[], positions: number[]) {
+    for (let pos = source.length; pos > startIndex;) {
+      let partStart = pos, partOffset!: number
+      let minStart = Math.max(startIndex, partStart - (MAX_BUFFER_LENGTH << 2))
+      for (;;) {
+        let count = source[partStart - 1], newStart = partStart - 4 - (count << 2)
+        if (newStart < minStart) break
+        partOffset = source[partStart - 3]
+        partStart = newStart
+      }
+      if (partStart == pos) throw new Error("Oversized node in buffer")
+      children.push(TreeBuffer.copy(source, partStart, pos, partOffset - startOffset))
+      positions.push(partOffset - startOffset)
+      pos = partStart
+    }
   }
 
   toString() {
@@ -467,7 +491,9 @@ function hasOtherMatchInState(state: State, actionIndex: number, token: Token) {
   return false
 }
 
-export function parse(input: string, grammar: Grammar, cache: Tree | null = null, verbose = false, strict = false): SyntaxTree {
+export type ParseOptions = {cache?: Tree | null, verbose?: boolean, strict?: boolean}
+
+export function parse(input: string, grammar: Grammar, {cache = null, verbose = false, strict = false}: ParseOptions): SyntaxTree {
   let parses = [Stack.start(grammar)]
   let cacheCursor = cache && new CacheCursor(cache)
 
@@ -525,7 +551,7 @@ export function parse(input: string, grammar: Grammar, cache: Tree | null = null
 
     if (!strict &&
         !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
-      
+
       let inserted = stack.recoverByInsert(term, token.start, token.end, verbose)
       if (inserted) addStack(parses, inserted)
       stack.recoverByDelete(term, token.start, token.end, verbose)
