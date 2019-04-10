@@ -9,6 +9,13 @@ const MAX_BUFFER_LENGTH = 2048
 
 const BALANCE_LEAF_LENGTH = MAX_BUFFER_LENGTH, BALANCE_BRANCH_FACTOR = 5
 
+interface ChangedRange {
+  fromA: number
+  toA: number
+  fromB: number
+  toB: number
+}
+
 // (FIXME: this will go out of date before I know it, revisit at some
 // point)
 //
@@ -287,16 +294,34 @@ export class Tree {
   }
 
   balance(name: Term): Node {
+    if (this.children.length == 1 && this.positions[0] == 0) {
+      let first = this.children[0]
+      if (first instanceof Node && first.name == name) return first
+    }
     return this.balanceRange(name, 0, this.children.length)
   }
 
-  partial(start: number, end: number, offset: number, target: Node) {
+  partial(start: number, end: number, offset: number, children: (Node | TreeBuffer)[], positions: number[]) {
     for (let i = 0; i < this.children.length; i++) {
       let from = this.positions[i]
       if (from >= end) break
       let child = this.children[i], to = from + child.length
-      if (to > start) child.partial(start - from, end - from, offset + from, target)
+      if (to > start) child.partial(start - from, end - from, offset + from, children, positions)
     }
+  }
+
+  unchanged(changes: ReadonlyArray<ChangedRange>) {
+    if (changes.length == 0) return this
+    let children: (Node | TreeBuffer)[] = [], positions: number[] = []
+    for (let i = 0, pos = 0, off = 0;; i++) {
+      let next = i == changes.length ? null : changes[i]
+      let nextPos = next ? next.fromA : this.length
+      if (nextPos > pos) this.partial(pos, nextPos - 1 /* FIXME need a full token here */, off, children, positions)
+      if (!next) break
+      pos = next.toA
+      off += (next.toB - next.fromB) - (next.toA - next.fromA)
+    }
+    return new Tree(children.reduce((n, c) => n + c.nodeCount, 0), children, positions)
   }
 
   static fromBuffer(buffer: number[], start: number) {
@@ -304,6 +329,8 @@ export class Tree {
     TreeBuffer.build(buffer, 0, start, children, positions)
     return new Tree(buffer.length >> 2, children, positions)
   }
+
+  static empty = new Tree(0, [], [])
 }
 
 export type SyntaxTree = TreeBuffer | Tree
@@ -324,12 +351,12 @@ export class Node extends Tree {
     return !name ? this.children.join() : name + (this.children.length ? "(" + this.children + ")" : "")
   }
 
-  partial(start: number, end: number, offset: number, target: Node) {
+  partial(start: number, end: number, offset: number, children: (Node | TreeBuffer)[], positions: number[]) {
     if (start <= 0 && end >= this.length) {
-      target.children.push(this)
-      target.positions.push(offset)
+      children.push(this)
+      positions.push(offset)
     } else {
-      super.partial(start, end, offset, target)
+      super.partial(start, end, offset, children, positions)
     }
   }
 }
@@ -389,11 +416,15 @@ export class TreeBuffer {
     return result
   }
 
-  partial(start: number, end: number, offset: number, target: Node) {
+  partial(start: number, end: number, offset: number, children: (Node | TreeBuffer)[], positions: number[]) {
     if (start <= 0 && end >= this.length) {
-      target.children.push(this)
-      target.positions.push(offset)
+      children.push(this)
+      positions.push(offset)
     }    
+  }
+
+  unchanged(changes: ReadonlyArray<ChangedRange>) {
+    return changes.length ? Tree.empty : this
   }
 }
 
@@ -403,7 +434,7 @@ class CacheCursor {
   index = [0]
   nextStart: number = 0
 
-  constructor(tree: Tree) { this.trees = [tree] }
+  constructor(tree: SyntaxTree) { this.trees = tree instanceof Tree ? [tree] : [] }
 
   // `pos` must be >= any previously given `pos` for this cursor
   nodeAt(pos: number) {
@@ -491,9 +522,9 @@ function hasOtherMatchInState(state: State, actionIndex: number, token: Token) {
   return false
 }
 
-export type ParseOptions = {cache?: Tree | null, verbose?: boolean, strict?: boolean}
+export type ParseOptions = {cache?: SyntaxTree | null, verbose?: boolean, strict?: boolean}
 
-export function parse(input: string, grammar: Grammar, {cache = null, verbose = false, strict = false}: ParseOptions): SyntaxTree {
+export function parse(input: string, grammar: Grammar, {cache = null, verbose = false, strict = false}: ParseOptions = {}): SyntaxTree {
   let parses = [Stack.start(grammar)]
   let cacheCursor = cache && new CacheCursor(cache)
 
