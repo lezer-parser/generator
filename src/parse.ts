@@ -5,7 +5,9 @@ import {State, Shift, Reduce} from "./grammar/automaton"
 const BADNESS_DELETE = 100, BADNESS_RECOVER = 100
 const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which stacks are less agressively pruned
 
-const MAX_BUFFER_LENGTH = 2048
+const VALUE_INDEX_SIZE = 15, VALUE_INDEX_MASK = 2**VALUE_INDEX_SIZE - 1
+
+const MAX_BUFFER_LENGTH = 2048, MAX_BUFFER_SIZE = VALUE_INDEX_MASK << 1
 
 const BALANCE_LEAF_LENGTH = MAX_BUFFER_LENGTH, BALANCE_BRANCH_FACTOR = 5
 
@@ -45,119 +47,126 @@ interface ChangedRange {
 
 class Stack {
   constructor(readonly grammar: Grammar,
-              public stack: number[], // Holds state, pos, node count triplets
-              public values: (Node | number[])[],
-              public valueStarts: number[],
+              // Holds state, pos, value stack pos (15 bits array index, 15 bits buffer index) triplets for all but the top state
+              readonly stack: number[],
+              public state: State,
+              public pos: number,
+              readonly values: (Node | number[])[],
+              readonly valueStarts: number[],
               public badness: number) {}
 
-  get state() { return this.grammar.table[this.stateID] }
-
-  get stateID() { return this.stack[this.stack.length - 3] }
-
-  get pos() { return this.stack[this.stack.length - 2] }
-
-  get nodeCount() { return this.stack[this.stack.length - 1] }
-
   toString() {
-    return "[" + this.stack.filter((_, i) => i % 3 == 0).join(",") + "] " +
+    return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state.id).join(",") + "] " +
       this.values.map(v => Array.isArray(v) ? Tree.fromBuffer(v, 0) : v).join(",")
   }
 
   static start(grammar: Grammar) {
-    return new Stack(grammar, [0, 0, 0], [[]], [], 0)
+    return new Stack(grammar, [], grammar.table[0], 0, [[]], [], 0)
   }
 
-  reduceValue(childCount: number, start: number): Tree {
+  reduceValue(valueIndex: number, start: number): Tree {
+    let stackIndex = valueIndex & VALUE_INDEX_MASK, stackOffset = valueIndex >> VALUE_INDEX_SIZE
     let children: (Node | TreeBuffer)[] = [], positions: number[] = []
-    for (let remaining = childCount; remaining > 0;) {
-      let value = this.values.pop()!, valueStart = this.valueStarts.pop()!
+    for (let i = stackIndex; i < this.values.length; i++) {
+      let value = this.values[i], valueStart = this.valueStarts[i]
       if (Array.isArray(value)) {
-        let size = value.length >> 2, startIndex = Math.max(0, (size - remaining) << 2)
+        let startIndex = i == stackIndex ? stackOffset << 2 : 0
         if (startIndex < value.length)
           TreeBuffer.build(value, startIndex, start, children, positions)
-        remaining -= size
-        if (startIndex > 0) {
-          value.length = startIndex
-          this.values.push(value)
-          this.valueStarts.push(0)
-        }
+        if (startIndex > 0) value.length = startIndex
       } else {
         children.push(value)
         positions.push(valueStart)
-        remaining -= value.nodeCount
       }
     }
-    return new Tree(childCount, children.reverse(), positions.reverse())
+    let newLen = stackIndex + (stackOffset ? 1 : 0)
+    if (this.values.length > newLen)
+      this.values.length = this.valueStarts.length = newLen
+    return new Tree(children, positions)
+  }
+
+  pushState(state: State, start: number) {
+    let last = this.values[this.values.length - 1]
+    let valueIndex = last instanceof Node ? this.values.length : this.values.length - 1 + ((last.length >> 2) << VALUE_INDEX_SIZE)
+    this.stack.push(this.state.id, start, valueIndex)
+    this.state = state
   }
 
   reduce(depth: number, name: Term) {
-    let {pos, nodeCount} = this
-    if (depth) {
-      let newLen = this.stack.length - (depth * 3)
-      let start = this.stack[newLen - 2], length = this.pos - start
-      let count = nodeCount - this.stack[newLen - 1]
-      if (name.tag) {
-        let last
-        if (length <= MAX_BUFFER_LENGTH &&
-            Array.isArray(last = this.values[this.values.length - 1] as number[]) &&
-            (last.length >> 2) >= count) {
-          last.push(name.id, start, pos, count)
-        } else {
-          this.values.push(this.reduceValue(count, start).toNode(name, length))
-          this.valueStarts.push(start)
-        }
-        nodeCount++
-      } else if (name.repeats && length > BALANCE_LEAF_LENGTH) {
-        let balanced = this.reduceValue(count, start).balance(name.repeats)
-        this.values.push(balanced)
-        this.valueStarts.push(start)
-        nodeCount += balanced.nodeCount - count
-      }
-      this.stack.length = newLen
+    if (depth == 0) {
+      this.pushState(this.state.getGoto(name)!.target, this.pos)
+      return
     }
-    this.stack.push(this.state.getGoto(name)!.target.id, pos, nodeCount)
+
+    let base = this.stack.length - ((depth - 1) * 3)
+    let start = this.stack[base - 2]
+    let length = this.pos - start
+    let valueIndex = this.stack[base - 1]
+    if (name.tag) {
+      let last
+      if (length <= MAX_BUFFER_LENGTH &&
+          (valueIndex & VALUE_INDEX_MASK) == this.values.length - 1 &&
+          Array.isArray(last = this.values[this.values.length - 1] as number[])) {
+        let childCount = (last.length >> 2) - (valueIndex >> VALUE_INDEX_SIZE)
+        if (childCount == 0 && last.length >= MAX_BUFFER_LENGTH) { // Start a new buffer if this one is too big
+          this.values.push(last = [])
+          this.valueStarts.push(0)
+        }
+        last.push(name.id, start, this.pos, childCount)
+      } else {
+        this.values.push(this.reduceValue(valueIndex, start).toNode(name, length))
+        this.valueStarts.push(start)
+      }
+    } else if (name.repeats && length > BALANCE_LEAF_LENGTH) {
+      let balanced = this.reduceValue(valueIndex, start).balance(name.repeats)
+      this.values.push(balanced)
+      this.valueStarts.push(start)
+    }
+    let baseState = this.grammar.table[this.stack[base - 3]]
+    this.state = baseState.getGoto(name)!.target
+    if (depth > 1) this.stack.length = base
   }
 
-  shiftValue(term: Term, start: number, end: number, count = 0) {
+  shiftValue(term: Term, start: number, end: number, childCount = 0) {
     let last = this.values[this.values.length - 1]
-    if (!Array.isArray(last)) {
+    if (!Array.isArray(last) || last.length >= MAX_BUFFER_SIZE) {
       this.values.push(last = [])
       this.valueStarts.push(0)
     }
     if (term.error && last.length && last[last.length - 4] == term.id &&
         (start == end || last[last.length - 3] == start)) return
-    last.push(term.id, start, end, count)
-    this.stack[this.stack.length - 1]++
+    last.push(term.id, start, end, childCount)
   }
 
   apply(action: Shift | Reduce, next: Term, nextStart: number, nextEnd: number) {
     if (action instanceof Reduce) {
       this.reduce(action.rule.parts.length, action.rule.name)
     } else { // Shift
-      this.stack[this.stack.length - 2] = nextStart
-      this.stack.push(action.target.id, nextEnd, this.nodeCount)
+      this.pushState(action.target, nextStart)
+      this.pos = nextEnd
       if (next.tag) this.shiftValue(next, nextStart, nextEnd)
       this.badness = (this.badness >> 1) + (this.badness >> 2) // (* 0.75)
     }
   }
 
   useCached(value: Node, start: number, next: State) {
-    this.stack.push(next.id, start + value.length, this.nodeCount + value.nodeCount)
+    this.pushState(next, start)
     this.values.push(value)
     this.valueStarts.push(start)
+    this.pos = start + value.length
     this.badness >> 1 // FIXME
   }
 
   split() {
-    return new Stack(this.grammar, this.stack.slice(), this.values.map(v => Array.isArray(v) ? v.slice() : v),
+    return new Stack(this.grammar, this.stack.slice(), this.state, this.pos,
+                     this.values.map(v => Array.isArray(v) ? v.slice() : v),
                      this.valueStarts.slice(), this.badness)
   }
 
   recoverByDelete(next: Term, nextStart: number, nextEnd: number, verbose: boolean) {
     if (next.tag) this.shiftValue(next, nextStart, nextEnd)
-    // FIXME merge errors?
     this.shiftValue(this.grammar.terms.error, nextStart, nextEnd, next.tag ? 1 : 0)
-    this.stack[this.stack.length - 2] = nextEnd
+    this.pos = nextEnd
     this.badness += BADNESS_DELETE
     if (verbose) console.log("delete token " + next + ": " + this, nextStart, nextEnd)
   }
@@ -165,7 +174,7 @@ class Stack {
   canRecover(next: Term) {
     // Scan for a state that has either a direct action or a recovery
     // action for next, without actually building up a new stack
-    for (let top = this.state, rest = this.stack, offset = rest.length - 3;;) {
+    for (let top = this.state, rest = this.stack, offset = rest.length;;) {
       if (top.terminals.some(a => a.term == next) ||
           top.recover.some(a => a.term == next)) return true
       // Find a way to reduce from here
@@ -210,7 +219,7 @@ class Stack {
         if (!recover) break
         if (verbose) console.log("skip from state " + result.state.id + " to " + recover.target.id)
         let pos = result.pos
-        result.stack.push(recover.target.id, pos, result.nodeCount)
+        result.pushState(recover.target, pos)
         result.shiftValue(this.grammar.terms.error, pos, pos)
       }
       
@@ -226,7 +235,7 @@ class Stack {
   }
 
   toTree(): SyntaxTree {
-    return this.reduceValue(this.nodeCount, 0)
+    return this.reduceValue(0, 0)
   }
 }
 
@@ -248,8 +257,7 @@ function addStack(heap: Stack[], stack: Stack, strict = stack.badness < BADNESS_
 }
 
 export class Tree {
-  constructor(readonly nodeCount: number,
-              readonly children: (Node | TreeBuffer)[],
+  constructor(readonly children: (Node | TreeBuffer)[],
               readonly positions: number[]) {}
 
   toString() {
@@ -257,7 +265,7 @@ export class Tree {
   }
 
   toNode(name: Term, length: number) {
-    return new Node(name, length, this.nodeCount + 1, this.children, this.positions)
+    return new Node(name, length, this.children, this.positions)
   }
 
   get length() {
@@ -267,11 +275,10 @@ export class Tree {
 
   balanceRange(name: Term, from: number, to: number): Node {
     let start = this.positions[from], length = (this.positions[to - 1] + this.children[to - 1].length) - start
-    let children = [], positions = [], size = 1
+    let children = [], positions = []
     if (length <= BALANCE_LEAF_LENGTH) {
       for (let i = from; i < to; i++) {
         let child = this.children[i]
-        size += child.nodeCount
         children.push(child)
         positions.push(this.positions[i] - start)
       }
@@ -285,12 +292,11 @@ export class Tree {
           if (nextEnd - groupStart > maxChild) break
         }
         let sub = i == groupFrom + 1 ? this.children[groupFrom] : this.balanceRange(name, groupFrom, i)
-        size += sub.nodeCount
         children.push(sub)
         positions.push(groupStart - start)
       }
     }
-    return new Node(name, length, size, children, positions)
+    return new Node(name, length, children, positions)
   }
 
   balance(name: Term): Node {
@@ -321,16 +327,16 @@ export class Tree {
       pos = next.toA
       off += (next.toB - next.fromB) - (next.toA - next.fromA)
     }
-    return new Tree(children.reduce((n, c) => n + c.nodeCount, 0), children, positions)
+    return new Tree(children, positions)
   }
 
   static fromBuffer(buffer: number[], start: number) {
     let children: (Node | TreeBuffer)[] = [], positions: number[] = []
     TreeBuffer.build(buffer, 0, start, children, positions)
-    return new Tree(buffer.length >> 2, children, positions)
+    return new Tree(children, positions)
   }
 
-  static empty = new Tree(0, [], [])
+  static empty = new Tree([], [])
 }
 
 export type SyntaxTree = TreeBuffer | Tree
@@ -338,10 +344,9 @@ export type SyntaxTree = TreeBuffer | Tree
 export class Node extends Tree {
   constructor(readonly name: Term,
               private _length: number,
-              nodeCount: number,
               children: (Node | TreeBuffer)[],
               positions: number[]) {
-    super(nodeCount, children, positions)
+    super(children, positions)
   }
 
   get length() { return this._length } // Because super class already has a getter
@@ -549,7 +554,7 @@ export function parse(input: string, grammar: Grammar, {cache = null, verbose = 
       }
     }
 
-    tokens.update(grammar, grammar.tokenTable[stack.stateID], input, pos)
+    tokens.update(grammar, grammar.tokenTable[stack.state.id], input, pos)
 
     let sawEof = false, state = stack.state, advanced = false
     for (let i = 0; i < tokens.index; i++) {
