@@ -5,6 +5,7 @@ import {Term, TermSet, Precedence, Rule, Grammar} from "./grammar"
 import {Edge, State, Tokenizer} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState} from "./automaton"
+import log from "../log" // FIXME
 
 // FIXME add inlining other other grammar simplifications?
 
@@ -100,9 +101,9 @@ class Context {
   // Returns the terms that make up the outer rule.
   normalizeRepeat(expr: RepeatExpression, outer: Term) {
     let inner = outer.repeats = this.newName(expr.kind)
-    let exprPrec = new Precedence(null, inner.name, 1)
+    let exprPrec = new Precedence(null, inner.name, Precedence.NON_FRAGILE)
     let top = this.normalizeTopExpr(expr.expr, inner).map(choice => PrecTerm.onFirst(choice, exprPrec))
-    top.push([inner, PrecTerm.from(inner, new Precedence(null, inner.name, 2))])
+    top.push([inner, PrecTerm.from(inner, new Precedence(null, inner.name, Precedence.NON_FRAGILE + 1))])
     this.defineRule(inner, top)
     return expr.kind == "+" ? [[inner]] : [[], [inner]]
   }
@@ -246,6 +247,8 @@ class Builder {
       tokenizers.push(tokenizer)
     }
     let tokenTable = table.map(state => this.tokensForState(state, tokenizers))
+    if (log.grammar) console.log(this.rules.join("\n"))
+    if (log.lr) console.log(table.join("\n"))
     return new Grammar(this.rules, this.terms, table, tokenTable)
   }
 

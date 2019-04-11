@@ -3,13 +3,6 @@ import {Grammar} from "../src/grammar/grammar"
 import {parse} from "../src/parse"
 const ist = require("ist")
 
-let print = process.env.LOG || ""
-let printTokens = /\btokens\b/.test(print)
-let printSkip = /\bskip\b/.test(print)
-let printGrammar = /\bgrammar\b/.test(print)
-let printLR = /\blr\b/.test(print)
-let printParse = /\bparse\b/.test(print)
-
 let fs = require("fs"), path = require("path")
 let caseDir = path.join(__dirname, "cases")
 
@@ -40,23 +33,7 @@ describe("Cases", () => {
     let parts = content.split(/\n---+\n/), grammarText = parts.shift()
     let grammar: Grammar | null = null
     let force = () => {
-      if (!grammar) {
-        grammar = buildGrammar(grammarText, file)
-        if (printSkip || printTokens) {
-          let seen: any[] = []
-          for (let tokens of grammar.tokenTable) {
-            for (let tokenizer of tokens) {
-              if (!seen.includes(tokenizer)) {
-                if (printSkip && tokenizer.skip) console.log(tokenizer.skip.toString())
-                if (printTokens) console.log(tokenizer.startState.toString())
-                seen.push(tokenizer)
-              }
-            }
-          }
-        }
-        if (printGrammar) console.log(grammar.rules.join("\n"))
-        if (printLR) console.log(grammar.table.join("\n"))
-      }
+      if (!grammar) grammar = buildGrammar(grammarText, file)
       return grammar
     }
 
@@ -73,7 +50,7 @@ describe("Cases", () => {
       if (!ast) throw new Error(`Missing syntax tree in ${name}:${i + 1}`)
       let expected = compressAST(ast, file)
       let strict = expected.indexOf("⚠") < 0
-      let parsed = parse(text.trim(), force(), {verbose: printParse, strict}).toString()
+      let parsed = parse(text.trim(), force(), {strict}).toString()
       if (parsed != expected) {
         if (parsed.length > 76) {
           let mis = 0

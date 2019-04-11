@@ -1,13 +1,17 @@
 import {Term, Grammar, termTable} from "./grammar/grammar"
 import {Token, Tokenizer} from "./grammar/token"
 import {State, Shift, Reduce} from "./grammar/automaton"
+import log from "./log"
 
 const BADNESS_DELETE = 100, BADNESS_RECOVER = 100
 const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which stacks are less agressively pruned
 
 const VALUE_INDEX_SIZE = 15, VALUE_INDEX_MASK = 2**VALUE_INDEX_SIZE - 1
 
-const MAX_BUFFER_LENGTH = 2048, MAX_BUFFER_SIZE = VALUE_INDEX_MASK << 1
+const MAX_BUFFER_LENGTH = 2048
+// The size after which a buffer must be split on the next shift or
+// childless reduce (to avoid overflowing the value index bits)
+const MAX_BUFFER_SIZE = VALUE_INDEX_MASK << 1
 
 const BALANCE_LEAF_LENGTH = MAX_BUFFER_LENGTH, BALANCE_BRANCH_FACTOR = 5
 
@@ -61,7 +65,7 @@ class Stack {
   }
 
   static start(grammar: Grammar) {
-    return new Stack(grammar, [], grammar.table[0], 0, [[]], [], 0)
+    return new Stack(grammar, [], grammar.table[0], 0, [[]], [0], 0)
   }
 
   reduceValue(valueIndex: number, start: number): Tree {
@@ -163,12 +167,11 @@ class Stack {
                      this.valueStarts.slice(), this.badness)
   }
 
-  recoverByDelete(next: Term, nextStart: number, nextEnd: number, verbose: boolean) {
+  recoverByDelete(next: Term, nextStart: number, nextEnd: number) {
     if (next.tag) this.shiftValue(next, nextStart, nextEnd)
     this.shiftValue(this.grammar.terms.error, nextStart, nextEnd, next.tag ? 1 : 0)
     this.pos = nextEnd
     this.badness += BADNESS_DELETE
-    if (verbose) console.log("delete token " + next + ": " + this, nextStart, nextEnd)
   }
 
   canRecover(next: Term) {
@@ -202,7 +205,7 @@ class Stack {
     }
   }
 
-  recoverByInsert(next: Term, nextStart: number, nextEnd: number, verbose: boolean): Stack | null {
+  recoverByInsert(next: Term, nextStart: number, nextEnd: number): Stack | null {
     if (!this.canRecover(next)) return null
     // Now that we know there's a recovery to be found, run the
     // reduces again, the expensive way, updating the stack
@@ -211,13 +214,9 @@ class Stack {
     result.badness += BADNESS_RECOVER
     for (;;) {
       for (;;) {
-        if (result.state.terminals.some(a => a.term == next)) {
-          if (verbose) console.log("recovered to " + result)
-          return result
-        }
+        if (result.state.terminals.some(a => a.term == next)) return result
         let recover = result.state.recover.find(a => a.term == next)
         if (!recover) break
-        if (verbose) console.log("skip from state " + result.state.id + " to " + recover.target.id)
         let pos = result.pos
         result.pushState(recover.target, pos)
         result.shiftValue(this.grammar.terms.error, pos, pos)
@@ -527,9 +526,11 @@ function hasOtherMatchInState(state: State, actionIndex: number, token: Token) {
   return false
 }
 
-export type ParseOptions = {cache?: SyntaxTree | null, verbose?: boolean, strict?: boolean}
+export type ParseOptions = {cache?: SyntaxTree | null, strict?: boolean}
 
-export function parse(input: string, grammar: Grammar, {cache = null, verbose = false, strict = false}: ParseOptions = {}): SyntaxTree {
+export function parse(input: string, grammar: Grammar, {cache = null, strict = false}: ParseOptions = {}): SyntaxTree {
+  let verbose = log.parse
+
   let parses = [Stack.start(grammar)]
   let cacheCursor = cache && new CacheCursor(cache)
 
@@ -588,9 +589,13 @@ export function parse(input: string, grammar: Grammar, {cache = null, verbose = 
     if (!strict &&
         !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
 
-      let inserted = stack.recoverByInsert(term, token.start, token.end, verbose)
-      if (inserted) addStack(parses, inserted)
-      stack.recoverByDelete(term, token.start, token.end, verbose)
+      let inserted = stack.recoverByInsert(term, token.start, token.end)
+      if (inserted) {
+        if (verbose) console.log("insert to " + inserted)
+        addStack(parses, inserted)
+      }
+      stack.recoverByDelete(term, token.start, token.end)
+      if (verbose) console.log("delete token " + term + ": " + stack)
       addStack(parses, stack)
     }
     if (!parses.length)

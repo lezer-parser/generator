@@ -27,10 +27,10 @@ function shared(a: SyntaxTree, b: SyntaxTree) {
     if (t instanceof Tree) t.children.forEach(register)
   })(a)
   ;(function scan(t: SyntaxTree) {
-    if (inA.includes(t)) shared += t.nodeCount
+    if (inA.includes(t)) shared += t.length
     else if (t instanceof Tree) t.children.forEach(scan)
   })(b)
-  return Math.round(100 * shared / b.nodeCount)
+  return Math.round(100 * shared / b.length)
 }
 
 function change(tree: SyntaxTree, ...changes: ([number, number] | [number, number, number, number])[]) {
@@ -52,12 +52,13 @@ describe("sequence parsing", () => {
     let ast = parse(doc, grammar)
     let full = parse(doc, grammar, {cache: ast})
     ist(shared(ast, full), 99, ">")
-    let front = parse(doc, grammar, {cache: change(ast, [4000, 6000])})
+    let front = parse(doc, grammar, {cache: change(ast, [9000, 10000])})
     ist(shared(ast, front), 50, ">")
-    let back = parse(doc, grammar, {cache: change(ast, [0, 2000])})
+    let back = parse(doc, grammar, {cache: change(ast, [0, 1000])})
     ist(shared(ast, back), 50, ">")
-    let middle = parse(doc, grammar, {cache: change(ast, [0, 2000], [4000, 6000])})
-    ist(shared(ast, middle), 20, ">")
-    console.log(shared(ast, full), shared(ast, front), shared(ast, back), shared(ast, middle))
+    let middle = parse(doc, grammar, {cache: change(ast, [0, 1000], [9000, 10000])})
+    ist(shared(ast, middle), 50, ">")
+    let sides = parse(doc, grammar, {cache: change(ast, [4500, 5500])})
+    ist(shared(ast, sides), 50, ">")
   })
 })

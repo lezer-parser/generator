@@ -65,6 +65,8 @@ export class Precedence {
     if (b.length == 0) return a
     return a.filter(p => !b.some(x => x.group == p.group)).concat(b)
   }
+
+  static NON_FRAGILE = 1e9
 }
 
 function cmpStr(a: string, b: string) {

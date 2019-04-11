@@ -114,7 +114,8 @@ export class State {
       let action = this.terminals[i]
       if (action.term == value.term) {
         if (action.eq(value)) return true
-        this.flags |= AMBIGUOUS
+        if (!prec.some(p => p.precedence >= Precedence.NON_FRAGILE))
+          this.flags |= AMBIGUOUS
         let prev = this.terminalPrec[i]
         for (let p of prec) {
           let match = prev.find(x => x.group == p.group)
