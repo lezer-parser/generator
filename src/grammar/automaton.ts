@@ -90,7 +90,7 @@ export class Reduce {
   map() { return this }
 }
 
-const ACCEPTING = 1, AMBIGUOUS = 2 // FIXME maybe store per terminal
+const ACCEPTING = 1 /*FIXME unused*/, AMBIGUOUS = 2 // FIXME maybe store per terminal
 
 export class State {
   terminals: (Shift | Reduce)[] = []

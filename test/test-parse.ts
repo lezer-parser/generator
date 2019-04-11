@@ -3,21 +3,9 @@ import {Grammar} from "../src/grammar/grammar"
 import {parse, SyntaxTree, Node, Tree} from "../src/parse"
 const ist = require("ist")
 
-let _g1: Grammar | null = null
-function g1() {
-  if (!_g1) _g1 = buildGrammar(`
-    program { (X | Y)+ }
-    X { "x" }
-    Y { "y" ";"* }`)
-  return _g1
-}
-
-function depth(tree: SyntaxTree) {
-  return tree instanceof Tree ? tree.children.reduce((d, c) => Math.max(d, depth(c) + 1), 1) : 1
-}
-
-function breadth(tree: SyntaxTree) {
-  return tree instanceof Tree ? tree.children.reduce((b, c) => Math.max(b, breadth(c)), tree.children.length) : 0
+function g(text: string): () => Grammar {
+  let value: Grammar | null = null
+  return () => value || (value = buildGrammar(text))
 }
 
 function shared(a: SyntaxTree, b: SyntaxTree) {
@@ -37,7 +25,54 @@ function change(tree: SyntaxTree, ...changes: ([number, number] | [number, numbe
   return tree.unchanged(changes.map(([fromA, toA, fromB = fromA, toB = toA]) => ({fromA, toA, fromB, toB})))
 }
 
-describe("sequence parsing", () => {
+describe("parsing", () => {
+  let g1 = g(`
+    prec call { yes, no }
+
+    program { statement* }
+    statement { Conditional | Loop | Block | expression ";" }
+    Conditional { kw<"if"> expression statement }
+    Block { "{" statement* "}" }
+    Loop { kw<"while"> expression statement }
+    expression { CallExpression | !call.no Number | !call.no Variable | "!" !call.no expression }
+    CallExpression { expression !call.yes "(" expression* ")" }
+
+    kw<value> { specialize<Variable, value> }
+    tokens {
+      Number { std.digit+ }
+      Variable { std.asciiLetter+ }
+      skip { std.whitespace* }
+    }`)
+
+  it("can parse incrementally", () => {
+    let doc = "if true { print(1); hello; } while false { if 1 do(something 1 2 3); }"
+    let ast = parse(doc, g1(), {bufferLength: 2})
+    let expected = "Conditional(Variable,Block(CallExpression(Variable,Number),Variable))," +
+      "Loop(Variable,Block(Conditional(Number,CallExpression(Variable,Variable,Number,Number,Number))))"
+    ist(ast.toString(), expected)
+    ist(ast.length, 70)
+    let pos = doc.indexOf("false"), doc2 = doc.slice(0, pos) + "x" + doc.slice(pos + 5)
+    let ast2 = parse(doc2, g1(), {bufferLength: 2, cache: change(ast, [pos, pos + 5, pos, pos + 1])})
+    ist(ast2.toString(), expected)
+    ist(shared(ast, ast2), 75, ">")
+    ist(ast2.length, 66)
+  })
+})
+
+describe("sequences", () => {
+  let g1 = g(`
+    program { (X | Y)+ }
+    X { "x" }
+    Y { "y" ";"* }`)
+
+  function depth(tree: SyntaxTree) {
+    return tree instanceof Tree ? tree.children.reduce((d, c) => Math.max(d, depth(c) + 1), 1) : 1
+  }
+
+  function breadth(tree: SyntaxTree) {
+    return tree instanceof Tree ? tree.children.reduce((b, c) => Math.max(b, breadth(c)), tree.children.length) : 0
+  }
+
   it("balances parsed sequences", () => {
     let ast = parse("x".repeat(1000), g1(), {strict: true, bufferLength: 10})
     let d = depth(ast), b = breadth(ast)

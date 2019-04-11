@@ -80,7 +80,7 @@ class Stack {
         if (startIndex > 0) value.length = startIndex
       } else {
         children.push(value)
-        positions.push(valueStart)
+        positions.push(valueStart - start)
       }
     }
     let newLen = stackIndex + (stackOffset ? 1 : 0)
@@ -177,7 +177,8 @@ class Stack {
   canRecover(next: Term) {
     // Scan for a state that has either a direct action or a recovery
     // action for next, without actually building up a new stack
-    for (let top = this.state, rest = this.stack, offset = rest.length;;) {
+    // FIXME this can continue infinitely without the i < 100 limit
+    for (let top = this.state, rest = this.stack, offset = rest.length, i = 0; i < 100; i++) {
       if (top.terminals.some(a => a.term == next) ||
           top.recover.some(a => a.term == next)) return true
       // Find a way to reduce from here
@@ -203,6 +204,7 @@ class Stack {
       if (!goto) return false
       top = goto.target
     }
+    return false
   }
 
   recoverByInsert(next: Term, nextStart: number, nextEnd: number): Stack | null {
@@ -404,11 +406,10 @@ export class TreeBuffer {
       for (;;) {
         let count = source[partIndex - 1], newIndex = partIndex - 4 - (count << 2)
         let start = source[partIndex - 3]
-        if (newIndex < startIndex || partEnd - start > MAX_BUFFER_LENGTH) break
+        if ((newIndex < startIndex || partEnd - start > MAX_BUFFER_LENGTH) && partIndex < pos) break
         partOffset = start
         partIndex = newIndex
       }
-      if (partIndex == pos) throw new Error("Oversized node in buffer")
       children.push(TreeBuffer.copy(source, partIndex, pos, partOffset - startOffset))
       positions.push(partOffset - startOffset)
       pos = partIndex
@@ -420,7 +421,7 @@ export class TreeBuffer {
     }
   }
 
-  toString() {
+  toString(detailed?: boolean) {
     let pos = 0
     let next = () => {
       let tag = this.buffer[pos], count = this.buffer[pos+3]
@@ -431,7 +432,7 @@ export class TreeBuffer {
     }
     let result = ""
     while (pos < this.buffer.length) result += (result ? "," : "") + next()
-    return result
+    return detailed ? "[" + result + "]" : result
   }
 
   partial(start: number, end: number, offset: number, children: (Node | TreeBuffer)[], positions: number[]) {
@@ -621,7 +622,6 @@ export function parse(input: string, grammar: Grammar, {cache = null, strict = f
 
 export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | null, strict: boolean): SyntaxTree {
   let verbose = log.parse
-
   let parses = [Stack.start(grammar)]
   let cacheCursor = cache && new CacheCursor(cache)
 
@@ -630,12 +630,15 @@ export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | 
   parse: for (;;) {
     let stack = takeFromHeap(parses, compareStacks), pos = stack.pos
 
+    tokens.update(grammar, grammar.tokenTable[stack.state.id], input, pos)
+
     if (cacheCursor && !stack.state.ambiguous) { // FIXME this isn't robust
-      // FIXME need position after whitespace, not stack.pos
-      for (let cached = cacheCursor.nodeAt(stack.pos); cached;) {
+      let nextPos = tokens.some().start
+      for (let cached = cacheCursor.nodeAt(nextPos); cached;) {
         let match = stack.state.getGoto(cached.name!)
         if (match) {
-          stack.useCached(cached, stack.pos, match.target)
+          if (verbose) console.log("REUSE " + cached)
+          stack.useCached(cached, nextPos, match.target)
           addStack(parses, stack)
           continue parse
         }
@@ -646,7 +649,6 @@ export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | 
       }
     }
 
-    tokens.update(grammar, grammar.tokenTable[stack.state.id], input, pos)
 
     let sawEof = false, state = stack.state, advanced = false
     for (let i = 0; i < tokens.index; i++) {
