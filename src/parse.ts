@@ -8,12 +8,12 @@ const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which st
 
 const VALUE_INDEX_SIZE = 15, VALUE_INDEX_MASK = 2**VALUE_INDEX_SIZE - 1
 
-const MAX_BUFFER_LENGTH = 2048
+let MAX_BUFFER_LENGTH = 2048
 // The size after which a buffer must be split on the next shift or
 // childless reduce (to avoid overflowing the value index bits)
 const MAX_BUFFER_SIZE = VALUE_INDEX_MASK << 1
 
-const BALANCE_LEAF_LENGTH = MAX_BUFFER_LENGTH, BALANCE_BRANCH_FACTOR = 5
+const BALANCE_BRANCH_FACTOR = 5
 
 interface ChangedRange {
   fromA: number
@@ -112,7 +112,7 @@ class Stack {
           (valueIndex & VALUE_INDEX_MASK) == this.values.length - 1 &&
           Array.isArray(last = this.values[this.values.length - 1] as number[])) {
         let childCount = (last.length >> 2) - (valueIndex >> VALUE_INDEX_SIZE)
-        if (childCount == 0 && last.length >= MAX_BUFFER_LENGTH) { // Start a new buffer if this one is too big
+        if (childCount == 0 && last.length >= MAX_BUFFER_SIZE) { // Start a new buffer if this one is too big
           this.values.push(last = [])
           this.valueStarts.push(0)
         }
@@ -121,7 +121,7 @@ class Stack {
         this.values.push(this.reduceValue(valueIndex, start).toNode(name, length))
         this.valueStarts.push(start)
       }
-    } else if (name.repeats && length > BALANCE_LEAF_LENGTH) {
+    } else if (name.repeats && length > MAX_BUFFER_LENGTH) {
       let balanced = this.reduceValue(valueIndex, start).balance(name.repeats)
       this.values.push(balanced)
       this.valueStarts.push(start)
@@ -259,8 +259,8 @@ export class Tree {
   constructor(readonly children: (Node | TreeBuffer)[],
               readonly positions: number[]) {}
 
-  toString() {
-    return this.children.join()
+  toString(detailed?: boolean) {
+    return this.children.map(c => c.toString(detailed)).join()
   }
 
   toNode(name: Term, length: number) {
@@ -275,14 +275,14 @@ export class Tree {
   balanceRange(name: Term, from: number, to: number): Node {
     let start = this.positions[from], length = (this.positions[to - 1] + this.children[to - 1].length) - start
     let children = [], positions = []
-    if (length <= BALANCE_LEAF_LENGTH) {
+    if (length <= MAX_BUFFER_LENGTH) {
       for (let i = from; i < to; i++) {
         let child = this.children[i]
         children.push(child)
         positions.push(this.positions[i] - start)
       }
     } else {
-      let maxChild = Math.max(BALANCE_LEAF_LENGTH, Math.ceil(length / BALANCE_BRANCH_FACTOR))
+      let maxChild = Math.max(MAX_BUFFER_LENGTH, Math.ceil(length / BALANCE_BRANCH_FACTOR))
       for (let i = from; i < to;) {
         let groupFrom = i, groupStart = this.positions[i]
         i++
@@ -290,8 +290,13 @@ export class Tree {
           let nextEnd = this.positions[i] + this.children[i].length
           if (nextEnd - groupStart > maxChild) break
         }
-        let sub = i == groupFrom + 1 ? this.children[groupFrom] : this.balanceRange(name, groupFrom, i)
-        children.push(sub)
+        if (i == groupFrom + 1) {
+          let only = this.children[groupFrom]
+          if (!(only instanceof Node) || only.name != name) only = new Node(name, only.length, [only], [0])
+          children.push(only)
+        } else {
+          children.push(this.balanceRange(name, groupFrom, i))
+        }
         positions.push(groupStart - start)
       }
     }
@@ -350,9 +355,10 @@ export class Node extends Tree {
 
   get length() { return this._length } // Because super class already has a getter
 
-  toString() {
-    let name = this.name.tag
-    return !name ? this.children.join() : name + (this.children.length ? "(" + this.children + ")" : "")
+  toString(detailed?: boolean) {
+    let name = this.name.tag || (detailed ? this.name.name : null)
+    let children: string = this.children.map(c => c.toString(detailed)).join()
+    return !name ? children : name + (children.length ? "(" + children + ")" : "")
   }
 
   partial(start: number, end: number, offset: number, children: (Node | TreeBuffer)[], positions: number[]) {
@@ -390,30 +396,37 @@ export class TreeBuffer {
   }
 
   static build(source: number[], startIndex: number, startOffset: number, children: (Node | TreeBuffer)[], positions: number[]) {
+    let startI = children.length
     for (let pos = source.length; pos > startIndex;) {
-      let partStart = pos, partOffset!: number
-      let minStart = Math.max(startIndex, partStart - (MAX_BUFFER_LENGTH << 2))
+      let partIndex = pos, partOffset!: number, partEnd = source[pos - 2]
       for (;;) {
-        let count = source[partStart - 1], newStart = partStart - 4 - (count << 2)
-        if (newStart < minStart) break
-        partOffset = source[partStart - 3]
-        partStart = newStart
+        let count = source[partIndex - 1], newIndex = partIndex - 4 - (count << 2)
+        let start = source[partIndex - 3]
+        if (newIndex < startIndex || partEnd - start > MAX_BUFFER_LENGTH) break
+        partOffset = start
+        partIndex = newIndex
       }
-      if (partStart == pos) throw new Error("Oversized node in buffer")
-      children.push(TreeBuffer.copy(source, partStart, pos, partOffset - startOffset))
+      if (partIndex == pos) throw new Error("Oversized node in buffer")
+      children.push(TreeBuffer.copy(source, partIndex, pos, partOffset - startOffset))
       positions.push(partOffset - startOffset)
-      pos = partStart
+      pos = partIndex
+    }
+    // The above loop adds the new children in inverse order, to this reverses them
+    for (let i = startI, j = children.length - 1; j > i; i++, j--) {
+      let tmp = children[i]; children[i] = children[j]; children[j] = tmp
+      let tmp2 = positions[i]; positions[i] = positions[j]; positions[j] = tmp2
     }
   }
 
-  toString() {
+  toString(detailed?: boolean) {
     let pos = 0
     let next = () => {
       let tag = this.buffer[pos], count = this.buffer[pos+3]
       pos += 4
       let children = "", end = pos + (count << 2)
       while (pos < end) children += (children ? "," : "") + next()
-      return termTable[tag].tag! + (children ? "(" + children + ")" : "")
+      let term = termTable[tag], name = term.tag || (detailed ? term.name : null)
+      return name + (children ? "(" + children + ")" : "")
     }
     let result = ""
     while (pos < this.buffer.length) result += (result ? "," : "") + next()
@@ -526,9 +539,15 @@ function hasOtherMatchInState(state: State, actionIndex: number, token: Token) {
   return false
 }
 
-export type ParseOptions = {cache?: SyntaxTree | null, strict?: boolean}
+export type ParseOptions = {cache?: SyntaxTree | null, strict?: boolean, bufferLength?: number}
 
-export function parse(input: string, grammar: Grammar, {cache = null, strict = false}: ParseOptions = {}): SyntaxTree {
+export function parse(input: string, grammar: Grammar, {cache = null, strict = false, bufferLength}: ParseOptions = {}): SyntaxTree {
+  if (bufferLength != null) return withBufferLength(bufferLength, () => parseInner(input, grammar, cache, strict))
+  return parseInner(input, grammar, cache, strict)
+}
+
+
+export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | null, strict: boolean): SyntaxTree {
   let verbose = log.parse
 
   let parses = [Stack.start(grammar)]
@@ -601,4 +620,11 @@ export function parse(input: string, grammar: Grammar, {cache = null, strict = f
     if (!parses.length)
       throw new SyntaxError("No parse at " + token.start + " with " + term + " (stack is " + stack + ")")
   }
+}
+
+function withBufferLength<T>(len: number, f: () => T): T {
+  let prev = MAX_BUFFER_LENGTH
+  MAX_BUFFER_LENGTH = len
+  try { return f() }
+  finally { MAX_BUFFER_LENGTH = prev }
 }

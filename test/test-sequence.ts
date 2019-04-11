@@ -39,7 +39,7 @@ function change(tree: SyntaxTree, ...changes: ([number, number] | [number, numbe
 
 describe("sequence parsing", () => {
   it("balances parsed sequences", () => {
-    let ast = parse("x".repeat(100000), g1(), {strict: true})
+    let ast = parse("x".repeat(1000), g1(), {strict: true, bufferLength: 10})
     let d = depth(ast), b = breadth(ast)
     ist(d, 6, "<=")
     ist(d, 4, ">=")
@@ -48,17 +48,17 @@ describe("sequence parsing", () => {
   })
 
   it("caches parts of sequences", () => {
-    let doc = "x".repeat(10000), grammar = g1()
-    let ast = parse(doc, grammar)
-    let full = parse(doc, grammar, {cache: ast})
+    let doc = "x".repeat(1000), grammar = g1()
+    let ast = parse(doc, grammar, {bufferLength: 10})
+    let full = parse(doc, grammar, {cache: ast, bufferLength: 10})
     ist(shared(ast, full), 99, ">")
-    let front = parse(doc, grammar, {cache: change(ast, [9000, 10000])})
+    let front = parse(doc, grammar, {cache: change(ast, [900, 1000]), bufferLength: 10})
     ist(shared(ast, front), 50, ">")
-    let back = parse(doc, grammar, {cache: change(ast, [0, 1000])})
+    let back = parse(doc, grammar, {cache: change(ast, [0, 100]), bufferLength: 10})
     ist(shared(ast, back), 50, ">")
-    let middle = parse(doc, grammar, {cache: change(ast, [0, 1000], [9000, 10000])})
+    let middle = parse(doc, grammar, {cache: change(ast, [0, 100], [900, 1000]), bufferLength: 10})
     ist(shared(ast, middle), 50, ">")
-    let sides = parse(doc, grammar, {cache: change(ast, [4500, 5500])})
+    let sides = parse(doc, grammar, {cache: change(ast, [450, 550]), bufferLength: 10})
     ist(shared(ast, sides), 50, ">")
   })
 })
