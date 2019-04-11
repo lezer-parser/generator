@@ -61,4 +61,20 @@ describe("sequence parsing", () => {
     let sides = parse(doc, grammar, {cache: change(ast, [450, 550]), bufferLength: 10})
     ist(shared(ast, sides), 50, ">")
   })
+
+  it("assigns the right positions to sequences", () => {
+    let doc = "x".repeat(100) + "y;;;;;;;;;" + "x".repeat(90)
+    let ast = parse(doc, g1(), {bufferLength: 10})
+    for (let cursor = ast.cursor, i = 0; cursor.next(); i++) {
+      if (i == 100) {
+        ist(cursor.tag.tag, "Y")
+        ist(cursor.start, 100)
+        ist(cursor.end, 110)
+      } else {
+        ist(cursor.tag.tag, "X")
+        ist(cursor.end, cursor.start + 1)
+        ist(cursor.start, i < 100 ? i : i + 9)
+      }
+    }
+  })
 })

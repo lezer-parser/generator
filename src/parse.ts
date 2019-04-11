@@ -341,6 +341,8 @@ export class Tree {
   }
 
   static empty = new Tree([], [])
+
+  get cursor() { return new NodeCursor(this) }
 }
 
 export type SyntaxTree = TreeBuffer | Tree
@@ -418,15 +420,14 @@ export class TreeBuffer {
     }
   }
 
-  toString(detailed?: boolean) {
+  toString() {
     let pos = 0
     let next = () => {
       let tag = this.buffer[pos], count = this.buffer[pos+3]
       pos += 4
       let children = "", end = pos + (count << 2)
       while (pos < end) children += (children ? "," : "") + next()
-      let term = termTable[tag], name = term.tag || (detailed ? term.name : null)
-      return name + (children ? "(" + children + ")" : "")
+      return termTable[tag].tag! + (children ? "(" + children + ")" : "")
     }
     let result = ""
     while (pos < this.buffer.length) result += (result ? "," : "") + next()
@@ -443,6 +444,8 @@ export class TreeBuffer {
   unchanged(changes: ReadonlyArray<ChangedRange>) {
     return changes.length ? Tree.empty : this
   }
+
+  get cursor() { return new NodeCursor(this) }
 }
 
 class CacheCursor {
@@ -483,6 +486,75 @@ class CacheCursor {
           this.trees.push(next)
           this.start.push(start)
           this.index.push(0)
+        }
+      }
+    }
+  }
+}
+
+class NodeCursor {
+  trees: Tree[]
+  offset = [0]
+  index = [0]
+  leaf: TreeBuffer | null = null
+  leafOffset = 0
+  leafIndex = 0
+
+  // Output properties
+  start!: number
+  end!: number
+  tag!: Term
+
+  constructor(tree: SyntaxTree) {
+    if (tree instanceof Tree) {
+      this.trees = [tree]
+    } else {
+      this.trees = []
+      this.leaf = tree
+    }
+  }
+
+  next(): boolean {
+    for (;;) {
+      if (this.leaf) {
+        let index = this.leafIndex, buf = this.leaf.buffer
+        if (index == buf.length) {
+          this.leaf = null
+          continue
+        } else {
+          this.tag = termTable[buf[index++]]
+          this.start = this.leafOffset + buf[index++]
+          this.end = this.leafOffset + buf[index++]
+          this.leafIndex += 4
+          return true
+        }
+      }
+      let last = this.trees.length - 1
+      if (last < 0) return false
+      let top = this.trees[last], index = this.index[last]
+      if (index == top.children.length) {
+        this.trees.pop()
+        this.offset.pop()
+        this.index.pop()
+        continue
+      }
+      let next = top.children[index]
+      let start = this.offset[last] + top.positions[index]
+      if (next instanceof TreeBuffer) {
+        this.leaf = next
+        this.leafIndex = 0
+        this.leafOffset = start
+        this.index[last]++
+      } else {
+        this.index[last]++
+        this.trees.push(next)
+        this.offset.push(start)
+        this.index.push(0)
+        if (next.name.tag) {
+          this.tag = next.name
+          this.start = start
+          this.end = start + next.length
+          return true
         }
       }
     }
