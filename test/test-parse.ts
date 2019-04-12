@@ -27,15 +27,15 @@ function change(tree: SyntaxTree, ...changes: ([number, number] | [number, numbe
 
 describe("parsing", () => {
   let g1 = g(`
-    prec call { yes, no }
+    prec { call }
 
     program { statement* }
     statement { Conditional | Loop | Block | expression ";" }
     Conditional { kw<"if"> expression statement }
     Block { "{" statement* "}" }
     Loop { kw<"while"> expression statement }
-    expression { CallExpression | !call.no Number | !call.no Variable | "!" !call.no expression }
-    CallExpression { expression !call.yes "(" expression* ")" }
+    expression { CallExpression | Number | Variable | "!" expression }
+    CallExpression { expression !call "(" expression* ")" }
 
     kw<value> { specialize<Variable, value> }
     tokens {

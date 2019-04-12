@@ -1,4 +1,4 @@
-prec left binOp { mult, plus }
+prec { mult left, plus left }
 
 program { expr }
 
@@ -7,8 +7,8 @@ expr {
 }
 
 BinaryExpr {
-  expr !binOp.mult MultOp expr |
-  expr !binOp.plus AddOp expr
+  expr !mult MultOp expr |
+  expr !plus AddOp expr
 }
 
 atom { Symbol | "(" expr ")" }

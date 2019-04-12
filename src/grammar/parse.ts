@@ -102,7 +102,7 @@ export class Input {
 function parseTop(input: Input) {
   let start = input.start
   let rules: RuleDeclaration[] = []
-  let precs: PrecDeclaration[] = []
+  let prec: PrecDeclaration | null = null
   let tokens: TokenGroupDeclaration | null = null
 
   while (input.type != "eof") {
@@ -110,26 +110,22 @@ function parseTop(input: Input) {
       if (tokens) input.raise(`Multiple tokens declaractions`, input.start)
       else tokens = parseTokenGroup(input)
     } else if (input.type == "id" && input.value == "prec") {
-      precs.push(parsePrec(input))
+      if (prec) input.raise(`Multiple prec declarations`, input.start)
+      else prec = parsePrec(input)
     } else {
       rules.push(parseRule(input))
     }
   }
-  return new GrammarDeclaration(start, rules, tokens, precs)
+  return new GrammarDeclaration(start, rules, tokens, prec)
 }
 
 function parseRule(input: Input) {
-  let id = parseIdent(input), params: Identifier[] = [], assoc: null | "left" | "right" = null
+  let id = parseIdent(input), params: Identifier[] = []
   let start = input.start
 
   if (input.eat("<")) while (!input.eat(">")) {
     if (params.length) input.expect(",")
     params.push(parseIdent(input))
-  }
-  for (;;) {
-    if (input.eat("id", "left") && assoc == null) assoc = "left"
-    else if (input.eat("id", "right") && assoc == null) assoc = "right"
-    else break
   }
   input.expect("{")
   let expr = parseExprChoice(input)
@@ -220,10 +216,13 @@ function parseExprSequence(input: Input) {
 function parseExprPrec(input: Input) {
   let start = input.start
   if (!input.eat("!")) return parseExprSuffix(input)
-  let group = parseIdent(input)
-  let id = input.eat(".") ? parseIdent(input) : null
+  let id = parseIdent(input), namespace = null
+  if (input.eat(".")) {
+    namespace = id
+    id = parseIdent(input)
+  }
   let expr = parseExprSuffix(input)
-  return new MarkedExpression(start, group, id, expr)
+  return new MarkedExpression(start, namespace, id, expr)
 }
 
 function parseExprChoice(input: Input) {
@@ -245,16 +244,14 @@ function parseIdent(input: Input) {
 function parsePrec(input: Input) {
   let start = input.start
   input.next()
-  let baseAssoc: ("left" | "right" | null) = input.eat("id", "left") ? "left" : input.eat("id", "right") ? "right" : null
-  let id = parseIdent(input)
   input.expect("{")
   let assoc: ("left" | "right" | null)[] = [], names = []
   while (!input.eat("}")) {
     if (names.length) input.expect(",")
-    assoc.push(input.eat("id", "left") ? "left" : input.eat("id", "right") ? "right" : baseAssoc)
     names.push(parseIdent(input))
+    assoc.push(input.eat("id", "left") ? "left" : input.eat("id", "right") ? "right" : null)
   }
-  return new PrecDeclaration(start, id, assoc, names)
+  return new PrecDeclaration(start, assoc, names)
 }
       
 function parseTokenGroup(input: Input) {

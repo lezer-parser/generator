@@ -47,26 +47,37 @@ export class TermSet {
 }
 
 export class Precedence {
-  constructor(readonly associativity: "left" | "right" | null,
-              readonly group: string,
-              readonly precedence: number) {}
+  constructor(readonly isAmbig: boolean,
+              readonly value: number,
+              readonly associativity: "left" | "right" | null,
+              readonly group: string | null) {}
 
   cmp(other: Precedence) {
-    return cmpStr(this.associativity || "", other.associativity || "") || cmpStr(this.group, other.group) ||
-      this.precedence - other.precedence
+    return +this.isAmbig - +other.isAmbig || this.value - other.value || cmpStr(this.associativity || "", other.associativity || "") ||
+      cmpStr(this.group || "", other.group || "")
   }
 
   eq(other: Precedence) {
-    return this.associativity == other.associativity && this.group == other.group && this.precedence == other.precedence
+    return this.cmp(other) == 0
   }
 
   static join(a: ReadonlyArray<Precedence>, b: ReadonlyArray<Precedence>): ReadonlyArray<Precedence> {
     if (a.length == 0) return b
     if (b.length == 0) return a
-    return a.filter(p => !b.some(x => x.group == p.group)).concat(b)
+    let result = a.slice()
+    for (let p of b) {
+      if (p.isAmbig) {
+        if (!result.some(x => x.isAmbig && x.group == p.group)) result.push(p)
+      } else {
+        let found = result.findIndex(x => !x.isAmbig)
+        if (found < 0) result.push(p)
+        else if (result[found].value < p.value) result[found] = p
+      }
+    }
+    return result
   }
 
-  static NON_FRAGILE = 1e9
+  static REPEAT = 1e9
 }
 
 function cmpStr(a: string, b: string) {

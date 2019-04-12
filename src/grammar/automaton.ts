@@ -114,27 +114,27 @@ export class State {
       let action = this.terminals[i]
       if (action.term == value.term) {
         if (action.eq(value)) return true
-        if (!prec.some(p => p.precedence >= Precedence.NON_FRAGILE))
+        if (!prec.some(p => p.value == Precedence.REPEAT))
           this.flags |= AMBIGUOUS
         let prev = this.terminalPrec[i]
-        for (let p of prec) {
-          let match = prev.find(x => x.group == p.group)
-          if (!match) continue
-          if (p.precedence < 0) continue check // This is marked as an intentional, allowed conflict
-          let override = match.precedence - p.precedence // Positive means we override, 0 means conflict
-          if (override == 0 && action instanceof Shift && p.associativity)
-            override = p.associativity == "left" ? 1 : -1
-          if (override > 0) {
-            this.terminals.splice(i, 1)
-            this.terminalPrec.splice(i, 1)
-            i--
-            continue check
-          } else if (override < 0) {
-            return true
-          }
+        for (let p of prec) if (p.isAmbig) {
+          if (prev.some(x => x.isAmbig && x.group == p.group)) continue check
         }
-        if (!pos) return false
-        throw new Error((action instanceof Shift ? "shift" : "reduce") + "/reduce conflict at " + pos + " for " + action.term)
+        let main = prec.find(x => !x.isAmbig), prevMain = prev.find(x => !x.isAmbig)
+        let diff = (main ? main.value : 0) - (prevMain ? prevMain.value : 0)
+        if (diff == 0 && main && main.associativity)
+          diff = main.associativity == "left" ? 1 : -1
+        if (diff > 0) { // Drop the existing action
+          this.terminals.splice(i, 1)
+          this.terminalPrec.splice(i, 1)
+          i--
+          continue check
+        } else if (diff < 0) { // Drop this one
+          return true
+        } else { // Not resolved
+          if (!pos) return false
+          throw new Error((action instanceof Shift ? "shift" : "reduce") + "/reduce conflict at " + pos + " for " + action.term)
+        }
       }
     }
     this.terminals.push(value)

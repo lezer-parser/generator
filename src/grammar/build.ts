@@ -101,9 +101,8 @@ class Context {
   // Returns the terms that make up the outer rule.
   normalizeRepeat(expr: RepeatExpression, outer: Term) {
     let inner = outer.repeats = this.newName(expr.kind)
-    let exprPrec = new Precedence(null, inner.name, Precedence.NON_FRAGILE)
-    let top = this.normalizeTopExpr(expr.expr, inner).map(choice => PrecTerm.onFirst(choice, exprPrec))
-    top.push([inner, PrecTerm.from(inner, new Precedence(null, inner.name, Precedence.NON_FRAGILE + 1))])
+    let top = this.normalizeTopExpr(expr.expr, inner)
+    top.push([inner, PrecTerm.from(inner, new Precedence(false, Precedence.REPEAT, "left", null))])
     this.defineRule(inner, top)
     return expr.kind == "+" ? [[inner]] : [[], [inner]]
   }
@@ -296,16 +295,15 @@ class Builder {
   }
 
   getPrecedence(expr: MarkedExpression): Precedence {
-    let decl = this.ast.precedences.find(d => d.id.name == expr.group.name)
-    if (expr.id) {
-      if (!decl) return this.input.raise(`No precedence declaration found for '${expr.group.name}'`, expr.start)
-      let index = decl.names.findIndex(id => id.name == expr.id!.name)
-      if (index < 0) this.input.raise(`Precedence declaration '${decl.id.name}' has no tag named '${expr.id!.name}'`, expr.id!.start)
-      return new Precedence(decl.assoc[index], decl.id.name, index)
-    } else {
-      if (decl) this.input.raise(`Conflict markers that refer to a precedence declaration need a tag name`, expr.start)
-      return new Precedence(null, expr.group.name, -1)
+    if (!expr.namespace) {
+      let precs = this.ast.precedences!
+      let pos = precs ? precs.names.findIndex(id => id.name == expr.id.name) : -1
+      if (pos < 0) this.input.raise(`Reference to unknown precedence: '${expr.id.name}'`, expr.start)
+      return new Precedence(false, precs.names.length - pos, precs.assoc[pos], null)
     }
+    if (expr.namespace.name != "ambig")
+      this.input.raise(`Unrecognized conflict marker '!${expr.namespace.name}.${expr.id.name}'`, expr.start)
+    return new Precedence(true, 0, null, expr.id.name)
   }
 }
 

@@ -1,10 +1,10 @@
-prec left binOp { div }
+prec { div left }
 
 program { expr }
 
 expr { RegExp | Symbol | BinOp }
 
-BinOp { expr !binOp.div "/" expr }
+BinOp { expr !div "/" expr }
 
 tokens {
   skip { std.whitespace* }
