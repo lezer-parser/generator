@@ -234,7 +234,8 @@ class Builder {
   }
 
   getGrammar() {
-    let table = buildAutomaton(this.rules, this.terms)
+    let rules = simplifyRules(this.rules)
+    let table = buildAutomaton(rules, this.terms)
     // FIXME merge equivalent skip directives
     let tokenizers: Tokenizer[] = []
     for (let group of this.tokenGroups) {
@@ -246,9 +247,9 @@ class Builder {
       tokenizers.push(tokenizer)
     }
     let tokenTable = table.map(state => this.tokensForState(state, tokenizers))
-    if (log.grammar) console.log(this.rules.join("\n"))
+    if (log.grammar) console.log(rules.join("\n"))
     if (log.lr) console.log(table.join("\n"))
-    return new Grammar(this.rules, this.terms, table, tokenTable)
+    return new Grammar(rules, this.terms, table, tokenTable)
   }
 
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
@@ -477,6 +478,54 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
   digit: [[48, 58]],
   whitespace: [[9, 14], [32, 33], [133, 134], [160, 161], [5760, 5761], [8192, 8203],
                [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]]
+}
+
+function inlineRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
+  for (;;) {
+    let inlinable: {[name: string]: Rule} = Object.create(null), found
+    for (let i = 0; i < rules.length; i++) {
+      let rule = rules[i]
+      if (!rule.name.interesting && !rule.parts.includes(rule.name) && rule.parts.length < 3 &&
+          !rule.parts.some(p => !!inlinable[p.name]) &&
+          !rules.some((r, j) => j != i && r.name == rule.name))
+        found = inlinable[rule.name.name] = rule
+    }
+    if (!found) return rules
+    let newRules = []
+    for (let rule of rules) {
+      if (inlinable[rule.name.name]) continue
+      if (!rule.parts.some(p => !!inlinable[p.name])) {
+        newRules.push(rule)
+        continue
+      }
+      let prec = [], parts = []
+      for (let i = 0; i < rule.parts.length; i++) {
+        let replace = inlinable[rule.parts[i].name]
+        if (!replace) {
+          if (i < rule.precedence.length) {
+            while (prec.length < parts.length) prec.push(none)
+            prec.push(rule.precedence[i])
+          }
+          parts.push(rule.parts[i])
+        } else {
+          for (let j = 0; j < replace.parts.length; j++) {
+            let partPrec = j ? replace.precAt(j) : Precedence.join(rule.precAt(i), replace.precAt(j))
+            if (partPrec.length) {
+              while (prec.length < parts.length) prec.push(none)
+              prec.push(partPrec)
+            }
+            parts.push(replace.parts[j])
+          }
+        }
+      }
+      newRules.push(new Rule(rule.name, parts, prec))
+    }
+    rules = newRules
+  }
+}
+
+function simplifyRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
+  return inlineRules(rules)
 }
 
 export function buildGrammar(text: string, fileName: string | null = null): Grammar {

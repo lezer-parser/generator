@@ -19,6 +19,7 @@ export class Term {
   get eof() { return (this.flags & EOF) > 0 }
   get error() { return (this.flags & ERROR) > 0 }
   get program() { return (this.flags & PROGRAM) > 0 }
+  get interesting() { return this.flags > 0 || this.tag != null || this.repeats != null }
   cmp(other: Term) { return this == other ? 0 : (this.name < other.name ? -1 : 1) || this.flags - other.flags }
 }
 
@@ -119,7 +120,7 @@ export class Rule {
 }
 
 export class Grammar {
-  constructor(readonly rules: Rule[],
+  constructor(readonly rules: ReadonlyArray<Rule>,
               readonly terms: TermSet,
               readonly table: ReadonlyArray<TableState>,
               readonly tokenTable: ReadonlyArray<ReadonlyArray<Tokenizer>>) {}
