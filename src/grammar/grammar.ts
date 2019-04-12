@@ -10,7 +10,7 @@ let termID = 0, taglessTermID = 1e9
 export class Term {
   id: number
   public repeats: Term | null = null
-  constructor(readonly name: string, private flags: number, readonly tag: string | null) {
+  constructor(readonly name: string, private flags: number, readonly tag: string | null, readonly grammarID: number) {
     this.id = tag ? termID++ : taglessTermID--
     if (tag) termTable[this.id] = this
   }
@@ -30,19 +30,19 @@ export class TermSet {
   eof: Term
   error: Term
 
-  constructor() {
-    this.terminals.push(this.eof = new Term("␄", TERMINAL | EOF, null))
-    this.terminals.push(this.error = new Term("⚠", TERMINAL | ERROR, "⚠"))
+  constructor(public grammarID: number) {
+    this.terminals.push(this.eof = new Term("␄", TERMINAL | EOF, null, grammarID))
+    this.terminals.push(this.error = new Term("⚠", TERMINAL | ERROR, "⚠", grammarID))
   }
 
   makeTerminal(name: string, tag: string | null) {
-    let result = new Term(name, TERMINAL, tag)
+    let result = new Term(name, TERMINAL, tag, this.grammarID)
     this.terminals.push(result)
     return result
   }
 
   makeNonTerminal(name: string, tag: string | null) {
-    let result = new Term(name, name == "program" ? PROGRAM : 0, tag)
+    let result = new Term(name, name == "program" ? PROGRAM : 0, tag, this.grammarID)
     this.nonTerminals.push(result)
     return result
   }
@@ -125,7 +125,8 @@ export class Rule {
 }
 
 export class Grammar {
-  constructor(readonly rules: ReadonlyArray<Rule>,
+  constructor(readonly id: number,
+              readonly rules: ReadonlyArray<Rule>,
               readonly terms: TermSet,
               readonly table: ReadonlyArray<TableState>,
               readonly tokenTable: ReadonlyArray<ReadonlyArray<Tokenizer>>) {}
