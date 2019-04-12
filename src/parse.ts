@@ -275,6 +275,7 @@ export class Tree {
   }
 
   balanceRange(name: Term, from: number, to: number): Node {
+    if (from == to - 1) return this.children[from]
     let start = this.positions[from], length = (this.positions[to - 1] + this.children[to - 1].length) - start
     let children = [], positions = []
     if (length <= MAX_BUFFER_LENGTH) {
