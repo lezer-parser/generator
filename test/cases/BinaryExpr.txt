@@ -6,8 +6,10 @@ expr {
   atom | BinaryExpr
 }
 
+axpr { atom | BinaryExpr }
+
 BinaryExpr {
-  expr !mult MultOp expr |
+  axpr !mult MultOp expr |
   expr !plus AddOp expr
 }
 

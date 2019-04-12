@@ -1,7 +1,7 @@
 import {Tokenizer} from "./token"
 import {State as TableState} from "./automaton"
 
-const TERMINAL = 1, EOF = 2, ERROR = 4, PROGRAM = 8
+const TERMINAL = 1, EOF = 2, ERROR = 4, PROGRAM = 8, REPEATED = 16
 
 export const termTable: Term[] = []
 // FIXME termIDs must wrap on 2^16 to fit in tree buffers. Store only names in the table, and start appending them when overflowing?
@@ -20,6 +20,7 @@ export class Term {
   get error() { return (this.flags & ERROR) > 0 }
   get program() { return (this.flags & PROGRAM) > 0 }
   get interesting() { return this.flags > 0 || this.tag != null || this.repeats != null }
+  set repeated(value: boolean) { this.flags = value ? this.flags | REPEATED : this.flags & ~REPEATED }
   cmp(other: Term) { return this == other ? 0 : (this.name < other.name ? -1 : 1) || this.flags - other.flags }
 }
 
@@ -93,10 +94,14 @@ export class Rule {
               readonly precedence: ReadonlyArray<ReadonlyArray<Precedence>>) {}
 
   cmp(rule: Rule) {
-    return this.name.cmp(rule.name) ||
-      this.parts.length - rule.parts.length ||
+    return this.name.cmp(rule.name) || this.cmpNoName(rule)
+  }
+
+  cmpNoName(rule: Rule) {
+    return this.parts.length - rule.parts.length ||
       this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0) ||
-      this.precedence.length - rule.precedence.length // FIXME flaky
+      this.precedence.length - rule.precedence.length ||
+      this.precedence.reduce((d, ps, i) => d || ps.reduce((d, p, j) => d || p.cmp(rule.precedence[i][j]), 0), 0)
   }
 
   precAt(pos: number): ReadonlyArray<Precedence> {

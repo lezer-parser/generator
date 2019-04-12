@@ -1,6 +1,7 @@
 import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
-        ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, MarkedExpression, exprsEq} from "./node"
+        ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, MarkedExpression,
+        exprsEq, exprEq} from "./node"
 import {Term, TermSet, Precedence, Rule, Grammar} from "./grammar"
 import {Edge, State, Tokenizer} from "./token"
 import {Input} from "./parse"
@@ -39,10 +40,11 @@ class Context {
 
   defineRule(name: Term, choices: Term$[][]) {
     for (let choice of choices) {
-      let precedences = none as Precedence[][]
+      let precedences = none as ReadonlyArray<Precedence>[]
       let terms = choice.map((term, i) => {
         if (!(term instanceof PrecTerm)) return term
         if (precedences == none) precedences = []
+        for (let j = 0; j < i; j++) precedences.push(none)
         precedences[i] = term.prec
         return term.term
       })
@@ -100,10 +102,19 @@ class Context {
   //
   // Returns the terms that make up the outer rule.
   normalizeRepeat(expr: RepeatExpression, outer: Term) {
-    let inner = outer.repeats = this.newName(expr.kind)
-    let top = this.normalizeTopExpr(expr.expr, inner)
-    top.push([inner, PrecTerm.from(inner, new Precedence(false, Precedence.REPEAT, "left", null))])
-    this.defineRule(inner, top)
+    let inner
+    let known = this.b.built.find(b => b.matchesRepeat(expr.expr))
+    if (known) {
+      inner = known.term
+    } else {
+      inner = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind, true) : this.newName(expr.kind)
+      inner.repeated = true
+      this.b.built.push(new BuiltRule("-repeat", [expr.expr], inner))
+      let top = this.normalizeTopExpr(expr.expr, inner)
+      top.push([inner, PrecTerm.from(inner, new Precedence(false, Precedence.REPEAT, "left", null))])
+      this.defineRule(inner, top)
+    }
+    outer.repeats = inner
     return expr.kind == "+" ? [[inner]] : [[], [inner]]
   }
 
@@ -112,7 +123,8 @@ class Context {
       let name = this.newName("?")
       return this.defineRule(name, [[] as Term$[]].concat(this.normalizeTopExpr(expr.expr, name)))
     } else if (expr instanceof RepeatExpression) {
-      let outer = this.newName("wrap-" + expr.kind)
+      let outer = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind + "-wrap", true)
+        : this.newName("wrap-" + expr.kind)
       this.defineRule(outer, this.normalizeRepeat(expr, outer))
       return [outer]
     } else if (expr instanceof ChoiceExpression) {
@@ -170,6 +182,10 @@ class BuiltRule {
 
   matches(expr: NamedExpression) {
     return this.id == expr.id.name && exprsEq(expr.args, this.args)
+  }
+
+  matchesRepeat(expr: Expression) {
+    return this.id == "-repeat" && exprEq(expr, this.args[0])
   }
 }
 
@@ -524,8 +540,37 @@ function inlineRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
   }
 }
 
+function mergeRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
+  let merged: {[name: string]: Term} = Object.create(null), found
+  for (let i = 0; i < rules.length;) {
+    let groupStart = i
+    let name = rules[i++].name
+    while (i < rules.length && rules[i].name == name) i++
+    let size = i - groupStart
+    if (name.interesting) continue
+    for (let j = i; j < rules.length;) {
+      let otherStart = j, otherName = rules[j++].name
+      while (j < rules.length && rules[j].name == otherName) j++
+      if (j - otherStart != size || otherName.interesting) continue
+      let match = true
+      for (let k = 0; k < size && match; k++) {
+        let a = rules[groupStart + k], b = rules[otherStart + k]
+        if (a.cmpNoName(b) > 0) match = false
+      }
+      if (match) found = merged[name.name] = otherName
+    }
+  }
+  if (!found) return rules
+  let newRules = []
+  for (let rule of rules) if (!merged[rule.name.name]) {
+    newRules.push(rule.parts.every(p => !merged[p.name]) ? rule :
+                  new Rule(rule.name, rule.parts.map(p => merged[p.name] || p), rule.precedence))
+  }
+  return newRules
+}
+
 function simplifyRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
-  return inlineRules(rules)
+  return mergeRules(inlineRules(rules))
 }
 
 export function buildGrammar(text: string, fileName: string | null = null): Grammar {
