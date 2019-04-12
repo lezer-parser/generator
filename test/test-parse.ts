@@ -44,6 +44,12 @@ describe("parsing", () => {
       skip { std.whitespace* }
     }`)
 
+  function q(ast: SyntaxTree, tag: string, offset = 1): {start: number, end: number} {
+    for (let cur = ast.cursor; cur.next();) if (cur.tag.tag == tag) {
+      if (--offset == 0) return cur
+    }
+  }
+
   it("can parse incrementally", () => {
     let doc = "if true { print(1); hello; } while false { if 1 do(something 1 2 3); }"
     let ast = parse(doc, g1(), {bufferLength: 2})
@@ -56,6 +62,24 @@ describe("parsing", () => {
     ist(ast2.toString(), expected)
     ist(shared(ast, ast2), 75, ">")
     ist(ast2.length, 66)
+  })
+
+  it("assigns the correct node positions", () => {
+    let doc = "if 1 { while 2 { foo(bar(baz bug)); } }"
+    let ast = parse(doc, g1(), {bufferLength: 10, strict: true})
+    ist(ast.length, 39)
+    let cond = q(ast, "Conditional"), one = q(ast, "Number")
+    ist(cond.start, 0); ist(cond.end, 39)
+    ist(one.start, 3); ist(one.end, 4)
+    let loop = q(ast, "Loop"), two = q(ast, "Number", 2)
+    ist(loop.start, 7); ist(loop.end, 37)
+    ist(two.start, 13); ist(two.end, 14)
+    let call = q(ast, "CallExpression"), inner = q(ast, "CallExpression", 2)
+    ist(call.start, 17); ist(call.end, 34)
+    ist(inner.start, 21); ist(inner.end, 33)
+    let bar = q(ast, "Variable", 2), bug = q(ast, "Variable", 4)
+    ist(bar.start, 21); ist(bar.end, 24)
+    ist(bug.start, 29); ist(bug.end, 32)
   })
 })
 

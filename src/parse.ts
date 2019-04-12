@@ -410,7 +410,7 @@ export class TreeBuffer {
         partOffset = start
         partIndex = newIndex
       }
-      children.push(TreeBuffer.copy(source, partIndex, pos, partOffset - startOffset))
+      children.push(TreeBuffer.copy(source, partIndex, pos, partOffset))
       positions.push(partOffset - startOffset)
       pos = partIndex
     }
@@ -494,7 +494,7 @@ class CacheCursor {
 }
 
 class NodeCursor {
-  trees: Tree[]
+  trees: Tree[] = []
   offset = [0]
   index = [0]
   leaf: TreeBuffer | null = null
@@ -507,12 +507,8 @@ class NodeCursor {
   tag!: Term
 
   constructor(tree: SyntaxTree) {
-    if (tree instanceof Tree) {
-      this.trees = [tree]
-    } else {
-      this.trees = []
-      this.leaf = tree
-    }
+    if (tree instanceof Tree) this.trees.push(tree)
+    else this.leaf = tree
   }
 
   next(): boolean {
