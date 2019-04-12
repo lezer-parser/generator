@@ -1,4 +1,4 @@
-import {Term, Grammar, termTable} from "./grammar/grammar"
+import {Term, termTable, Grammar} from "./grammar/grammar"
 import {Token, Tokenizer} from "./grammar/token"
 import {State, Shift, Reduce} from "./grammar/automaton"
 import log from "./log"
@@ -56,42 +56,46 @@ class Stack {
               public state: State,
               public pos: number,
               readonly values: (Node | number[])[],
-              readonly valueStarts: number[],
+              readonly valueInfo: number[],
               public badness: number) {}
 
   toString() {
     return "[" + this.stack.filter((_, i) => i % 3 == 0).concat(this.state.id).join(",") + "] " +
-      this.values.map(v => Array.isArray(v) ? Tree.fromBuffer(v, 0) : v).join(",")
+      this.values.map((v, i) => Array.isArray(v) ? Tree.fromBuffer(v, this.valueInfo[i], 0) : v).join(",")
   }
 
   static start(grammar: Grammar) {
-    return new Stack(grammar, [], grammar.table[0], 0, [[]], [0], 0)
+    return new Stack(grammar, [], grammar.table[0], 0, [], [], 0)
   }
 
-  reduceValue(valueIndex: number, start: number): Tree {
-    let stackIndex = valueIndex & VALUE_INDEX_MASK, stackOffset = valueIndex >> VALUE_INDEX_SIZE
+  reduceValue(stackIndex: number, stackOffset: number, start: number): Tree {
     let children: (Node | TreeBuffer)[] = [], positions: number[] = []
     for (let i = stackIndex; i < this.values.length; i++) {
-      let value = this.values[i], valueStart = this.valueStarts[i]
+      let value = this.values[i], valueInfo = this.valueInfo[i]
       if (Array.isArray(value)) {
         let startIndex = i == stackIndex ? stackOffset << 2 : 0
         if (startIndex < value.length)
-          TreeBuffer.build(value, startIndex, start, children, positions)
+          TreeBuffer.build(value, valueInfo, startIndex, start, children, positions)
         if (startIndex > 0) value.length = startIndex
       } else {
         children.push(value)
-        positions.push(valueStart - start)
+        positions.push(valueInfo - start)
       }
     }
     let newLen = stackIndex + (stackOffset ? 1 : 0)
     if (this.values.length > newLen)
-      this.values.length = this.valueStarts.length = newLen
+      this.values.length = this.valueInfo.length = newLen
     return new Tree(children, positions)
   }
 
   pushState(state: State, start: number) {
-    let last = this.values[this.values.length - 1]
-    let valueIndex = last instanceof Node ? this.values.length : this.values.length - 1 + ((last.length >> 2) << VALUE_INDEX_SIZE)
+    let valueIndex
+    if (this.values.length > 0) {
+      let last = this.values[this.values.length - 1]
+      valueIndex = last instanceof Node ? this.values.length : this.values.length - 1 + ((last.length >> 2) << VALUE_INDEX_SIZE)
+    } else {
+      valueIndex = 0
+    }
     this.stack.push(this.state.id, start, valueIndex)
     this.state = state
   }
@@ -104,27 +108,38 @@ class Stack {
 
     let base = this.stack.length - ((depth - 1) * 3)
     let start = this.stack[base - 2]
-    let length = this.pos - start
-    let valueIndex = this.stack[base - 1]
     if (name.tag) {
-      let last
-      if (length <= MAX_BUFFER_LENGTH &&
-          (valueIndex & VALUE_INDEX_MASK) == this.values.length - 1 &&
-          Array.isArray(last = this.values[this.values.length - 1] as number[])) {
-        let childCount = (last.length >> 2) - (valueIndex >> VALUE_INDEX_SIZE)
-        if (childCount == 0 && last.length >= MAX_BUFFER_SIZE) { // Start a new buffer if this one is too big
-          this.values.push(last = [])
-          this.valueStarts.push(0)
+      let valueIndex = this.stack[base - 1]
+      let stackIndex = valueIndex & VALUE_INDEX_MASK, stackOffset = valueIndex >> VALUE_INDEX_SIZE
+      let top = this.values.length - 1
+      let length = this.pos - start, pushed = false
+      push: if (length <= MAX_BUFFER_LENGTH && stackIndex >= top) {
+        let needNew = stackIndex > top, childCount = 0, buffer!: number[]
+        if (!needNew) {
+          buffer = this.values[top] as number[]
+          if (!Array.isArray(buffer)) break push
+          childCount = (buffer.length >> 2) - stackOffset
+          if (buffer.length >= MAX_BUFFER_SIZE || this.valueInfo[top] != name.tableID) {
+            if (childCount) break push
+            needNew = true
+          }
         }
-        last.push(name.id, start, this.pos, childCount)
-      } else {
-        this.values.push(this.reduceValue(valueIndex, start).toNode(name, length))
-        this.valueStarts.push(start)
+        if (needNew) {
+          this.values.push(buffer = [])
+          this.valueInfo.push(name.tableID)
+        }
+        buffer.push(name.id, start, this.pos, childCount)
+        pushed = true
       }
-    } else if (name.repeats && length > MAX_BUFFER_LENGTH) {
-      let balanced = this.reduceValue(valueIndex, start).balance(name.repeats)
+      if (!pushed) {
+        this.values.push(this.reduceValue(stackIndex, stackOffset, start).toNode(name, length))
+        this.valueInfo.push(start)
+      }
+    } else if (name.repeats && this.pos - start > MAX_BUFFER_LENGTH) {
+      let valueIndex = this.stack[base - 1]
+      let balanced = this.reduceValue(valueIndex & VALUE_INDEX_MASK, valueIndex >> VALUE_INDEX_SIZE, start).balance(name.repeats)
       this.values.push(balanced)
-      this.valueStarts.push(start)
+      this.valueInfo.push(start)
     }
     let baseState = this.grammar.table[this.stack[base - 3]]
     this.state = baseState.getGoto(name)!.target
@@ -132,10 +147,13 @@ class Stack {
   }
 
   shiftValue(term: Term, start: number, end: number, childCount = 0) {
-    let last = this.values[this.values.length - 1]
-    if (!Array.isArray(last) || last.length >= MAX_BUFFER_SIZE) {
+    let last!: number[]
+    if (this.values.length == 0 ||
+        !Array.isArray(last = this.values[this.values.length - 1] as number[]) ||
+        last.length >= MAX_BUFFER_SIZE ||
+        this.valueInfo[this.valueInfo.length - 1] != term.tableID) {
       this.values.push(last = [])
-      this.valueStarts.push(0)
+      this.valueInfo.push(term.tableID)
     }
     if (term.error && last.length && last[last.length - 4] == term.id &&
         (start == end || last[last.length - 3] == start)) return
@@ -156,7 +174,7 @@ class Stack {
   useCached(value: Node, start: number, next: State) {
     this.pushState(next, start)
     this.values.push(value)
-    this.valueStarts.push(start)
+    this.valueInfo.push(start)
     this.pos = start + value.length
     this.badness >> 1 // FIXME
   }
@@ -164,7 +182,7 @@ class Stack {
   split() {
     return new Stack(this.grammar, this.stack.slice(), this.state, this.pos,
                      this.values.map(v => Array.isArray(v) ? v.slice() : v),
-                     this.valueStarts.slice(), this.badness)
+                     this.valueInfo.slice(), this.badness)
   }
 
   recoverByDelete(next: Term, nextStart: number, nextEnd: number) {
@@ -236,7 +254,7 @@ class Stack {
   }
 
   toTree(): SyntaxTree {
-    return this.reduceValue(0, 0)
+    return this.reduceValue(0, 0, 0)
   }
 }
 
@@ -336,9 +354,9 @@ export class Tree {
     return new Tree(children, positions)
   }
 
-  static fromBuffer(buffer: number[], start: number) {
+  static fromBuffer(buffer: number[], tableID: number, start: number) {
     let children: (Node | TreeBuffer)[] = [], positions: number[] = []
-    TreeBuffer.build(buffer, 0, start, children, positions)
+    TreeBuffer.build(buffer, tableID, 0, start, children, positions)
     return new Tree(children, positions)
   }
 
@@ -380,13 +398,13 @@ export class Node extends Tree {
 // written after child nodes), but converted to prefix order when
 // wrapped in a TreeBuffer.
 export class TreeBuffer {
-  constructor(readonly buffer: Uint16Array) {}
+  constructor(readonly tableID: number, readonly buffer: Uint16Array) {}
 
   get nodeCount() { return this.buffer.length >> 2 }
 
   get length() { return this.buffer[this.buffer.length - 2] }
 
-  static copy(source: number[], startIndex: number, endIndex: number, startOffset: number): TreeBuffer {
+  static copy(source: number[], tableID: number, startIndex: number, endIndex: number, startOffset: number): TreeBuffer {
     let buffer = new Uint16Array(endIndex - startIndex)
     let i = buffer.length, pos = endIndex
     function build() {
@@ -396,10 +414,12 @@ export class TreeBuffer {
       buffer[--i] = count; buffer[--i] = to - startOffset; buffer[--i] = from - startOffset; buffer[--i] = tag
     }
     while (pos > startIndex) build()
-    return new TreeBuffer(buffer)
+    return new TreeBuffer(tableID, buffer)
   }
 
-  static build(source: number[], startIndex: number, startOffset: number, children: (Node | TreeBuffer)[], positions: number[]) {
+  static build(source: number[], tableID: number,
+               startIndex: number, startOffset: number,
+               children: (Node | TreeBuffer)[], positions: number[]) {
     let startI = children.length
     for (let pos = source.length; pos > startIndex;) {
       let partIndex = pos, partOffset!: number, partEnd = source[pos - 2]
@@ -410,7 +430,7 @@ export class TreeBuffer {
         partOffset = start
         partIndex = newIndex
       }
-      children.push(TreeBuffer.copy(source, partIndex, pos, partOffset))
+      children.push(TreeBuffer.copy(source, tableID, partIndex, pos, partOffset))
       positions.push(partOffset - startOffset)
       pos = partIndex
     }
@@ -428,7 +448,7 @@ export class TreeBuffer {
       pos += 4
       let children = "", end = pos + (count << 2)
       while (pos < end) children += (children ? "," : "") + next()
-      return termTable[tag].tag! + (children ? "(" + children + ")" : "")
+      return termTable[this.tableID].terms[tag].tag! + (children ? "(" + children + ")" : "")
     }
     let result = ""
     while (pos < this.buffer.length) result += (result ? "," : "") + next()
@@ -519,7 +539,7 @@ class NodeCursor {
           this.leaf = null
           continue
         } else {
-          this.tag = termTable[buf[index++]]
+          this.tag = termTable[this.leaf.tableID].terms[buf[index++]]
           this.start = this.leafOffset + buf[index++]
           this.end = this.leafOffset + buf[index++]
           this.leafIndex += 4

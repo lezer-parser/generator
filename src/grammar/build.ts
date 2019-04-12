@@ -189,13 +189,10 @@ class BuiltRule {
   }
 }
 
-let grammarID = 1
-
 class Builder {
   ast: GrammarDeclaration
   input: Input
-  grammarID = grammarID++
-  terms = new TermSet(this.grammarID)
+  terms = new TermSet
   tokenGroups: TokenGroup[] = []
   specialized: {[name: string]: {[value: string]: Term}} = Object.create(null)
   rules: Rule[] = []
@@ -268,7 +265,7 @@ class Builder {
     let tokenTable = table.map(state => this.tokensForState(state, tokenizers))
     if (log.grammar) console.log(rules.join("\n"))
     if (log.lr) console.log(table.join("\n"))
-    return new Grammar(this.grammarID, rules, this.terms, table, tokenTable)
+    return new Grammar(rules, this.terms, table, tokenTable)
   }
 
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {

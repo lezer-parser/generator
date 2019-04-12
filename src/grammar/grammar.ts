@@ -3,17 +3,15 @@ import {State as TableState} from "./automaton"
 
 const TERMINAL = 1, EOF = 2, ERROR = 4, PROGRAM = 8, REPEATED = 16
 
-export const termTable: Term[] = []
-// FIXME termIDs must wrap on 2^16 to fit in tree buffers. Store only names in the table, and start appending them when overflowing?
-let termID = 0, taglessTermID = 1e9
+export let termTable: TermSet[] = []
 
 export class Term {
-  id: number
   public repeats: Term | null = null
-  constructor(readonly name: string, private flags: number, readonly tag: string | null, readonly grammarID: number) {
-    this.id = tag ? termID++ : taglessTermID--
-    if (tag) termTable[this.id] = this
-  }
+  constructor(readonly name: string,
+              private flags: number,
+              readonly tag: string | null,
+              readonly id: number,
+              readonly tableID: number) {}
   toString() { return this.name }
   get terminal() { return (this.flags & TERMINAL) > 0 }
   get eof() { return (this.flags & EOF) > 0 }
@@ -27,24 +25,30 @@ export class Term {
 export class TermSet {
   nonTerminals: Term[] = []
   terminals: Term[] = []
+  terms: Term[] = []
   eof: Term
   error: Term
+  id = termTable.length
 
-  constructor(public grammarID: number) {
-    this.terminals.push(this.eof = new Term("␄", TERMINAL | EOF, null, grammarID))
-    this.terminals.push(this.error = new Term("⚠", TERMINAL | ERROR, "⚠", grammarID))
+  constructor() {
+    termTable[this.id] = this
+    this.eof = this.term("␄", null, TERMINAL | EOF)
+    this.error = this.term("⚠", "⚠", TERMINAL | ERROR)
+  }
+
+  term(name: string, tag: string | null, flags: number = 0) {
+    let id = this.terms.length, term = new Term(name, flags, tag, id, this.id)
+    this.terms.push(term)
+    ;(term.terminal ? this.terminals : this.nonTerminals).push(term)
+    return term
   }
 
   makeTerminal(name: string, tag: string | null) {
-    let result = new Term(name, TERMINAL, tag, this.grammarID)
-    this.terminals.push(result)
-    return result
+    return this.term(name, tag, TERMINAL)
   }
 
   makeNonTerminal(name: string, tag: string | null) {
-    let result = new Term(name, name == "program" ? PROGRAM : 0, tag, this.grammarID)
-    this.nonTerminals.push(result)
-    return result
+    return this.term(name, tag, name == "program" ? PROGRAM : 0)
   }
 }
 
@@ -125,8 +129,7 @@ export class Rule {
 }
 
 export class Grammar {
-  constructor(readonly id: number,
-              readonly rules: ReadonlyArray<Rule>,
+  constructor(readonly rules: ReadonlyArray<Rule>,
               readonly terms: TermSet,
               readonly table: ReadonlyArray<TableState>,
               readonly tokenTable: ReadonlyArray<ReadonlyArray<Tokenizer>>) {}
