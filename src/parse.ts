@@ -1,5 +1,5 @@
 import {Term, termTable, Grammar} from "./grammar/grammar"
-import {Token, Tokenizer} from "./grammar/token"
+import {Token, Tokenizer, State as TokState} from "./grammar/token"
 import {State, Shift, Reduce} from "./grammar/automaton"
 import log from "./log"
 
@@ -160,10 +160,11 @@ class Stack {
     last.push(term.id, start, end, childCount)
   }
 
-  apply(action: Shift | Reduce, next: Term, nextStart: number, nextEnd: number) {
+  apply(action: Shift | Reduce, next: Term, nextStart: number, nextEnd: number, skipped: number[]) {
     if (action instanceof Reduce) {
       this.reduce(action.rule.parts.length, action.rule.name)
     } else { // Shift
+      this.shiftSkipped(skipped)
       this.pushState(action.target, nextStart)
       this.pos = nextEnd
       if (next.tag) this.shiftValue(next, nextStart, nextEnd)
@@ -185,7 +186,13 @@ class Stack {
                      this.valueInfo.slice(), this.badness)
   }
 
-  recoverByDelete(next: Term, nextStart: number, nextEnd: number) {
+  shiftSkipped(skipped: number[]) {
+    for (let i = 0; i < skipped.length; i += 3)
+      this.shiftValue(this.grammar.terms.terms[skipped[i + 2]], skipped[i], skipped[i + 1])
+  }
+
+  recoverByDelete(next: Term, nextStart: number, nextEnd: number, skipped: number[]) {
+    this.shiftSkipped(skipped)
     if (next.tag) this.shiftValue(next, nextStart, nextEnd)
     this.shiftValue(this.grammar.terms.error, nextStart, nextEnd, next.tag ? 1 : 0)
     this.pos = nextEnd
@@ -578,11 +585,18 @@ class NodeCursor {
   }
 }
 
-class TokenCache { // FIXME cache whitespace separately for improved reuse and incremental parsing
+let skipTok = new Token
+
+class TokenCache {
   tokens: Token[] = []
   tokenizers: Tokenizer[] = []
   pos = 0
   index = 0
+
+  skipPos = 0
+  skipTo = 0
+  skipContent: number[] = []
+  skipType: TokState | null = null
 
   update(grammar: Grammar, tokenizers: ReadonlyArray<Tokenizer>, input: string, pos: number) {
     if (pos > this.pos) { this.index = 0; this.pos = pos }
@@ -601,6 +615,19 @@ class TokenCache { // FIXME cache whitespace separately for improved reuse and i
           token.term = grammar.terms.error
         }
       }
+    }
+  }
+
+  updateSkip(skip: TokState, input: string, pos: number): number {
+    if (pos == this.skipPos && skip == this.skipType) return this.skipTo
+    this.skipType = skip
+    this.skipPos = pos
+    this.skipContent.length = 0
+    for (;;) {
+      let ok = skip.simulate(input, pos, skipTok)
+      if (!ok || skipTok.end == pos) return this.skipTo = pos
+      if (ok.tag) this.skipContent.push(pos, skipTok.end, ok.id)
+      pos = skipTok.end
     }
   }
 
@@ -646,15 +673,15 @@ export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | 
   parse: for (;;) {
     let stack = takeFromHeap(parses, compareStacks), pos = stack.pos
 
-    tokens.update(grammar, grammar.tokenTable[stack.state.id], input, pos)
+    let tokenizers = grammar.tokenTable[stack.state.id]
+    if (tokenizers.length && tokenizers[0].skip) pos = tokens.updateSkip(tokenizers[0].skip, input, pos)
 
     if (cacheCursor && !stack.state.ambiguous) { // FIXME this isn't robust
-      let nextPos = tokens.some().start
-      for (let cached = cacheCursor.nodeAt(nextPos); cached;) {
+      for (let cached = cacheCursor.nodeAt(pos); cached;) {
         let match = stack.state.getGoto(cached.name!)
         if (match) {
           if (verbose) console.log("REUSE " + cached)
-          stack.useCached(cached, nextPos, match.target)
+          stack.useCached(cached, pos, match.target)
           addStack(parses, stack)
           continue parse
         }
@@ -665,6 +692,7 @@ export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | 
       }
     }
 
+    tokens.update(grammar, tokenizers, input, pos)
 
     let sawEof = false, state = stack.state, advanced = false
     for (let i = 0; i < tokens.index; i++) {
@@ -681,7 +709,7 @@ export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | 
           let localStack = stack
           if (hasOtherMatchInState(state, k + 1, token) || tokens.hasOtherMatch(state, i + 1, sawEof))
             localStack = localStack.split()
-          localStack.apply(action, term, token.start, token.end)
+          localStack.apply(action, term, token.start, token.end, tokens.skipContent)
           if (verbose) console.log(`${localStack} (via ${term} ${action}${localStack == stack ? "" : ", split"})`)
           addStack(parses, localStack, action instanceof Shift)
           j = 0 // Don't try a non-specialized version of a token when the specialized one matches
@@ -703,7 +731,7 @@ export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | 
         if (verbose) console.log("insert to " + inserted)
         addStack(parses, inserted)
       }
-      stack.recoverByDelete(term, token.start, token.end)
+      stack.recoverByDelete(term, token.start, token.end, tokens.skipContent)
       if (verbose) console.log("delete token " + term + ": " + stack)
       addStack(parses, stack)
     }

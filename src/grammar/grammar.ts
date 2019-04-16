@@ -48,6 +48,7 @@ export class TermSet {
   }
 
   makeNonTerminal(name: string, tag: string | null) {
+    // FIXME maybe don't hard-code the start symbol name—some grammars don't even parse "programs" (JSON, Markdown)
     return this.term(name, tag, name == "program" ? PROGRAM : 0)
   }
 }

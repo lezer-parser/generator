@@ -1,7 +1,9 @@
 program { X+ }
 
 tokens {
-  skip { (" " | "\n" | "#" [^\n]*)* }
+  skip { (" " | "\n")+ | Comment }
+
+  Comment { "#" [^\n]* }
 
   X { "x" }
 }
@@ -18,4 +20,4 @@ x
 x # I'm a comment!
 x
 
-==> X,X,X
+==> X,X,Comment,X

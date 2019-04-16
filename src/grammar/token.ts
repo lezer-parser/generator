@@ -136,7 +136,6 @@ export class Tokenizer {
   // always updated with the position after the whitespace. The other
   // fields are left as they are when no token is found.
   simulate(input: string, pos: number, target: Token): boolean {
-    if (this.skip && this.skip.simulate(input, pos, target)) pos = target.end
     target.start = pos
     let found = this.startState.simulate(input, pos, target)
     if (!found) return false

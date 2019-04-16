@@ -252,7 +252,6 @@ class Builder {
   getGrammar() {
     let rules = simplifyRules(this.rules)
     let table = buildAutomaton(rules, this.terms)
-    // FIXME merge equivalent skip directives
     let tokenizers: Tokenizer[] = []
     for (let group of this.tokenGroups) {
       let skip = group.skipState ? group.skipState.compile() : group.parent ? tokenizers[this.tokenGroups.indexOf(group.parent)].skip : null
@@ -289,7 +288,11 @@ class Builder {
       if (action.term.eof) return tokenizers // Try all possible whitespace before eof
       let group = this.tokens[action.term.name]
       let tokenizer = tokenizers[this.tokenGroups.indexOf(group)]
-      if (!found.includes(tokenizer)) found.push(tokenizer)
+      if (!found.includes(tokenizer)) {
+        if (found.length && found[0].skip != tokenizer.skip)
+          this.input.raise(`Inconsistent skip rules for state ${state.set.filter(p => p.pos > 0).join() || "start"}`)
+        found.push(tokenizer)
+      }
     }
     return found
   }
@@ -358,8 +361,12 @@ class TokenGroup {
       this.used.skip = true
       if (skip.params.length) return this.raise("Skip rules should not take parameters", skip.params[0].start)
       this.skipState = new State
-      let fin = new State(b.terms.eof)
-      fin.connect(this.build(skip.expr, this.skipState, none))
+      let nameless = new State(b.terms.eof)
+      for (let choice of skip.expr instanceof ChoiceExpression ? skip.expr.exprs : [skip.expr]) {
+        let tag = choice instanceof NamedExpression ? isTag(choice.id.name) : null
+        let dest = tag ? new State(this.b.makeTerminal(tag, tag, this)) : nameless
+        dest.connect(this.build(choice, this.skipState, none))
+      }
     }
   }
 
@@ -495,6 +502,10 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
   whitespace: [[9, 14], [32, 33], [133, 134], [160, 161], [5760, 5761], [8192, 8203],
                [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]]
 }
+
+// FIXME maybe add a pass that, if there's a tagless token whole only
+// use is in a tagged single-term rule, move the tag to the token and
+// collapse the rule.
 
 function inlineRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
   for (;;) {
