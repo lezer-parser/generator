@@ -289,7 +289,7 @@ class Builder {
         defaultReduce = defaultPos.rule.name.id | (defaultPos.pos << REDUCE_NAME_SIZE)
       }
       let {skip, tokenizers} = tokenTable[i]
-      return new ParseState(actions, goto, recover, alwaysReduce, defaultReduce,
+      return new ParseState(i, actions, goto, recover, alwaysReduce, defaultReduce,
                             skip ? eval("(" + skip + ")") : noToken, tokenizers.map(t => eval("(" + t + ")")))
     })
     return new Parser(states, terms.tags, terms.repeatInfo, specialized, specializations)
