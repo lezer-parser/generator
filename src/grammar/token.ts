@@ -187,26 +187,6 @@ export interface InputStream {
   read(from: number, to: number): string
 }
 
-export class Tokenizer {
-  constructor(readonly skip: (i: any) => number | null,
-              readonly read: (i: any) => number,
-              readonly specialized: {[terminal: string]: {[value: string]: Term}}) {}
-
-  // Tries to fill in a token and write it to `target`. `.start` is
-  // always updated with the position after the whitespace. The other
-  // fields are left as they are when no token is found.
-  simulate(input: InputStream, target: Token, table: Term[]): boolean {
-    target.start = input.pos
-    let found = this.read(input)
-    if (found < 0) return false
-    target.end = input.pos
-    target.term = table[found]
-    let spec = this.specialized[target.term.name]
-    target.specialized = spec && spec[input.read(target.start, target.end)] || null
-    return true
-  }
-}  
-
 function ids(states: State[]) {
   let result = ""
   for (let state of states) result += (result.length ? "-" : "") + state.id

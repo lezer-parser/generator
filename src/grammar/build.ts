@@ -3,10 +3,10 @@ import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, MarkedExpression,
         exprsEq, exprEq} from "./node"
 import {Term, TermSet, Precedence, Rule, Grammar} from "./grammar"
-import {Edge, State, Tokenizer} from "./token"
+import {Edge, State} from "./token"
 import {Input} from "./parse"
-import {buildAutomaton, State as LRState} from "./automaton"
-import log from "../log" // FIXME
+import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
+import {Parser, ParseState, REDUCE_NAME_SIZE, Tokenizer, noToken} from "../parse/parser"
 
 // FIXME add inlining other other grammar simplifications?
 
@@ -112,9 +112,8 @@ class Context {
       top.push([inner, PrecTerm.from(inner, new Precedence(false, Precedence.REPEAT, "left", null))])
       this.defineRule(inner, top)
     }
-    let outer = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind + "-wrap", true)
-      : this.newName("wrap-" + expr.kind)
-    outer.repeats = inner
+    let outer = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind + "-wrap", true, inner)
+      : this.newName("wrap-" + expr.kind, inner)
     this.defineRule(outer, expr.kind == "+" ? [[inner]] : [[], [inner]])
     return [outer]
   }
@@ -247,24 +246,53 @@ class Builder {
     }
   }
 
-  getGrammar() {
+  getParserData() {
     let rules = simplifyRules(this.rules)
     let table = buildAutomaton(rules, this.terms)
-    let tokenizers: Tokenizer[] = []
+    let tokenizers: string[] = []
+    let skipped: (string | null)[] = []
     for (let group of this.tokenGroups) {
-      let skip = group.skipState ? group.skipState.compile().toFunction() :
-        group.parent ? tokenizers[this.tokenGroups.indexOf(group.parent)].skip : null
+      skipped.push(group.skipState ? group.skipState.compile().toSource() :
+                   group.parent ? skipped[this.tokenGroups.indexOf(group.parent)] : null)
       let startState = group.startState.compile()
-      let tokenizer = new Tokenizer(skip, startState.toFunction(), this.specialized) // FIXME separate specialized per tokenizer
+      tokenizers.push(startState.toSource())
       if (startState.accepting)
         this.input.raise(`Grammar contains zero-length tokens (in '${startState.accepting.name}')`,
                          group.rules.find(r => r.id.name == startState.accepting!.name)!.start)
-      tokenizers.push(tokenizer)
     }
-    let tokenTable = table.map(state => this.tokensForState(state, tokenizers))
-    if (log.grammar) console.log(rules.join("\n"))
-    if (log.lr) console.log(table.join("\n"))
-    return new Grammar(rules, this.terms, table, tokenTable)
+    let specialized = [], specializations = []
+    for (let name in this.specialized) {
+      specialized.push(this.terms.terminals.find(t => t.name == name).id)
+      specializations.push(this.specialized[name])
+    }
+    let tokenTable = table.map(state => this.tokensForState(state, skipped, tokenizers))
+    return {rules, terms: this.terms, table, tokenTable, specialized, specializations}
+  }
+
+  getParser() {
+    let {rules, terms, table, tokenTable, specialized, specializations} = this.getParserData()
+    let states = table.map((s, i) => {
+      let actions = [], goto = [], recover = [], alwaysReduce = -1, defaultReduce = -1
+      if (s.terminals.length && s.terminals.every(a => a instanceof Reduce && a.rule == (s.terminals[0] as Reduce).rule)) {
+        alwaysReduce = reduce((s.terminals[0] as Reduce).rule)
+      } else {
+        for (let action of s.terminals)
+          actions.push(action.term.id, action instanceof Shift ? -action.target.id : reduce(action.rule))
+      }
+      for (let action of s.goto)
+        goto.push(action.term.id, action.target.id)
+      for (let action of recover)
+        recover.push(action.term.id, action.target.id)
+      let positions = s.set.filter(p => p.pos > 0)
+      if (positions.length) {
+        let defaultPos = positions.reduce((a, b) => a.pos - b.pos || b.rule.parts.length - a.rule.parts.length < 0 ? b : a)
+        defaultReduce = defaultPos.rule.name.id | (defaultPos.pos << REDUCE_NAME_SIZE)
+      }
+      let {skip, tokenizers} = tokenTable[i]
+      return new ParseState(actions, goto, recover, alwaysReduce, defaultReduce,
+                            skip ? eval("(" + skip + ")") : noToken, tokenizers.map(t => eval("(" + t + ")")))
+    })
+    return new Parser(states, terms.tags, terms.repeatInfo, specialized, specializations)
   }
 
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
@@ -282,19 +310,21 @@ class Builder {
     }
   }
 
-  tokensForState(state: LRState, tokenizers: ReadonlyArray<Tokenizer>) {
-    let found: Tokenizer[] = []
+  tokensForState(state: LRState, skipped: (null | string)[], tokenizers: string[]) {
+    let found: string[] = [], skip = null
     for (let action of state.terminals) {
-      if (action.term.eof) return tokenizers // Try all possible whitespace before eof
+      if (action.term.eof) return {skip: skipped[0], tokenizers: []}
       let group = this.tokens[action.term.name]
-      let tokenizer = tokenizers[this.tokenGroups.indexOf(group)]
-      if (!found.includes(tokenizer)) {
-        if (found.length && found[0].skip != tokenizer.skip)
+      let index = this.tokenGroups.indexOf(group)
+      let tokenizer = tokenizers[index]
+      if (!found.includes(tokenizer)) found.push(tokenizer)
+      if (skip != skipped[index]) {
+        if (skip != null)
           this.input.raise(`Inconsistent skip rules for state ${state.set.filter(p => p.pos > 0).join() || "start"}`)
-        found.push(tokenizer)
+        skip = skipped[index]
       }
     }
-    return found
+    return {skip, tokenizers: found}
   }
 
   substituteArgs(expr: Expression, args: ReadonlyArray<Expression>, params: ReadonlyArray<Identifier>) {
@@ -325,6 +355,10 @@ class Builder {
       this.input.raise(`Unrecognized conflict marker '!${expr.namespace.name}.${expr.id.name}'`, expr.start)
     return new Precedence(true, 0, null, expr.id.name)
   }
+}
+
+function reduce(rule: Rule) {
+  return rule.name.id | (rule.parts.length << REDUCE_NAME_SIZE)
 }
 
 interface Namespace {
@@ -584,6 +618,6 @@ function simplifyRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
   return mergeRules(inlineRules(rules))
 }
 
-export function buildGrammar(text: string, fileName: string | null = null): Grammar {
-  return new Builder(text, fileName).getGrammar()
+export function buildParser(text: string, fileName: string | null = null): Parser {
+  return new Builder(text, fileName).getParser()
 }
