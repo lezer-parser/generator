@@ -34,7 +34,7 @@ class Context {
   constructor(readonly b: Builder,
               readonly rule: RuleDeclaration) {}
 
-  newName(deco?: string) {
+  newName(deco?: string, repeats?: Term) {
     return this.b.newName(this.rule.id.name + (deco ? "-" + deco : ""), deco ? true : null)
   }
 
@@ -100,8 +100,6 @@ class Context {
   //
   // Returns the terms that make up the outer rule.
   normalizeRepeat(expr: RepeatExpression) {
-    let outer = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind + "-wrap", true)
-      : this.newName("wrap-" + expr.kind)
     let inner
     let known = this.b.built.find(b => b.matchesRepeat(expr.expr))
     if (known) {
@@ -114,6 +112,8 @@ class Context {
       top.push([inner, PrecTerm.from(inner, new Precedence(false, Precedence.REPEAT, "left", null))])
       this.defineRule(inner, top)
     }
+    let outer = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind + "-wrap", true)
+      : this.newName("wrap-" + expr.kind)
     outer.repeats = inner
     this.defineRule(outer, expr.kind == "+" ? [[inner]] : [[], [inner]])
     return [outer]
@@ -239,11 +239,11 @@ class Builder {
     this.namespaces[name] = value
   }
 
-  newName(base: string, tag: string | null | true = null): Term {
+  newName(base: string, tag: string | null | true = null, repeats?: Term): Term {
     for (let i = tag ? 0 : 1;; i++) {
       let name = i ? `${base}-${i}` : base
       if (!this.terms.nonTerminals.some(t => t.name == name))
-        return this.terms.makeNonTerminal(name, tag === true ? null : tag)
+        return this.terms.makeNonTerminal(name, tag === true ? null : tag, repeats)
     }
   }
 

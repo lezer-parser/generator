@@ -1,23 +1,20 @@
 import {Tokenizer} from "./token"
 import {State as TableState} from "./automaton"
+import {FIRST_REPEAT_TERM, FIRST_ANON_TERM, TERM_ERR, TERM_EOF} from "../parse/parser"
 
-const TERMINAL = 1, EOF = 2, ERROR = 4, PROGRAM = 8, REPEATED = 16
-
-export let termTable: TermSet[] = []
+const TERMINAL = 1, REPEATED = 2, REPEATS = 4, PROGRAM = 8
 
 export class Term {
-  public repeats: Term | null = null
-  constructor(readonly name: string,
+  constructor(readonly id: number,
+              readonly name: string,
               private flags: number,
-              readonly tag: string | null,
-              readonly id: number,
-              readonly tableID: number) {}
+              readonly tag: string | null) {}
   toString() { return this.name }
   get terminal() { return (this.flags & TERMINAL) > 0 }
-  get eof() { return (this.flags & EOF) > 0 }
-  get error() { return (this.flags & ERROR) > 0 }
+  get eof() { return this.id == TERM_EOF }
+  get error() { return this.id == TERM_ERR }
   get program() { return (this.flags & PROGRAM) > 0 }
-  get interesting() { return this.flags > 0 || this.tag != null || this.repeats != null }
+  get interesting() { return this.flags > 0 || this.tag != null }
   set repeated(value: boolean) { this.flags = value ? this.flags | REPEATED : this.flags & ~REPEATED }
   cmp(other: Term) { return this == other ? 0 : (this.name < other.name ? -1 : 1) || this.flags - other.flags }
 }
@@ -25,20 +22,30 @@ export class Term {
 export class TermSet {
   nonTerminals: Term[] = []
   terminals: Term[] = []
-  terms: Term[] = []
+  tags: string[] = []
+  repeatInfo: number[] = []
   eof: Term
   error: Term
-  id = termTable.length
+  anonID = FIRST_ANON_TERM
 
   constructor() {
-    termTable[this.id] = this
-    this.eof = this.term("␄", null, TERMINAL | EOF)
-    this.error = this.term("⚠", "⚠", TERMINAL | ERROR)
+    this.eof = this.term("␄", null, TERMINAL)
+    this.error = this.term("⚠", "⚠", TERMINAL)
   }
 
-  term(name: string, tag: string | null, flags: number = 0) {
-    let id = this.terms.length, term = new Term(name, flags, tag, id, this.id)
-    this.terms.push(term)
+  term(name: string, tag: string | null, flags: number = 0, repeats?: Term) {
+    let id
+    if (tag) {
+      id = this.tags.length
+      this.tags.push(tag)
+    } else if (repeats) {
+      flags |= REPEATS
+      id = this.repeatInfo.length + FIRST_REPEAT_TERM
+      this.repeatInfo.push(repeats.id)
+    } else {
+      id = this.anonID++
+    }
+    let term = new Term(id, name, flags, tag)
     ;(term.terminal ? this.terminals : this.nonTerminals).push(term)
     return term
   }
@@ -47,9 +54,9 @@ export class TermSet {
     return this.term(name, tag, TERMINAL)
   }
 
-  makeNonTerminal(name: string, tag: string | null) {
+  makeNonTerminal(name: string, tag: string | null, repeats?: Term) {
     // FIXME maybe don't hard-code the start symbol name—some grammars don't even parse "programs" (JSON, Markdown)
-    return this.term(name, tag, name == "program" ? PROGRAM : 0)
+    return this.term(name, tag, (name == "program" ? PROGRAM : 0))
   }
 }
 
