@@ -8,5 +8,5 @@
     "target": "es2018",
     "newLine": "lf"
   },
-  "include": ["src/parse/*.ts", "src/grammar/*.ts"]
+  "include": ["src/parse/*.ts", "src/grammar/*.ts", "test/*.ts"]
 }
