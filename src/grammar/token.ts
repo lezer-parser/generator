@@ -137,7 +137,7 @@ export class State {
       let here = enter[state.id] = `s=${id}`
       let text = ""
       if (state.edges.length == 1 && state.edges[0].from == 0 && state.edges[0].to == 2e8) {
-        text += explore(state.edges[0].target)
+        text = explore(state.edges[0].target)
       } else {
         // FIXME bisecting when lots of edges
         let tests = [], actions = []
@@ -147,14 +147,22 @@ export class State {
           else tests.push(`n>${edge.from - 1}&&n<${edge.to}`)
           actions.push(explore(edge.target))
         }
-        for (let i = 0; i < tests.length; i++) {
-          let test = tests[i], action = actions[i]
-          while (i < actions.length - 1 && actions[i + 1] == action)
-            test += "||" + tests[++i]
-          if (action == here) action = "0"
-          text += `${test}?${action}:`
+        let fallThrough = `o=${state.accepting ? state.accepting.id : -1}`
+        if (actions.length == 2 && actions[0] == actions[1] &&
+            state.edges[0].from == 0 && state.edges[1].to == 2e8) {
+          let from = state.edges[0].to, to = state.edges[1].from
+          let test = to == from + 1 ? `n!=${from}` : `n<${from}||n>${to - 1}`
+          text = `${test}?${actions[0]}:${fallThrough}`
+        } else {
+          for (let i = 0; i < tests.length; i++) {
+            let test = tests[i], action = actions[i]
+            while (i < actions.length - 1 && actions[i + 1] == action)
+              test += "||" + tests[++i]
+            if (action == here) action = "0"
+            text += `${test}?${action}:`
+          }
+          text += fallThrough
         }
-        text += `o=${state.accepting ? state.accepting.id : -1}`
       }
       states[id] = `(${text})`
       return here
