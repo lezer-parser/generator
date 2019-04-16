@@ -2,11 +2,11 @@ import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, MarkedExpression,
         exprsEq, exprEq} from "./node"
-import {Term, TermSet, Precedence, Rule, Grammar} from "./grammar"
+import {Term, TermSet, Precedence, Rule} from "./grammar"
 import {Edge, State} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
-import {Parser, ParseState, REDUCE_NAME_SIZE, Tokenizer, noToken} from "../parse/parser"
+import {Parser, ParseState, REDUCE_NAME_SIZE, noToken} from "../parse/parser"
 
 // FIXME add inlining other other grammar simplifications?
 
@@ -160,10 +160,14 @@ class Context {
       this.raise(`The first argument to 'specialize' must resolve to a token`, expr.args[0].start)
     let term = terminal[0].name, value = (expr.args[1] as LiteralExpression).value
     let table = this.b.specialized[term] || (this.b.specialized[term] = Object.create(null))
-    let known = table[value]
-    if (!known) known = table[value] =
-      this.b.makeTerminal(term + "-" + JSON.stringify(value), null, this.b.tokens[term])
-    return [known]
+    let known = table[value], token: Term
+    if (known == null) {
+      token = this.b.makeTerminal(term + "-" + JSON.stringify(value), null, this.b.tokens[term])
+      table[value] = token.id
+    } else {
+      token = this.b.terms.terminals.find(t => t.id == known)!
+    }
+    return [token]
   }
 }
 
@@ -191,7 +195,7 @@ class Builder {
   input: Input
   terms = new TermSet
   tokenGroups: TokenGroup[] = []
-  specialized: {[name: string]: {[value: string]: Term}} = Object.create(null)
+  specialized: {[name: string]: {[value: string]: number}} = Object.create(null)
   rules: Rule[] = []
   built: BuiltRule[] = []
   ruleNames: {[name: string]: boolean} = Object.create(null)
@@ -262,7 +266,7 @@ class Builder {
     }
     let specialized = [], specializations = []
     for (let name in this.specialized) {
-      specialized.push(this.terms.terminals.find(t => t.name == name).id)
+      specialized.push(this.terms.terminals.find(t => t.name == name)!.id)
       specializations.push(this.specialized[name])
     }
     let tokenTable = table.map(state => this.tokensForState(state, skipped, tokenizers))
@@ -270,7 +274,7 @@ class Builder {
   }
 
   getParser() {
-    let {rules, terms, table, tokenTable, specialized, specializations} = this.getParserData()
+    let {terms, table, tokenTable, specialized, specializations} = this.getParserData()
     let states = table.map((s, i) => {
       let actions = [], goto = [], recover = [], alwaysReduce = -1, defaultReduce = -1
       if (s.terminals.length && s.terminals.every(a => a instanceof Reduce && a.rule == (s.terminals[0] as Reduce).rule)) {
@@ -281,7 +285,7 @@ class Builder {
       }
       for (let action of s.goto)
         goto.push(action.term.id, action.target.id)
-      for (let action of recover)
+      for (let action of s.recover)
         recover.push(action.term.id, action.target.id)
       let positions = s.set.filter(p => p.pos > 0)
       if (positions.length) {

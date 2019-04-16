@@ -19,13 +19,6 @@ function charFor(n: number) {
 
 let stateID = 1
 
-export class Token {
-  public start = 0
-  public end = 0
-  public term: Term = null as any
-  public specialized: Term | null = null
-}
-
 export class State {
   edges: Edge[] = []
   // FIXME number per automaton?
@@ -40,6 +33,7 @@ export class State {
     }
   }
 
+  // FIXME flatten astral plane code points to two edges
   edge(from: number, to: number = from + 1, target?: State) {
     let e = new Edge(from, to, target)
     this.edges.push(e)
@@ -106,22 +100,6 @@ export class State {
       }
     }
     return out
-  }
-
-  // Runs the state machine on input, returns the accepting term if it
-  // found one, or null otherwise. Updates `target.end` to the end of
-  // the token when returning successfull.
-  simulate(input: string, pos: number, target: Token): Term | null {
-    let state: State = this
-    for (; pos < input.length;) {
-      let next = input.codePointAt(pos)!
-      let edge = state.edges.find(e => e.from <= next && e.to > next)
-      if (!edge) break
-      state = edge.target
-      pos += next > 0xffff ? 2 : 1
-    }
-    if (state.accepting) { target.end = pos; return state.accepting }
-    return null
   }
 
   toSource() {

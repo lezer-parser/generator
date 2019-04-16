@@ -1,5 +1,3 @@
-import {Tokenizer} from "./token"
-import {State as TableState} from "./automaton"
 import {FIRST_REPEAT_TERM, FIRST_ANON_TERM, TERM_ERR, TERM_EOF} from "../parse/parser"
 
 const TERMINAL = 1, REPEATED = 2, REPEATS = 4, PROGRAM = 8
@@ -134,13 +132,4 @@ export class Rule {
   toString() {
     return this.name + " -> " + this.parts.join(" ")
   }
-}
-
-export class Grammar {
-  constructor(readonly rules: ReadonlyArray<Rule>,
-              readonly terms: TermSet,
-              readonly table: ReadonlyArray<TableState>,
-              readonly tokenTable: ReadonlyArray<ReadonlyArray<Tokenizer>>) {}
-
-  toString() { return this.rules.join("\n") }
 }
