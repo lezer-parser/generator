@@ -1,6 +1,6 @@
 import {buildGrammar} from "../src/grammar/build"
 import {Grammar} from "../src/grammar/grammar"
-import {parse} from "../src/parse"
+import {parse} from "../src/parse/parse"
 const ist = require("ist")
 
 let fs = require("fs"), path = require("path")

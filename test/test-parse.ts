@@ -1,6 +1,6 @@
 import {buildGrammar} from "../src/grammar/build"
 import {Grammar} from "../src/grammar/grammar"
-import {parse, SyntaxTree, Node, Tree} from "../src/parse"
+import {parse, SyntaxTree, Node, Tree} from "../src/parse/parse"
 const ist = require("ist")
 
 function g(text: string): () => Grammar {

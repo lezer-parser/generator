@@ -1,9 +1,10 @@
-import {Term, termTable, Grammar} from "./grammar/grammar"
-import {Token, Tokenizer, State as TokState} from "./grammar/token"
-import {State, Shift, Reduce} from "./grammar/automaton"
-import log from "./log"
+import {Term, termTable, Grammar} from "../grammar/grammar"
+import {Token, Tokenizer, State as TokState} from "../grammar/token"
+import {State, Shift, Reduce} from "../grammar/automaton"
+import log from "../log"
+import {takeFromHeap, addToHeap} from "./heap"
 
-const BADNESS_DELETE = 100, BADNESS_RECOVER = 100
+const BADNESS_DELETE = 100, BADNESS_RECOVER = 90
 const BADNESS_STABILIZING = 50, BADNESS_WILD = 150 // Limits in between which stacks are less agressively pruned
 
 const VALUE_INDEX_SIZE = 15, VALUE_INDEX_MASK = 2**VALUE_INDEX_SIZE - 1
@@ -265,20 +266,16 @@ class Stack {
   }
 }
 
-import {takeFromHeap, addToHeap} from "./heap"
-
-function compareStacks(a: Stack, b: Stack) { return a.pos - b.pos }
-
-function addStack(heap: Stack[], stack: Stack, strict = stack.badness < BADNESS_STABILIZING || stack.badness > BADNESS_WILD): boolean {
-  for (let i = 0; i < heap.length; i++) {
-    let other = heap[i]
+function addStack(parses: Stack[], stack: Stack, strict = stack.badness < BADNESS_STABILIZING || stack.badness > BADNESS_WILD): boolean {
+  for (let i = 0; i < parses.length; i++) {
+    let other = parses[i]
     if ((strict || other.state == stack.state) && other.pos == stack.pos) {
       let diff = stack.badness - other.badness || (stack.badness < BADNESS_STABILIZING ? 0 : stack.stack.length - other.stack.length)
-      if (diff < 0) { heap[i] = stack; return true }
+      if (diff < 0) { parses[i] = stack; return true }
       else if (diff > 0) return false
     }
   }
-  addToHeap(heap, stack, compareStacks)
+  addToHeap(parses, stack, compareStacks)
   return true
 }
 
@@ -662,6 +659,9 @@ export function parse(input: string, grammar: Grammar, {cache = null, strict = f
   return parseInner(input, grammar, cache, strict)
 }
 
+function compareStacks(a: Stack, b: Stack) {
+  return a.pos - b.pos || a.badness - b.badness
+}
 
 export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | null, strict: boolean): SyntaxTree {
   let verbose = log.parse
@@ -725,7 +725,7 @@ export function parseInner(input: string, grammar: Grammar, cache: SyntaxTree | 
 
     if (!strict &&
         !(stack.badness > BADNESS_WILD && parses.some(s => s.pos >= stack.pos && s.badness <= stack.badness))) {
-
+      console.log("REC")
       let inserted = stack.recoverByInsert(term, token.start, token.end)
       if (inserted) {
         if (verbose) console.log("insert to " + inserted)
