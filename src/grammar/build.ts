@@ -81,8 +81,6 @@ class Context {
   normalizeTopExpr(expr: Expression, self: Term): Term$[][] {
     if (expr instanceof RepeatExpression && expr.kind == "?") {
       return [[], ...this.normalizeTopExpr(expr.expr, self)]
-    } else if (expr instanceof RepeatExpression && !self.tag) {
-      return this.normalizeRepeat(expr, self)
     } else if (expr instanceof ChoiceExpression) {
       return expr.exprs.map(e => this.normalizeExpr(e))
     } else if (expr instanceof MarkedExpression) {
@@ -101,7 +99,9 @@ class Context {
   // (With the ε part gone for + expressions.)
   //
   // Returns the terms that make up the outer rule.
-  normalizeRepeat(expr: RepeatExpression, outer: Term) {
+  normalizeRepeat(expr: RepeatExpression) {
+    let outer = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind + "-wrap", true)
+      : this.newName("wrap-" + expr.kind)
     let inner
     let known = this.b.built.find(b => b.matchesRepeat(expr.expr))
     if (known) {
@@ -115,7 +115,8 @@ class Context {
       this.defineRule(inner, top)
     }
     outer.repeats = inner
-    return expr.kind == "+" ? [[inner]] : [[], [inner]]
+    this.defineRule(outer, expr.kind == "+" ? [[inner]] : [[], [inner]])
+    return [outer]
   }
 
   normalizeExpr(expr: Expression): Term$[] {
@@ -123,10 +124,7 @@ class Context {
       let name = this.newName("?")
       return this.defineRule(name, [[] as Term$[]].concat(this.normalizeTopExpr(expr.expr, name)))
     } else if (expr instanceof RepeatExpression) {
-      let outer = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind + "-wrap", true)
-        : this.newName("wrap-" + expr.kind)
-      this.defineRule(outer, this.normalizeRepeat(expr, outer))
-      return [outer]
+      return this.normalizeRepeat(expr)
     } else if (expr instanceof ChoiceExpression) {
       return this.defineRule(this.newName(), expr.exprs.map(e => this.normalizeExpr(e)))
     } else if (expr instanceof SequenceExpression) {
@@ -254,11 +252,13 @@ class Builder {
     let table = buildAutomaton(rules, this.terms)
     let tokenizers: Tokenizer[] = []
     for (let group of this.tokenGroups) {
-      let skip = group.skipState ? group.skipState.compile() : group.parent ? tokenizers[this.tokenGroups.indexOf(group.parent)].skip : null
-      let tokenizer = new Tokenizer(skip, group.startState.compile(), this.specialized) // FIXME separate specialized per tokenizer
-      if (tokenizer.startState.accepting)
-        this.input.raise(`Grammar contains zero-length tokens (in '${tokenizer.startState.accepting.name}')`,
-                         group.rules.find(r => r.id.name == tokenizer.startState.accepting!.name)!.start)
+      let skip = group.skipState ? group.skipState.compile().toFunction() :
+        group.parent ? tokenizers[this.tokenGroups.indexOf(group.parent)].skip : null
+      let startState = group.startState.compile()
+      let tokenizer = new Tokenizer(skip, startState.toFunction(), this.specialized) // FIXME separate specialized per tokenizer
+      if (startState.accepting)
+        this.input.raise(`Grammar contains zero-length tokens (in '${startState.accepting.name}')`,
+                         group.rules.find(r => r.id.name == startState.accepting!.name)!.start)
       tokenizers.push(tokenizer)
     }
     let tokenTable = table.map(state => this.tokensForState(state, tokenizers))

@@ -14,7 +14,7 @@ export class Edge {
 }
 
 function charFor(n: number) {
-  return n == 2e8 ? "∞" : String.fromCodePoint(n)
+  return n >= 2e8 - 1 ? "∞" : String.fromCodePoint(n)
 }
 
 let stateID = 1
@@ -123,25 +123,78 @@ export class State {
     if (state.accepting) { target.end = pos; return state.accepting }
     return null
   }
+
+  toSource() {
+    let enter = Object.create(null)
+    let head = `function(i){let o=-2,s=0,n;for(;;){n=i.next();`
+    let tail = `;if(o>-2)return o;i.adv(n)}}`
+    let states: string[] = [], nextID = 0
+    function explore(state: State): string {
+      let known = enter[state.id]
+      if (known != null) return known
+      if (state.edges.length == 0 && state.accepting) return `i.adv(n,o=${state.accepting.id})`
+      let id = nextID++
+      let here = enter[state.id] = `s=${id}`
+      let text = ""
+      if (state.edges.length == 1 && state.edges[0].from == 0 && state.edges[0].to == 2e8) {
+        text += explore(state.edges[0].target)
+      } else {
+        // FIXME bisecting when lots of edges
+        let tests = [], actions = []
+        for (let edge of state.edges) {
+          if (edge.to == edge.from + 1) tests.push(`n==${edge.from}`)
+          else if (edge.to == 2e8) tests.push(`n>${edge.from - 1}`)
+          else tests.push(`n>${edge.from - 1}&&n<${edge.to}`)
+          actions.push(explore(edge.target))
+        }
+        for (let i = 0; i < tests.length; i++) {
+          let test = tests[i], action = actions[i]
+          while (i < actions.length - 1 && actions[i + 1] == action)
+            test += "||" + tests[++i]
+          if (action == here) action = "0"
+          text += `${test}?${action}:`
+        }
+        text += `o=${state.accepting ? state.accepting.id : -1}`
+      }
+      states[id] = `(${text})`
+      return here
+    }
+    explore(this)
+    let stateString = ""
+    for (let i = 0; i < states.length - 1; i++) stateString += `s==${i}?${states[i]}:`
+    stateString += states[states.length - 1]
+    return head + stateString + tail
+  }
+
+  toFunction() {
+    return eval("(" + this.toSource() + ")")
+  }
+}
+
+export interface InputStream {
+  pos: number
+  next(): number
+  adv(ch: number): void
+  goto(n: number): void
+  read(from: number, to: number): string
 }
 
 export class Tokenizer {
-  constructor(readonly skip: State | null,
-              readonly startState: State,
+  constructor(readonly skip: (i: any) => number | null,
+              readonly read: (i: any) => number,
               readonly specialized: {[terminal: string]: {[value: string]: Term}}) {}
-
-  toString() { return this.startState.toString() }
 
   // Tries to fill in a token and write it to `target`. `.start` is
   // always updated with the position after the whitespace. The other
   // fields are left as they are when no token is found.
-  simulate(input: string, pos: number, target: Token): boolean {
-    target.start = pos
-    let found = this.startState.simulate(input, pos, target)
-    if (!found) return false
-    target.term = found
-    let spec = this.specialized[found.name]
-    target.specialized = spec && spec[input.slice(target.start, target.end)] || null
+  simulate(input: InputStream, target: Token, table: Term[]): boolean {
+    target.start = input.pos
+    let found = this.read(input)
+    if (found < 0) return false
+    target.end = input.pos
+    target.term = table[found]
+    let spec = this.specialized[target.term.name]
+    target.specialized = spec && spec[input.read(target.start, target.end)] || null
     return true
   }
 }  
