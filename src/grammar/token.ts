@@ -19,6 +19,8 @@ function charFor(n: number) {
   return n > MAX_CHAR ? "∞" : n >= 0xd800 && n < 0xdfff ? "\\u{" + n.toString(16) + "}" : String.fromCharCode(n)
 }
 
+const MAX_SOURCE_BRANCH = 8
+
 let stateID = 1
 
 export class State {
@@ -112,36 +114,7 @@ export class State {
       if (state.edges.length == 0 && state.accepting) return `i.adv(n,o=${state.accepting.id})`
       let id = nextID++
       let here = enter[state.id] = `s=${id}`
-      let text = ""
-      if (state.edges.length == 1 && state.edges[0].from == 0 && state.edges[0].to >= MAX_CHAR) {
-        text = explore(state.edges[0].target)
-      } else {
-        // FIXME bisecting when lots of edges
-        let tests = [], actions = []
-        for (let edge of state.edges) {
-          if (edge.to == edge.from + 1) tests.push(`n==${edge.from}`)
-          else if (edge.to >= MAX_CHAR) tests.push(`n>${edge.from - 1}`)
-          else tests.push(`n>${edge.from - 1}&&n<${edge.to}`)
-          actions.push(explore(edge.target))
-        }
-        let fallThrough = `o=${state.accepting ? state.accepting.id : -1}`
-        if (actions.length == 2 && actions[0] == actions[1] &&
-            state.edges[0].from == 0 && state.edges[1].to >= MAX_CHAR) {
-          let from = state.edges[0].to, to = state.edges[1].from
-          let test = to == from + 1 ? `n!=${from}` : `n<${from}||n>${to - 1}`
-          text = `${test}?${actions[0]}:${fallThrough}`
-        } else {
-          for (let i = 0; i < tests.length; i++) {
-            let test = tests[i], action = actions[i]
-            while (i < actions.length - 1 && actions[i + 1] == action)
-              test += "||" + tests[++i]
-            if (action == here) action = "0"
-            text += `${test}?${action}:`
-          }
-          text += fallThrough
-        }
-      }
-      states[id] = `(${text})`
+      states[id] = `(${state.toLocalSource(explore, here)})`
       return here
     }
     explore(this)
@@ -149,6 +122,40 @@ export class State {
     for (let i = 0; i < states.length - 1; i++) stateString += `s==${i}?${states[i]}:`
     stateString += states[states.length - 1]
     return head + stateString + tail
+  }
+
+  toLocalSource(explore: (state: State) => string, here: string) {
+    let edgesToSource = (start: number, end: number, low: number, hi: number): string => {
+      if (end == start + 1 && this.edges[start].from == low && this.edges[start].to >= hi)
+        return explore(this.edges[start].target)
+
+      if (end > start + MAX_SOURCE_BRANCH) {
+        let mid = (end + start) >> 1, midChar = this.edges[mid].from
+        return `n<${midChar}?(${edgesToSource(start, mid, low, midChar)}):(${edgesToSource(mid, end, midChar, hi)})`
+      }
+
+      let tests = [], actions = []
+      for (let  i = start; i < end; i++) {
+        let edge = this.edges[i]
+        if (edge.to == edge.from + 1) tests.push(`n==${edge.from}`)
+        else if (edge.to >= hi) tests.push(`n>${edge.from - 1}`)
+        else if (edge.from == low) tests.push(`n<${edge.to}`)
+        else tests.push(`n>${edge.from - 1}&&n<${edge.to}`)
+        actions.push(explore(edge.target))
+      }
+      let fallThrough = `o=${this.accepting ? this.accepting.id : -1}`
+      let text = ""
+      for (let i = 0; i < tests.length; i++) {
+        let test = tests[i], action = actions[i]
+        while (i < actions.length - 1 && actions[i + 1] == action)
+          test += "||" + tests[++i]
+        if (action == here) action = "0"
+        text += `${test}?${action}:`
+      }
+      text += fallThrough
+      return text
+    }
+    return edgesToSource(0, this.edges.length, -1, MAX_CHAR)
   }
 
   toFunction() {
