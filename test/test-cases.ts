@@ -1,6 +1,5 @@
-/*import {buildGrammar} from "../src/grammar/build"
-import {Grammar} from "../src/grammar/grammar"
-import {parse} from "../src/parse/parse"
+import {buildParser} from "../src/grammar/build"
+import {Parser, StringStream} from "../src/parse/parser"
 const ist = require("ist")
 
 let fs = require("fs"), path = require("path")
@@ -18,28 +17,20 @@ function compressAST(ast: string, file: string) {
   return result
 }
 
-class Delay {
-  _grammar: Grammar | null = null
-
-  constructor(readonly fileName: string, readonly grammarText: string, readonly caseText: string[]) {}
-
-  get grammar() { return this._grammar || buildGrammar(this.grammarText, this.fileName) }
-}
-
 describe("Cases", () => {
   for (let file of fs.readdirSync(caseDir)) {
-    let name = /^[^\.]* /.exec(file)[0]
+    let name = /^[^\.]*/.exec(file)![0]
     let content = fs.readFileSync(path.join(caseDir, file), "utf8")
     let parts = content.split(/\n---+\n/), grammarText = parts.shift()
-    let grammar: Grammar | null = null
+    let parser: Parser | null = null
     let force = () => {
-      if (!grammar) grammar = buildGrammar(grammarText, file)
-      return grammar
+      if (!parser) parser = buildParser(grammarText, file)
+      return parser
     }
 
     let expectedErr = /\/\/! (.*)/.exec(grammarText)
     if (expectedErr) it(`case ${name}`, () => {
-      ist.throws(force, e => e.message.toLowerCase().indexOf(expectedErr[1].trim().toLowerCase()) >= 0)
+      ist.throws(force, (e: Error) => e.message.toLowerCase().indexOf(expectedErr![1].trim().toLowerCase()) >= 0)
     })
 
     if (parts.length == 0 && !expectedErr)
@@ -49,8 +40,8 @@ describe("Cases", () => {
       let [text, ast] = parts[i].split(/\n==+>/)
       if (!ast) throw new Error(`Missing syntax tree in ${name}:${i + 1}`)
       let expected = compressAST(ast, file)
-      let strict = expected.indexOf("⚠") < 0
-      let parsed = parse(text.trim(), force(), {strict}).toString()
+      let strict = expected.indexOf("⚠") < 0, parser = force()
+      let parsed = parser.parse(new StringStream(text.trim()), {strict}).toString(parser.tags)
       if (parsed != expected) {
         if (parsed.length > 76) {
           let mis = 0
@@ -67,4 +58,3 @@ describe("Cases", () => {
     })
   }
 })
-*/
