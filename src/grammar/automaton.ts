@@ -25,7 +25,7 @@ export class Pos {
   toString() {
     let parts = this.rule.parts.map(t => t.name)
     parts.splice(this.pos, 0, "·")
-    return `${this.rule.name} -> ${parts.join(" ")} [${this.ahead}]`
+    return `${this.rule.name} -> ${parts.join(" ")}`
   }
 
   termsAhead(first: {[name: string]: Term[]}): Term[] {

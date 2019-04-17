@@ -6,9 +6,11 @@ import {Term, TermSet, Precedence, Rule} from "./grammar"
 import {Edge, State} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
-import {Parser, ParseState, REDUCE_NAME_SIZE, noToken} from "../parse/parser"
+import {Parser, ParseState, REDUCE_NAME_SIZE, noToken, Tokenizer} from "../parse/parser"
 
 const none: ReadonlyArray<any> = []
+
+const verbose = (typeof process != "undefined" && process.env.LOG) || ""
 
 class PrecTerm {
   constructor(readonly term: Term, readonly prec: Precedence[]) {}
@@ -33,7 +35,7 @@ class Context {
               readonly rule: RuleDeclaration) {}
 
   newName(deco?: string, repeats?: Term) {
-    return this.b.newName(this.rule.id.name + (deco ? "-" + deco : ""), deco ? true : null)
+    return this.b.newName(this.rule.id.name + (deco ? "-" + deco : ""), deco ? true : null, repeats)
   }
 
   defineRule(name: Term, choices: Term$[][]) {
@@ -248,7 +250,9 @@ class Builder {
 
   getParserData() {
     let rules = simplifyRules(this.rules)
+    if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
     let table = buildAutomaton(rules, this.terms)
+    if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
     let tokenizers: string[] = []
     let skipped: (string | null)[] = []
     for (let group of this.tokenGroups) {
@@ -271,6 +275,11 @@ class Builder {
 
   getParser() {
     let {terms, table, tokenTable, specialized, specializations} = this.getParserData()
+    let evaluated: {[source: string]: Tokenizer} = Object.create(null)
+    function getFunc(source: string | null): Tokenizer {
+      return source == null ? noToken : evaluated[source] || (evaluated[source] = eval("(" + source + ")"))
+    }
+
     let states = table.map((s, i) => {
       let actions = [], goto = [], recover = [], alwaysReduce = -1, defaultReduce = -1
       if (s.terminals.length && s.terminals.every(a => a instanceof Reduce && a.rule == (s.terminals[0] as Reduce).rule)) {
@@ -289,8 +298,7 @@ class Builder {
         defaultReduce = defaultPos.rule.name.id | (defaultPos.pos << REDUCE_NAME_SIZE)
       }
       let {skip, tokenizers} = tokenTable[i]
-      return new ParseState(i, actions, goto, recover, alwaysReduce, defaultReduce,
-                            skip ? eval("(" + skip + ")") : noToken, tokenizers.map(t => t ? eval("(" + t + ")") : noToken))
+      return new ParseState(i, actions, goto, recover, alwaysReduce, defaultReduce, getFunc(skip), tokenizers.map(getFunc))
     })
     return new Parser(states, terms.tags, terms.repeatInfo, specialized, specializations, this.terms.names)
   }
