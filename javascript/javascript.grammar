@@ -1,5 +1,6 @@
 prec {
  statement,
+ else left,
  member,
  call,
  suffix,
@@ -93,7 +94,7 @@ ParamList {
 }
 
 IfStatement {
-  kw<"if"> parenExpression statement (kw<"else"> statement)?
+  kw<"if"> parenExpression statement !else (kw<"else"> statement)?
 }
 
 parenExpression {
@@ -101,7 +102,7 @@ parenExpression {
 }
 
 ForStatement { // FIXME
-  kw<"for"> "(" statement? ";" expression? ";" expression? ")" statement
+  kw<"for"> "(" statement expression? ";" expression? ")" statement
 }
 
 WhileStatement {
@@ -128,8 +129,10 @@ calleeExpression {
   NewExpression |
   PrefixExpression |
   "(" expression ")" |
-  kw<"class"> Identifier? (kw<"extends"> expression)? ClassBody |
-  kw<"function"> Identifier? ParamList Block
+  kw<"class"> (kw<"extends"> expression)? ClassBody |
+  kw<"class"> Identifier (kw<"extends"> expression)? ClassBody |
+  kw<"function"> "*"? ParamList Block |
+  kw<"function"> Identifier "*"? ParamList Block
 }
 
 expressionNoComma {
