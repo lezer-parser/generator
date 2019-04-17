@@ -133,7 +133,10 @@ export class State {
           return true
         } else { // Not resolved
           if (!pos) return false
-          throw new Error(`${action instanceof Shift ? "shift" : "reduce"}/reduce conflict at ${pos} for ${action.term}`)
+          if (action instanceof Shift)
+            throw new Error(`shift/reduce conflict at ${pos} for ${action.term}`)
+          else
+            throw new Error(`reduce/reduce conflict between ${pos.rule} and ${action.rule} for ${action.term}`)
         }
       }
     }
@@ -218,9 +221,8 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, f
         states.push(accepting)
         state.goto.push(new Shift(state.set[program].rule.name, accepting))
       }
-      for (let pos of set) if (pos.next == null) {
+      for (let pos of set) if (pos.next == null)
         state.addAction(new Reduce(pos.ahead, pos.rule), pos.rule.rulePrec(), pos)
-      }
     }
     return state
   }

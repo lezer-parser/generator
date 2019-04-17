@@ -38,6 +38,11 @@ class Context {
     return this.b.newName(this.rule.id.name + (deco ? "-" + deco : ""), deco ? true : null, repeats)
   }
 
+  newNameFor(expr: Expression, add: string, repeats?: Term): Term {
+    let name = findNameFor(expr)
+    return name ? this.b.newName(name + add, true, repeats) : this.newName(add, repeats)
+  }
+
   defineRule(name: Term, choices: Term$[][]) {
     for (let choice of choices) {
       let precedences = none as ReadonlyArray<Precedence>[]
@@ -103,10 +108,9 @@ class Context {
     let known = this.b.built.find(b => b.matchesRepeat(expr))
     if (known) return [known.term]
 
-    let inner = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind, true) : this.newName(expr.kind)
+    let inner = this.newNameFor(expr.expr, expr.kind)
     inner.repeated = true
-    let outer = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind + "-wrap", true, inner)
-      : this.newName(expr.kind + "-wrap", inner)
+    let outer = this.newNameFor(expr.expr, expr.kind + "-wrap", inner)
     this.b.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
     let top = this.normalizeTopExpr(expr.expr, inner)
@@ -118,7 +122,7 @@ class Context {
 
   normalizeExpr(expr: Expression): Term$[] {
     if (expr instanceof RepeatExpression && expr.kind == "?") {
-      let name = this.newName("?")
+      let name = this.newNameFor(expr.expr, "?")
       return this.defineRule(name, [[] as Term$[]].concat(this.normalizeTopExpr(expr.expr, name)))
     } else if (expr instanceof RepeatExpression) {
       return this.normalizeRepeat(expr)
@@ -167,6 +171,14 @@ class Context {
     }
     return [token]
   }
+}
+
+function findNameFor(expr: Expression): string | null {
+  if (expr instanceof NamedExpression) return `${expr.namespace ? expr.namespace.name + "." : ""}${expr.id.name}`
+  if (expr instanceof RepeatExpression || expr instanceof MarkedExpression) return findNameFor(expr.expr)
+  if (expr instanceof ChoiceExpression || expr instanceof SequenceExpression) return findNameFor(expr.exprs[0])
+  if (expr instanceof LiteralExpression) return JSON.stringify(expr.value)
+  return null
 }
 
 function isTag(name: string) {
@@ -656,7 +668,7 @@ function mergeRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
       let match = true
       for (let k = 0; k < size && match; k++) {
         let a = rules[groupStart + k], b = rules[otherStart + k]
-        if (a.cmpNoName(b) > 0) match = false
+        if (a.cmpNoName(b) != 0) match = false
       }
       if (match) found = merged[name.name] = otherName
     }
