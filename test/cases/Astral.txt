@@ -12,6 +12,6 @@ tokens {
 
 ---
 
-foo föö 象𫝄鼻 -💩 -🦆 -& -𫝄
+foo föö 象𫝄鼻 -💩 -🦆 -& -🍰
 
-==> Identifier,Identifier,Identifier,Thing,Thing,⚠,⚠
+==> Identifier,Identifier,Identifier,Thing,Thing,⚠,⚠,Identifier
