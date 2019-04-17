@@ -8,8 +8,6 @@ import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {Parser, ParseState, REDUCE_NAME_SIZE, noToken} from "../parse/parser"
 
-// FIXME add inlining other other grammar simplifications?
-
 const none: ReadonlyArray<any> = []
 
 class PrecTerm {
@@ -100,20 +98,18 @@ class Context {
   //
   // Returns the terms that make up the outer rule.
   normalizeRepeat(expr: RepeatExpression) {
-    let inner
-    let known = this.b.built.find(b => b.matchesRepeat(expr.expr))
-    if (known) {
-      inner = known.term
-    } else {
-      inner = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind, true) : this.newName(expr.kind)
-      inner.repeated = true
-      this.b.built.push(new BuiltRule("-repeat", [expr.expr], inner))
-      let top = this.normalizeTopExpr(expr.expr, inner)
-      top.push([inner, PrecTerm.from(inner, new Precedence(false, Precedence.REPEAT, "left", null))])
-      this.defineRule(inner, top)
-    }
+    let known = this.b.built.find(b => b.matchesRepeat(expr))
+    if (known) return [known.term]
+
+    let inner = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind, true) : this.newName(expr.kind)
+    inner.repeated = true
     let outer = expr.expr instanceof NamedExpression ? this.b.newName(expr.expr.id.name + expr.kind + "-wrap", true, inner)
-      : this.newName("wrap-" + expr.kind, inner)
+      : this.newName(expr.kind + "-wrap", inner)
+    this.b.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
+
+    let top = this.normalizeTopExpr(expr.expr, inner)
+    top.push([inner, PrecTerm.from(inner, new Precedence(false, Precedence.REPEAT, "left", null))])
+    this.defineRule(inner, top)
     this.defineRule(outer, expr.kind == "+" ? [[inner]] : [[], [inner]])
     return [outer]
   }
@@ -185,8 +181,8 @@ class BuiltRule {
     return this.id == expr.id.name && exprsEq(expr.args, this.args)
   }
 
-  matchesRepeat(expr: Expression) {
-    return this.id == "-repeat" && exprEq(expr, this.args[0])
+  matchesRepeat(expr: RepeatExpression) {
+    return this.id == expr.kind && exprEq(expr.expr, this.args[0])
   }
 }
 
@@ -294,9 +290,9 @@ class Builder {
       }
       let {skip, tokenizers} = tokenTable[i]
       return new ParseState(i, actions, goto, recover, alwaysReduce, defaultReduce,
-                            skip ? eval("(" + skip + ")") : noToken, tokenizers.map(t => eval("(" + t + ")")))
+                            skip ? eval("(" + skip + ")") : noToken, tokenizers.map(t => t ? eval("(" + t + ")") : noToken))
     })
-    return new Parser(states, terms.tags, terms.repeatInfo, specialized, specializations)
+    return new Parser(states, terms.tags, terms.repeatInfo, specialized, specializations, this.terms.names)
   }
 
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
@@ -315,19 +311,21 @@ class Builder {
   }
 
   tokensForState(state: LRState, skipped: (null | string)[], tokenizers: string[]) {
-    let found: string[] = [], skip = null
+    let found: (string | null)[] = [], skip = null
     for (let action of state.terminals) {
-      if (action.term.eof) return {skip: skipped[0], tokenizers: []}
       let group = this.tokens[action.term.name]
       let index = this.tokenGroups.indexOf(group)
-      let tokenizer = tokenizers[index]
-      if (!found.includes(tokenizer)) found.push(tokenizer)
-      if (skip != skipped[index]) {
+      let curSkip = skipped[index < 0 ? 0 : index]
+      if (skip != curSkip) {
         if (skip != null)
           this.input.raise(`Inconsistent skip rules for state ${state.set.filter(p => p.pos > 0).join() || "start"}`)
-        skip = skipped[index]
+        skip = curSkip
       }
+      if (index < 0) continue
+      let tokenizer = tokenizers[index]
+      if (!found.includes(tokenizer)) found.push(tokenizer)
     }
+    if (found.length == 0) found.push(null)
     return {skip, tokenizers: found}
   }
 
@@ -503,7 +501,7 @@ class TokenGroup {
         }
       }
     } else if (expr instanceof AnyExpression) {
-      return [from.edge(0, 2e8)] // FIXME optimize out comparison in automaton
+      return [from.edge(0, 2e8)]
     } else {
       return this.raise(`Unrecognized expression type in token`, (expr as any).start)
     }

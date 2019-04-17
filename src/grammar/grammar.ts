@@ -14,7 +14,7 @@ export class Term {
   get program() { return (this.flags & PROGRAM) > 0 }
   get interesting() { return this.flags > 0 || this.tag != null }
   set repeated(value: boolean) { this.flags = value ? this.flags | REPEATED : this.flags & ~REPEATED }
-  cmp(other: Term) { return this == other ? 0 : (this.name < other.name ? -1 : 1) || this.flags - other.flags }
+  cmp(other: Term) { return this.id - other.id }
 }
 
 export class TermSet {
@@ -25,6 +25,7 @@ export class TermSet {
   eof: Term
   error: Term
   anonID = FIRST_ANON_TERM
+  names: {[id: number]: string} = Object.create(null)
 
   constructor() {
     this.eof = this.term("␄", null, TERMINAL)
@@ -44,6 +45,7 @@ export class TermSet {
       id = this.anonID++
     }
     let term = new Term(id, name, flags, tag)
+    this.names[id] = name
     ;(term.terminal ? this.terminals : this.nonTerminals).push(term)
     return term
   }
