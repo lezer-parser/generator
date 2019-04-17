@@ -151,10 +151,11 @@ export class State {
 }
 
 function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[name: string]: Term[]}) {
-  let result = set.slice()
+  let result = set.slice(), added: Term[] = []
   for (let pos of result) {
     let next = pos.next
-    if (!next || next.terminal) continue
+    if (!next || next.terminal || added.includes(next)) continue
+    added.push(next)
     let ahead = pos.termsAhead(first)
     for (let rule of rules) if (rule.name == next) {
       for (let a of ahead) {

@@ -160,11 +160,6 @@ function parseExprInner(input: Input): Expression {
       return m == "-" ? SET_MARKER : m == '"' ? '\\"' : m
     }) + '"') as string
     let ranges: [number, number][] = []
-    function addRange(from: number, to: number) {
-      if (!ranges.every(([a, b]) => b <= from || a >= to))
-        input.raise("Overlapping character range", input.start)
-      ranges.push([from, to])
-    }
     for (let pos = 0; pos < unescaped.length;) {
       let code = unescaped.codePointAt(pos)!
       pos += code > 0xffff ? 2 : 1
@@ -172,9 +167,9 @@ function parseExprInner(input: Input): Expression {
         let end = unescaped.codePointAt(pos + 1)!
         pos += end > 0xffff ? 3 : 2
         if (end < code) input.raise("Invalid character range", input.start)
-        addRange(code, end + 1)
+        addRange(input, ranges, code, end + 1)
       } else {
-        addRange(code, code + 1)
+        addRange(input, ranges, code, code + 1)
       }
     }
     input.next()
@@ -192,6 +187,12 @@ function parseExprInner(input: Input): Expression {
     }
     return new NamedExpression(start, namespace, id, args)
   }
+}
+
+function addRange(input: Input, ranges: [number, number][], from: number, to: number) {
+  if (!ranges.every(([a, b]) => b <= from || a >= to))
+    input.raise("Overlapping character range", input.start)
+  ranges.push([from, to])
 }
 
 function parseExprSuffix(input: Input): Expression {
