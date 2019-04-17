@@ -133,7 +133,7 @@ export class State {
           return true
         } else { // Not resolved
           if (!pos) return false
-          throw new Error((action instanceof Shift ? "shift" : "reduce") + "/reduce conflict at " + pos + " for " + action.term)
+          throw new Error(`${action instanceof Shift ? "shift" : "reduce"}/reduce conflict at ${pos} for ${action.term}`)
         }
       }
     }

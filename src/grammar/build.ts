@@ -143,7 +143,7 @@ class Context {
 
   buildRule(rule: RuleDeclaration, args: ReadonlyArray<Expression>): Term[] {
     let cx = new Context(this.b, rule)
-    let expr = args.length ? this.b.substituteArgs(rule.expr, args, rule.params) : rule.expr
+    let expr = this.b.substituteArgs(rule.expr, args, rule.params)
     let name = this.b.newName(rule.id.name, isTag(rule.id.name) || true)
     this.b.built.push(new BuiltRule(rule.id.name, args, name))
     return cx.defineRule(name, cx.normalizeTopExpr(expr, name))
@@ -305,6 +305,11 @@ class Builder {
     return new Parser(states, terms.tags, terms.repeatInfo, specialized, specializations, this.terms.names)
   }
 
+  getParserString() {
+    /*let {terms, table, tokenTable, specialized, specializations} = */this.getParserData()
+    return "hi"
+  }
+
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
     let group = new TokenGroup(this, decl.rules, parent)
     this.tokenGroups.push(group)
@@ -340,6 +345,7 @@ class Builder {
   }
 
   substituteArgs(expr: Expression, args: ReadonlyArray<Expression>, params: ReadonlyArray<Identifier>) {
+    if (args.length == 0) return expr
     return expr.walk(expr => {
       let found
       if (expr instanceof NamedExpression && !expr.namespace &&
@@ -670,4 +676,8 @@ function simplifyRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
 
 export function buildParser(text: string, fileName: string | null = null): Parser {
   return new Builder(text, fileName).getParser()
+}
+
+export function buildParserFile(text: string, fileName: string | null = null): string {
+  return new Builder(text, fileName).getParserString()
 }

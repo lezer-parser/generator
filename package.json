@@ -6,7 +6,6 @@
   "author": "Marijn Haverbeke <marijnh@gmail.com>",
   "license": "MIT",
   "scripts": {
-    "run": "ts-node src/index.ts",
     "test": "mocha -r ts-node/register/transpile-only test/test-*.ts"
   },
   "devDependencies": {

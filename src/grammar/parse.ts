@@ -161,7 +161,7 @@ function parseExprInner(input: Input): Expression {
     }) + '"') as string
     let ranges: [number, number][] = []
     function addRange(from: number, to: number) {
-      if (!ranges.every(([a, b]) => b < from || a > to))
+      if (!ranges.every(([a, b]) => b <= from || a >= to))
         input.raise("Overlapping character range", input.start)
       ranges.push([from, to])
     }

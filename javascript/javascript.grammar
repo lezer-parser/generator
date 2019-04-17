@@ -1,0 +1,209 @@
+prec {
+ statement,
+ member,
+ call,
+ suffix,
+ typeof,
+ exp left,
+ times left,
+ plus left,
+ and left,
+ or left,
+ ternary,
+ assign,
+ comma
+}
+
+program { statement+ }
+
+statement {
+  ExportStatement |
+  ImportStatement |
+  IfStatement |
+  ForStatement |
+  WhileStatement |
+  DoWhileStatement |
+  declaration |
+  expression ";" |
+  ";"
+}
+
+ExportStatement {
+  kw<"export"> "*" kw<"from"> String ";" |
+  kw<"export"> kw<"default"> expression ";" |
+  kw<"export"> declaration ";" |
+  kw<"export"> ExportGroup (kw<"from"> String)? ";"
+}
+
+ExportGroup {
+  "{" (Identifier (kw<"as"> Identifier)?)* "}"
+}
+
+ImportStatement {
+  kw<"import"> ("*" kw<"as"> Identifier | Identifier | ImportGroup) kw<"from"> String ";"
+  kw<"import"> String ";"
+}
+
+ImportGroup {
+  "{" (Identifier (kw<"as"> Identifier)?)* "}"
+}
+
+declaration {
+  FunctionDeclaration | ClassDeclaration | VariableDeclaration
+}
+
+FunctionDeclaration {
+  !statement kw<"function"> Identifier "*"? ParamList Block
+}
+
+ClassDeclaration {
+  !statement kw<"class"> Identifier (kw<"extends"> expression)? ClassBody
+}
+
+ClassBody {
+  "{" ClassItem* "}"
+}
+
+ClassItem {
+  Identifier // FIXME
+}
+
+VariableDeclaration {
+  (kw<"let"> | kw<"var"> | kw<"const">) CommaSep<pattern (op<"="> expressionNoComma)?> ";"
+}
+
+CommaSep<content> {
+  content ("," content)*
+}
+
+pattern {
+  Identifier | ArrayPattern | ObjectPattern
+}
+
+ObjectPattern {
+  "{" CommaSep<"..."? Property (":" pattern)? (op<"="> expressionNoComma)?>? "}"
+}
+
+ArrayPattern {
+  "[" CommaSep<"..."? pattern (op<"="> expressionNoComma)?>? "]"
+}
+
+ParamList {
+  "(" CommaSep<pattern (op<"="> expressionNoComma)?>? ")"
+}
+
+IfStatement {
+  kw<"if"> parenExpression statement (kw<"else"> statement)?
+}
+
+parenExpression {
+  "(" expression ")"
+}
+
+ForStatement { // FIXME
+  kw<"for"> "(" statement? ";" expression? ";" expression? ")" statement
+}
+
+WhileStatement {
+  kw<"while"> parenExpression statement
+}
+
+DoWhileStatement {
+  kw<"do"> statement kw<"while"> parenExpression ";"
+}
+
+Block {
+  "{" statement* "}"
+}
+
+expression {
+  expressionNoComma ("," expressionNoComma)*
+}
+
+calleeExpression {
+  Number |
+  String |
+  Identifier |
+  RegExp |
+  NewExpression |
+  PrefixExpression |
+  "(" expression ")" |
+  kw<"class"> Identifier? (kw<"extends"> expression)? ClassBody |
+  kw<"function"> Identifier? ParamList Block
+}
+
+expressionNoComma {
+  calleeExpression |
+  BinaryExpression |
+  CallExpression |
+  SuffixExpression |
+  MemberExpression
+}
+
+NewExpression {
+  kw<"new"> calleeExpression ArgList
+}
+
+PrefixExpression {
+  (kw<"void"> | kw<"typeof"> | op<"!"> | op<"++"> | op<"--"> | op<"+"> | op<"-">) calleeExpression
+}
+
+BinaryExpression {
+  expressionNoComma !plus op<"+" | "-"> expressionNoComma |
+  expressionNoComma !times op<"*" | "/"> expressionNoComma |
+  expressionNoComma !and op<"&&"> expressionNoComma |
+  expressionNoComma !or op<"||"> expressionNoComma
+  // FIXME
+}
+
+CallExpression {
+  calleeExpression !call ArgList
+}
+
+MemberExpression {
+  expressionNoComma !member ("." Property | "[" expression "]")
+}
+
+SuffixExpression {
+  expressionNoComma !suffix op<"++" | "--">
+}
+
+ArgList {
+  "(" CommaSep<expressionNoComma>? ")"
+}
+
+kw<word> { tag.Keyword<specialize<identifier, word>> }
+
+op<word> { tag.Operator<word> }
+
+Property { identifier }
+
+Identifier { identifier }
+
+tokens {
+  skip { std.whitespace+ | LineComment | BlockComment }
+
+  LineComment { "//" [^\n]* }
+
+  BlockComment { "/*" ([^*] | "*" [^/])* "*/" }
+
+  identifierChar { std.asciiLetter | "_" | "$" }
+
+  identifier { identifierChar (identifierChar | std.digit)* }
+
+  Number {
+    (std.digit+ ("." std.digit*)? | "." std.digit+) (("e" | "E") ("+" | "-")? std.digit+)? |
+    "0x" (std.digit | [a-fA-F])+ |
+    "0b" [01]+ |
+    "0o" [0-7]+
+  }
+
+  String {
+    '"' ([^\\\n] | "\\" [^\n])* '"'? |
+    "'" ([^\\\n] | "\\" [^\n])* "'"?
+  }
+
+  group {
+    RegExp { "/" ([^/\n] | "\\" [^\n])+ "/"? }
+  }
+}

@@ -160,7 +160,7 @@ export class MarkedExpression extends Expression {
 function walkExprs(exprs: A<Expression>, f: (expr: Expression) => Expression): A<Expression> {
   let result: Expression[] | null = null
   for (let i = 0; i < exprs.length; i++) {
-    let expr = f(exprs[i])
+    let expr = exprs[i].walk(f)
     if (expr != exprs[i] && !result) result = exprs.slice(0, i)
     if (result) result.push(expr)
   }
