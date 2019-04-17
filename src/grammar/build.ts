@@ -3,7 +3,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, MarkedExpression,
         exprsEq, exprEq} from "./node"
 import {Term, TermSet, Precedence, Rule} from "./grammar"
-import {Edge, State} from "./token"
+import {Edge, State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {Parser, ParseState, REDUCE_NAME_SIZE, noToken, Tokenizer} from "../parse/parser"
@@ -263,6 +263,8 @@ class Builder {
       if (startState.accepting)
         this.input.raise(`Grammar contains zero-length tokens (in '${startState.accepting.name}')`,
                          group.rules.find(r => r.id.name == startState.accepting!.name)!.start)
+      if (group.skipState && /\bskip\b/.test(verbose)) console.log(group.skipState.compile().toString())
+      if (/\btokens\b/.test(verbose)) console.log(startState.toString())
     }
     let specialized = [], specializations = []
     for (let name in this.specialized) {
@@ -277,7 +279,7 @@ class Builder {
     let {terms, table, tokenTable, specialized, specializations} = this.getParserData()
     let evaluated: {[source: string]: Tokenizer} = Object.create(null)
     function getFunc(source: string | null): Tokenizer {
-      return source == null ? noToken : evaluated[source] || (evaluated[source] = eval("(" + source + ")"))
+      return source == null ? noToken : evaluated[source] || (evaluated[source] = (1,eval)("(" + source + ")"))
     }
 
     let states = table.map((s, i) => {
@@ -495,21 +497,24 @@ class TokenGroup {
         return [from.nullEdge()].concat(this.build(expr.expr, from, args))
       }
     } else if (expr instanceof SetExpression) {
-      return (expr.inverted ? invertRanges(expr.ranges) : expr.ranges).map(([a, b]) => from.edge(a, b))
+      let edges: Edge[] = []
+      for (let [a, b] of expr.inverted ? invertRanges(expr.ranges) : expr.ranges)
+        edges = edges.concat(rangeEdges(from, a, b))
+      return edges
     } else if (expr instanceof LiteralExpression) {
+      if (expr.value == "") return [from.nullEdge()]
       for (let i = 0;;) {
-        let code = expr.value.codePointAt(i)!
-        i += code <= 0xffff ? 1 : 2
+        let ch = expr.value.charCodeAt(i++)
         if (i < expr.value.length) {
           let next = new State
-          from.edge(code, code + 1, next)
+          from.edge(ch, ch + 1, next)
           from = next
         } else {
-          return [from.edge(code, code + 1)]
+          return [from.edge(ch, ch + 1)]
         }
       }
     } else if (expr instanceof AnyExpression) {
-      return [from.edge(0, 2e8)]
+      return [from.edge(0, MAX_CHAR + 1)]
     } else {
       return this.raise(`Unrecognized expression type in token`, (expr as any).start)
     }
@@ -534,8 +539,43 @@ function invertRanges(ranges: [number, number][]) {
     if (a > pos) result.push([pos, a])
     pos = b
   }
-  if (pos < 2e8) result.push([pos, 2e8])
+  if (pos <= MAX_CHAR) result.push([pos, MAX_CHAR + 1])
   return result
+}
+
+const ASTRAL = 0x10000, GAP_START = 0xd800, GAP_END = 0xe000
+
+// Create intermediate states for astral characters in a range, if
+// necessary, since the tokenizer acts on UTF16 characters
+function rangeEdges(from: State, low: number, hi: number): Edge[] {
+  let edges: Edge[] = []
+  if (low < ASTRAL) {
+    if (low < GAP_START) edges.push(from.edge(low, Math.min(hi, GAP_START)))
+    if (hi > GAP_END) edges.push(from.edge(Math.max(low, GAP_END), Math.min(hi, MAX_CHAR + 1)))
+    low = ASTRAL
+  }
+  if (hi < ASTRAL) return edges
+  let lowStr = String.fromCodePoint(low), hiStr = String.fromCodePoint(hi - 1)
+  let lowA = lowStr.charCodeAt(0), lowB = lowStr.charCodeAt(1)
+  let hiA = hiStr.charCodeAt(0), hiB = hiStr.charCodeAt(1)
+  if (lowA == hiA) { // Share the first char code
+    let mid = new State
+    from.edge(lowA, lowA + 1, mid)
+    edges.push(mid.edge(lowB, hiB + 1))
+  } else {
+    let top = new State
+    from.edge(lowA, lowA + 1, top)
+    edges.push(top.edge(lowB, MAX_CHAR + 1))
+    if (lowA + 1 < hiA - 1) {
+      let mid = new State
+      from.edge(lowA + 1, hiA, mid)
+      edges.push(mid.edge(0, MAX_CHAR + 1))
+    }
+    let bot = new State
+    from.edge(hiA, hiA + 1, bot)
+    edges.push(bot.edge(0, hiB + 1))
+  }
+  return edges
 }
 
 const STD_RANGES: {[name: string]: [number, number][]} = {

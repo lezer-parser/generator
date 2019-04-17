@@ -1,0 +1,17 @@
+program { (Identifier | Thing)+ }
+
+tokens {
+  skip { std.whitespace+ }
+
+  identifierChar { std.asciiLetter | [\u{a1}-\u{10ffff}] }
+
+  Identifier { identifierChar+ }
+
+  Thing { "-" ("💩" | "🦆") }
+}
+
+---
+
+foo föö 象𫝄鼻 -💩 -🦆 -& -𫝄
+
+==> Identifier,Identifier,Identifier,Thing,Thing,⚠,⚠

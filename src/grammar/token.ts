@@ -1,5 +1,7 @@
 import {Term} from "./grammar"
 
+export const MAX_CHAR = 0xffff
+
 export class Edge {
   public target!: State
   constructor(readonly from: number, readonly to: number = from + 1, target?: State) {
@@ -14,7 +16,7 @@ export class Edge {
 }
 
 function charFor(n: number) {
-  return n >= 2e8 - 1 ? "∞" : String.fromCodePoint(n)
+  return n > MAX_CHAR ? "∞" : n >= 0xd800 && n < 0xdfff ? "\\u{" + n.toString(16) + "}" : String.fromCharCode(n)
 }
 
 let stateID = 1
@@ -33,7 +35,6 @@ export class State {
     }
   }
 
-  // FIXME flatten astral plane code points to two edges
   edge(from: number, to: number = from + 1, target?: State) {
     let e = new Edge(from, to, target)
     this.edges.push(e)
@@ -114,20 +115,20 @@ export class State {
       let id = nextID++
       let here = enter[state.id] = `s=${id}`
       let text = ""
-      if (state.edges.length == 1 && state.edges[0].from == 0 && state.edges[0].to == 2e8) {
+      if (state.edges.length == 1 && state.edges[0].from == 0 && state.edges[0].to >= MAX_CHAR) {
         text = explore(state.edges[0].target)
       } else {
         // FIXME bisecting when lots of edges
         let tests = [], actions = []
         for (let edge of state.edges) {
           if (edge.to == edge.from + 1) tests.push(`n==${edge.from}`)
-          else if (edge.to == 2e8) tests.push(`n>${edge.from - 1}`)
+          else if (edge.to >= MAX_CHAR) tests.push(`n>${edge.from - 1}`)
           else tests.push(`n>${edge.from - 1}&&n<${edge.to}`)
           actions.push(explore(edge.target))
         }
         let fallThrough = `o=${state.accepting ? state.accepting.id : -1}`
         if (actions.length == 2 && actions[0] == actions[1] &&
-            state.edges[0].from == 0 && state.edges[1].to == 2e8) {
+            state.edges[0].from == 0 && state.edges[1].to >= MAX_CHAR) {
           let from = state.edges[0].to, to = state.edges[1].from
           let test = to == from + 1 ? `n!=${from}` : `n<${from}||n>${to - 1}`
           text = `${test}?${actions[0]}:${fallThrough}`

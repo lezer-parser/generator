@@ -50,11 +50,11 @@ export class Input {
     if (next == '"') {
       let end = this.match(start + 1, /^(\\.|[^"])*"/)
       if (end == -1) this.raise("Unterminated string literal", start)
-      return this.set("string", JSON.parse(this.string.slice(start, end)), start, end)
+      return this.set("string", readString(this.string.slice(start, end)), start, end)
     } else if (next == "'") {
       let end = this.match(start + 1, /^(\\.|[^'])*'/)
       if (end == -1) this.raise("Unterminated string literal", start)
-      return this.set("string", JSON.parse(this.string.slice(start, end)), start, end)
+      return this.set("string", readString(this.string.slice(start, end)), start, end)
     } else if (next == "[") {
       let end = this.match(start + 1, /^(?:\\.|[^\]])*\]/)
       if (end == -1) this.raise("Unterminated character set", start)
@@ -156,10 +156,15 @@ function parseExprInner(input: Input): Expression {
       invert = true
       content = content.slice(1)
     }
-    let unescaped = JSON.parse('"' + content.replace(/\\.|-|"/g, (m: string) => {
+    let unescaped = readString('"' + content.replace(/\\.|-|"/g, (m: string) => {
       return m == "-" ? SET_MARKER : m == '"' ? '\\"' : m
     }) + '"') as string
     let ranges: [number, number][] = []
+    function addRange(from: number, to: number) {
+      if (!ranges.every(([a, b]) => b < from || a > to))
+        input.raise("Overlapping character range", input.start)
+      ranges.push([from, to])
+    }
     for (let pos = 0; pos < unescaped.length;) {
       let code = unescaped.codePointAt(pos)!
       pos += code > 0xffff ? 2 : 1
@@ -167,9 +172,9 @@ function parseExprInner(input: Input): Expression {
         let end = unescaped.codePointAt(pos + 1)!
         pos += end > 0xffff ? 3 : 2
         if (end < code) input.raise("Invalid character range", input.start)
-        ranges.push([code, end + 1])
+        addRange(code, end + 1)
       } else {
-        ranges.push([code, code + 1])
+        addRange(code, code + 1)
       }
     }
     input.next()
@@ -264,4 +269,10 @@ function parseTokenGroup(input: Input) {
     else tokenRules.push(parseRule(input))
   }
   return new TokenGroupDeclaration(start, tokenRules, subGroups)
+}
+
+function readString(string: string) {
+  // Can't use JSON.parse because it has too limited support for
+  // escape sequences, can't be bothered to write a custom reader
+  return (1,eval)(string)
 }
