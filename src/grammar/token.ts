@@ -114,14 +114,23 @@ export class State {
       if (state.edges.length == 0 && state.accepting) return `i.adv(n,o=${state.accepting.id})`
       let id = nextID++
       let here = enter[state.id] = `s=${id}`
-      states[id] = `(${state.toLocalSource(explore, here)})`
+      states[id] = `${state.toLocalSource(explore, here)}`
       return here
     }
     explore(this)
-    let stateString = ""
-    for (let i = 0; i < states.length - 1; i++) stateString += `s==${i}?${states[i]}:`
-    stateString += states[states.length - 1]
-    return head + stateString + tail
+    // FIXME profile whether this is worthwhile and whether another technique (switch, functions) is faster
+    function flattenStates(from: number, to: number): string {
+      if (to - from > MAX_SOURCE_BRANCH) {
+        let mid = (to + from) >> 1
+        return `s<${mid}?${flattenStates(from, mid)}:${flattenStates(mid, to)}`
+      } else {
+        let text = ""
+        for (let i = from; i < to - 1; i++) text += `s==${i}?${states[i]}:`
+        text += states[to - 1]
+        return text
+      }
+    }
+    return head + flattenStates(0, states.length) + tail
   }
 
   toLocalSource(explore: (state: State) => string, here: string) {
