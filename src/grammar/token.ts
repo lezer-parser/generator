@@ -23,10 +23,8 @@ let stateID = 1
 
 export class State {
   edges: Edge[] = []
-  // FIXME number per automaton?
-  id = stateID++
 
-  constructor(readonly accepting: Term | null = null) {}
+  constructor(readonly accepting: Term | null = null, readonly id = stateID++) {}
 
   connect(edges: Edge[]) {
     for (let e of edges) {
@@ -44,7 +42,7 @@ export class State {
   nullEdge(target?: State) { return this.edge(-1, -1, target) }
 
   compile() {
-    let labeled: {[id: string]: State} = Object.create(null)
+    let labeled: {[id: string]: State} = Object.create(null), localID = 0
     return explore(this.closure().sort((a, b) => a.id - b.id))
 
     function explore(states: State[]) {
@@ -53,7 +51,7 @@ export class State {
         if (a && a != s.accepting)
           throw new SyntaxError(`Overlapping tokens ${a.name} and ${s.accepting.name}`)
         return s.accepting
-      }, null))
+      }, null), localID++)
       let out: Edge[] = []
       for (let state of states) for (let edge of state.edges) {
         if (edge.from >= 0) out.push(edge)
