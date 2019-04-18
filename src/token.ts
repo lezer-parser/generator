@@ -105,16 +105,16 @@ export class State {
 
   toSource() {
     let enter = Object.create(null)
-    let head = `function(i){let o=-2,s=0,n;for(;;){n=i.next();`
-    let tail = `;if(o>-2)return o;i.adv(n)}}`
+    let head = `function (input) {\n  let result = -2, state = 0, next\n  for (;;) {\n   next = input.next()\n    `
+    let tail = `if (result > -2) return result\n    input.adv()\n  }\n}`
     let states: string[] = [], nextID = 0
     function explore(state: State): string {
       let known = enter[state.id]
       if (known != null) return known
-      if (state.edges.length == 0 && state.accepting) return `i.adv(n,o=${state.accepting.id})`
+      if (state.edges.length == 0 && state.accepting) return `input.adv(result = ${state.accepting.id})`
       let id = nextID++
-      let here = enter[state.id] = `s=${id}`
-      states[id] = `${state.toLocalSource(explore, here)}`
+      let here = enter[state.id] = `state = ${id}`
+      states[id] = state.toLocalSource(explore, here)
       return here
     }
     explore(this)
@@ -122,11 +122,11 @@ export class State {
     function flattenStates(from: number, to: number): string {
       if (to - from > MAX_SOURCE_BRANCH) {
         let mid = (to + from) >> 1
-        return `s<${mid}?${flattenStates(from, mid)}:${flattenStates(mid, to)}`
+        return `state < ${mid}\n    ? ${flattenStates(from, mid)}: ${flattenStates(mid, to)}`
       } else {
         let text = ""
-        for (let i = from; i < to - 1; i++) text += `s==${i}?${states[i]}:`
-        text += states[to - 1]
+        for (let i = from; i < to - 1; i++) text += `state == ${i} ? ${states[i]}\n    : `
+        text += `${states[to - 1]}\n    `
         return text
       }
     }
@@ -140,26 +140,26 @@ export class State {
 
       if (end > start + MAX_SOURCE_BRANCH) {
         let mid = (end + start) >> 1, midChar = this.edges[mid].from
-        return `n<${midChar}?(${edgesToSource(start, mid, low, midChar)}):(${edgesToSource(mid, end, midChar, hi)})`
+        return `next < ${midChar} ? ${edgesToSource(start, mid, low, midChar)} : ${edgesToSource(mid, end, midChar, hi)}`
       }
 
       let tests = [], actions = []
       for (let  i = start; i < end; i++) {
         let edge = this.edges[i]
-        if (edge.to == edge.from + 1) tests.push(`n==${edge.from}`)
-        else if (edge.to >= hi) tests.push(`n>${edge.from - 1}`)
-        else if (edge.from == low) tests.push(`n<${edge.to}`)
-        else tests.push(`n>${edge.from - 1}&&n<${edge.to}`)
+        if (edge.to == edge.from + 1) tests.push(`next == ${edge.from}`)
+        else if (edge.to >= hi) tests.push(`next > ${edge.from - 1}`)
+        else if (edge.from == low) tests.push(`next < ${edge.to}`)
+        else tests.push(`next > ${edge.from - 1} && next < ${edge.to}`)
         actions.push(explore(edge.target))
       }
-      let fallThrough = `o=${this.accepting ? this.accepting.id : -1}`
+      let fallThrough = `result = ${this.accepting ? this.accepting.id : -1}`
       let text = ""
       for (let i = 0; i < tests.length; i++) {
         let test = tests[i], action = actions[i]
         while (i < actions.length - 1 && actions[i + 1] == action)
-          test += "||" + tests[++i]
+          test += " || " + tests[++i]
         if (action == here) action = "0"
-        text += `${test}?${action}:`
+        text += `${test} ? ${action} : `
       }
       text += fallThrough
       return text
