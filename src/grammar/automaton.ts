@@ -151,16 +151,19 @@ export class State {
 }
 
 function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[name: string]: Term[]}) {
-  let result = set.slice(), added: Term[] = []
+  let result = set.slice(), added: {[key: string]: boolean} = Object.create(null)
+  for (let x of result) if (x.pos == 0) added[x.rule.id + "." + x.ahead.id] = true
   for (let pos of result) {
     let next = pos.next
-    if (!next || next.terminal || added.includes(next)) continue
-    added.push(next)
+    if (!next || next.terminal) continue
     let ahead = pos.termsAhead(first)
     for (let rule of rules) if (rule.name == next) {
       for (let a of ahead) {
-        if (!result.some(p => p.rule == rule && p.pos == 0 && p.ahead == a))
+        let key = rule.id + "." + a.id
+        if (!added[key]) {
           result.push(new Pos(rule, 0, a, Precedence.join(pos.prec, rule.precAt(0))))
+          added[key] = true
+        }
       }
     }
   }

@@ -100,13 +100,17 @@ function cmpStr(a: string, b: string) {
 
 const none: ReadonlyArray<any> = []
 
+let ruleID = 0
+
 export class Rule {
+  id = ruleID++
+
   constructor(readonly name: Term,
               readonly parts: Term[],
               readonly precedence: ReadonlyArray<ReadonlyArray<Precedence>>) {}
 
   cmp(rule: Rule) {
-    return this.name.cmp(rule.name) || this.cmpNoName(rule)
+    return this.id - rule.id
   }
 
   cmpNoName(rule: Rule) {
