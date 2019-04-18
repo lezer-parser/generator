@@ -3,13 +3,13 @@ import nodeResolve from "rollup-plugin-node-resolve"
 import commonjs from "rollup-plugin-commonjs"
 
 export default {
-  input: "./src/index.ts",
+  input: "bin/lezer.ts",
   output: {
+    file: "dist/lezer.js",
     format: "cjs",
-    file: "./dist/index.js",
-    sourcemap: true,
+    paths: {"..": "./index.js"}
   },
-  external(id) { return !/^[\.\/]/.test(id) },
+  external: ["fs", ".."],
   plugins: [
     nodeResolve(),
     typescript({

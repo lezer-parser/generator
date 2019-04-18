@@ -22,7 +22,8 @@
   },
   "scripts": {
     "watch": "rollup -w -c rollup.config.js",
-    "prepare": "rollup -c rollup.config.js",
+    "prepare": "rollup -c rollup.config.js && rollup -c rollup.config.bin.js",
     "test": "mocha -r ts-node/register/transpile-only test/test-*.ts"
-  }
+  },
+  "bin": {"lezer": "./dist/lezer.js"}
 }

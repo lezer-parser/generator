@@ -1,4 +1,4 @@
-import {buildParserFile} from "./build"
+import {buildParserFile} from ".."
 
 let file = null, moduleStyle = "CommonJS", includeNames = false
 
@@ -18,6 +18,8 @@ for (let i = 2; i < process.argv.length; i++) {
     error("Unrecognized option " + arg)
   }
 }
+
+if (!file) error("No input file given")
 
 function error(msg: string) {
   console.error(msg)
