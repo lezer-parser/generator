@@ -1,4 +1,4 @@
-import {FIRST_REPEAT_TERM, FIRST_ANON_TERM, TERM_ERR, TERM_EOF} from "../parse/parser"
+import {FIRST_REPEAT_TERM, TERM_ERR, TERM_EOF} from "../parse/parser"
 
 const TERMINAL = 1, REPEATED = 2, REPEATS = 4, PROGRAM = 8
 
@@ -24,7 +24,7 @@ export class TermSet {
   repeatInfo: number[] = []
   eof: Term
   error: Term
-  anonID = FIRST_ANON_TERM
+  anonID = -1
   names: {[id: number]: string} = Object.create(null)
 
   constructor() {
@@ -35,14 +35,14 @@ export class TermSet {
   term(name: string, tag: string | null, flags: number = 0, repeats?: Term) {
     let id
     if (tag) {
-      id = this.tags.length
+      id = this.tags.length << 1
       this.tags.push(tag)
     } else if (repeats) {
       flags |= REPEATS
-      id = this.repeatInfo.length + FIRST_REPEAT_TERM
+      id = (this.repeatInfo.length << 1) + FIRST_REPEAT_TERM
       this.repeatInfo.push(repeats.id)
     } else {
-      id = this.anonID++
+      id = this.anonID += 2
     }
     let term = new Term(id, name, flags, tag)
     this.names[id] = name

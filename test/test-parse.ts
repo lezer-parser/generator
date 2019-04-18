@@ -45,7 +45,7 @@ describe("parsing", () => {
 
   function qq(parser: Parser, ast: SyntaxTree) {
     return function(tag: string, offset = 1): {start: number, end: number} {
-      for (let cur = ast.cursor(parser.tags); cur.next();) if (cur.tag == tag) {
+      for (let cur = ast.cursor(parser); cur.next();) if (cur.tag == tag) {
         if (--offset == 0) return cur
       }
       throw new Error("Couldn't find " + tag)
@@ -57,11 +57,11 @@ describe("parsing", () => {
     let ast = p1().parse(new StringStream(doc), {bufferLength: 2})
     let expected = "Conditional(Variable,Block(CallExpression(Variable,Number),Variable))," +
       "Loop(Variable,Block(Conditional(Number,CallExpression(Variable,Variable,Number,Number,Number))))"
-    ist(ast.toString(p1().tags), expected)
+    ist(ast.toString(p1()), expected)
     ist(ast.length, 70)
     let pos = doc.indexOf("false"), doc2 = doc.slice(0, pos) + "x" + doc.slice(pos + 5)
     let ast2 = p1().parse(new StringStream(doc2), {bufferLength: 2, cache: change(ast, [pos, pos + 5, pos, pos + 1])})
-    ist(ast2.toString(p1().tags), expected)
+    ist(ast2.toString(p1()), expected)
     ist(shared(ast, ast2), 75, ">")
     ist(ast2.length, 66)
   })
@@ -127,7 +127,7 @@ describe("sequences", () => {
   it("assigns the right positions to sequences", () => {
     let doc = "x".repeat(100) + "y;;;;;;;;;" + "x".repeat(90)
     let ast = p1().parse(new StringStream(doc), {bufferLength: 10})
-    for (let cursor = ast.cursor(p1().tags), i = 0; cursor.next(); i++) {
+    for (let cursor = ast.cursor(p1()), i = 0; cursor.next(); i++) {
       if (i == 100) {
         ist(cursor.tag, "Y")
         ist(cursor.start, 100)

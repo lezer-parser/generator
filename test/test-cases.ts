@@ -41,7 +41,8 @@ describe("Cases", () => {
       if (!ast) throw new Error(`Missing syntax tree in ${name}:${i + 1}`)
       let expected = compressAST(ast, file)
       let strict = expected.indexOf("⚠") < 0, parser = force()
-      let parsed = parser.parse(new StringStream(text.trim()), {strict}).toString(parser.tags)
+      let result = parser.parse(new StringStream(text.trim()), {strict})
+      let parsed = result.toString(parser)
       if (parsed != expected) {
         if (parsed.length > 76) {
           let mis = 0
