@@ -1,23 +1,21 @@
 {
-  "name": "parse",
+  "name": "lezer-generator",
   "version": "0.0.1",
-  "description": "Experiments around in-editor code parsing",
-  "main": "src/index.ts",
+  "description": "Parser generator for the incremental lezer parser",
+  "main": "dist/index.ts",
   "author": "Marijn Haverbeke <marijnh@gmail.com>",
   "license": "MIT",
-  "scripts": {
-    "test": "mocha -r ts-node/register/transpile-only test/test-*.ts"
-  },
   "devDependencies": {
     "rollup": "^1.6.0",
     "rollup-plugin-typescript2": "^0.20.1",
     "ts-node": "^8.0.3",
-    "typescript": "^3.3.3333"
+    "typescript": "^3.3.3333",
+    "@types/mocha": "^5.2.6",
+    "ist": "^1.1.1",
+    "mocha": "^6.1.1",
+    "lezer-generator": "^0.0.1"
   },
   "dependencies": {
-    "@types/mocha": "^5.2.6",
-    "dev": "^0.1.3",
-    "ist": "^1.1.1",
-    "mocha": "^6.1.1"
+    "lezer": "^0.0.1"
   }
 }

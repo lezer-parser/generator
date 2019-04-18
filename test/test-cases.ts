@@ -1,5 +1,5 @@
-import {buildParser} from "../src/grammar/build"
-import {Parser, StringStream} from "../src/parse"
+import {buildParser} from "../src/build"
+import {Parser, StringStream} from "lezer"
 const ist = require("ist")
 
 let fs = require("fs"), path = require("path")

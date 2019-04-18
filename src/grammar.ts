@@ -1,4 +1,4 @@
-import {FIRST_REPEAT_TERM, TERM_ERR, TERM_EOF} from "../parse/parser"
+import {FIRST_REPEAT_TERM, TERM_ERR, TERM_EOF} from "lezer"
 
 const TERMINAL = 1, REPEATED = 2, REPEATS = 4, PROGRAM = 8
 

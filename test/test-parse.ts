@@ -1,5 +1,5 @@
-import {buildParser} from "../src/grammar/build"
-import {Parser, StringStream, SyntaxTree, Tree} from "../src/parse"
+import {buildParser} from "../src/build"
+import {Parser, StringStream, SyntaxTree, Tree} from "lezer"
 const ist = require("ist")
 
 function p(text: string): () => Parser {
