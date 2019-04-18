@@ -2,20 +2,27 @@
   "name": "lezer-generator",
   "version": "0.0.1",
   "description": "Parser generator for the incremental lezer parser",
-  "main": "dist/index.ts",
+  "main": "dist/index.js",
   "author": "Marijn Haverbeke <marijnh@gmail.com>",
   "license": "MIT",
   "devDependencies": {
-    "rollup": "^1.6.0",
-    "rollup-plugin-typescript2": "^0.20.1",
-    "ts-node": "^8.0.3",
-    "typescript": "^3.3.3333",
     "@types/mocha": "^5.2.6",
     "ist": "^1.1.1",
+    "lezer-generator": "^0.0.1",
     "mocha": "^6.1.1",
-    "lezer-generator": "^0.0.1"
+    "rollup": "^1.6.0",
+    "rollup-plugin-commonjs": "^9.3.4",
+    "rollup-plugin-node-resolve": "^4.2.3",
+    "rollup-plugin-typescript2": "^0.20.1",
+    "ts-node": "^8.0.3",
+    "typescript": "^3.3.3333"
   },
   "dependencies": {
     "lezer": "^0.0.1"
+  },
+  "scripts": {
+    "watch": "rollup -w -c rollup.config.js",
+    "prepare": "rollup -c rollup.config.js",
+    "test": "mocha -r ts-node/register/transpile-only test/test-*.ts"
   }
 }

@@ -168,16 +168,8 @@ export class State {
   }
 
   toFunction() {
-    return eval("(" + this.toSource() + ")")
+    return (1,eval)("(" + this.toSource() + ")")
   }
-}
-
-export interface InputStream {
-  pos: number
-  next(): number
-  adv(ch: number): void
-  goto(n: number): void
-  read(from: number, to: number): string
 }
 
 function ids(states: State[]) {

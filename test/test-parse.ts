@@ -1,4 +1,4 @@
-import {buildParser} from "../src/build"
+import {buildParser} from ".."
 import {Parser, StringStream, SyntaxTree, Tree} from "lezer"
 const ist = require("ist")
 

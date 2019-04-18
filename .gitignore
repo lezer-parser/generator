@@ -1,6 +1,4 @@
 /node_modules/
-/src/**/*.js
-/src/**/*.js.map
-/test/*.js
-/test/*.js.map
 .tern-*
+/dist
+/.rpt2_cache
