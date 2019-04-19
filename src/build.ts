@@ -516,7 +516,7 @@ class TokenGroup {
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    let term = this.b.makeTerminal(name, rule.tag ? rule.tag.name : isTag(name), this)
+    let term = this.b.makeTerminal(name + (expr.args.length ? "<" + expr.args.join(",") + ">" : ""), rule.tag ? rule.tag.name : isTag(name), this)
     let end = new State(term)
     end.connect(this.buildRule(rule, expr, this.startState))
     this.built.push(new BuiltRule(name, expr.args, term))
