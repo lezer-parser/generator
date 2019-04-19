@@ -3,6 +3,8 @@ import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclarat
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, AnyExpression, MarkedExpression} from "./node"
 
+// Note that this is the parser for grammar files, not the generated parser
+
 const wordChar = /[\w_$]/ // FIXME international
 
 export class Input {
