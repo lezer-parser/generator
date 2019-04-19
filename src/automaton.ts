@@ -1,10 +1,17 @@
 import {Term, TermSet, Precedence, Rule} from "./grammar"
 
 export class Pos {
+  hash: number
+
   constructor(readonly rule: Rule,
               readonly pos: number,
-              readonly ahead: Term,
-              readonly prec: ReadonlyArray<Precedence>) {}
+              readonly ahead: ReadonlyArray<Term>,
+              readonly prec: ReadonlyArray<Precedence>) {
+    let h = hash(rule.id, pos)
+    for (let a of this.ahead) h = hash(h, a.id)
+    for (let p of prec) h = hash(h, p.hash)
+    this.hash = h
+  }
 
   get next() {
     return this.pos < this.rule.parts.length ? this.rule.parts[this.pos] : null
@@ -15,7 +22,7 @@ export class Pos {
   }
 
   cmp(pos: Pos) {
-    return this.cmpSimple(pos) || this.ahead.cmp(pos.ahead) || cmpSet(this.prec, pos.prec, (a, b) => a.cmp(b))
+    return this.cmpSimple(pos) || cmpSet(this.ahead, pos.ahead, (a, b) => a.cmp(b)) || cmpSet(this.prec, pos.prec, (a, b) => a.cmp(b))
   }
 
   cmpSimple(pos: Pos) {
@@ -25,31 +32,39 @@ export class Pos {
   toString() {
     let parts = this.rule.parts.map(t => t.name)
     parts.splice(this.pos, 0, "·")
-    return `${this.rule.name} -> ${parts.join(" ")}`
+    return `${this.rule.name} -> ${parts.join(" ")} [${this.ahead.join(",")}]`
   }
 
-  termsAhead(first: {[name: string]: Term[]}): Term[] {
-    let found: Term[] = []
-    for (let pos = this.pos + 1; pos < this.rule.parts.length; pos++) {
-      let next = this.rule.parts[pos], cont = false
-      for (let term of next.terminal ? [next] : first[next.name]) {
-        if (term == null) cont = true
-        else if (!found.includes(term)) found.push(term)
-      }
-      if (!cont) return found
-    }
-    if (!found.includes(this.ahead)) found.push(this.ahead)
-    return found
+  eq(other: Pos) {
+    return this == other ||
+      this.hash == other.hash && this.rule == other.rule && this.pos == other.pos &&
+      sameSet(this.ahead, other.ahead) && eqSet(this.prec, other.prec)
   }
 }
 
-function advance(set: Pos[], expr: Term): Pos[] {
+function termsAhead(rule: Rule, pos: number, after: ReadonlyArray<Term>, first: {[name: string]: Term[]}): Term[] {
+  let found: Term[] = []
+  for (let i = pos + 1; i < rule.parts.length; i++) {
+    let next = rule.parts[i], cont = false
+    if (next.terminal) {
+      if (!found.includes(next)) found.push(next)
+    } else for (let term of first[next.name]) {
+      if (term == null) cont = true
+      else if (!found.includes(term)) found.push(term)
+    }
+    if (!cont) return found
+  }
+  for (let a of after) addTo(a, found)
+  return found
+}
+
+function advance(set: readonly Pos[], expr: Term): Pos[] {
   let result = []
   for (let pos of set) if (pos.next == expr) result.push(pos.advance())
   return result
 }
 
-function advanceWithPrec(set: Pos[], expr: Term): {set: Pos[], prec: ReadonlyArray<Precedence>} {
+function advanceWithPrec(set: readonly Pos[], expr: Term): {set: Pos[], prec: readonly Precedence[]} {
   let result = [], prec = none as Precedence[]
   for (let pos of set) if (pos.next == expr) {
     for (let p of pos.prec) {
@@ -68,6 +83,18 @@ function cmpSet<T>(a: ReadonlyArray<T>, b: ReadonlyArray<T>, cmp: (a: T, b: T) =
     if (diff) return diff
   }
   return 0
+}
+
+function eqSet<T extends {eq(other: T): boolean}>(a: ReadonlyArray<T>, b: ReadonlyArray<T>): boolean {
+  if (a.length != b.length) return false
+  for (let i = 0; i < a.length; i++) if (!a[i].eq(b[i])) return false
+  return true
+}
+
+function sameSet<T>(a: readonly T[], b: readonly T[]) {
+  if (a.length != b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] != b[i]) return false
+  return true
 }
 
 export class Shift {
@@ -92,13 +119,22 @@ export class Reduce {
 
 const ACCEPTING = 1 /*FIXME unused*/, AMBIGUOUS = 2 // FIXME maybe store per terminal
 
+function hashPositions(set: ReadonlyArray<Pos>) {
+  let h = 5381
+  for (let pos of set) h = hash(h, pos.hash)
+  return h
+}
+
 export class State {
   terminals: (Shift | Reduce)[] = []
   terminalPrec: ReadonlyArray<Precedence>[] = []
   goto: Shift[] = []
   recover: Shift[] = []
+  hash: number
 
-  constructor(readonly id: number, readonly set: ReadonlyArray<Pos>, public flags = 0) {}
+  constructor(readonly id: number, readonly set: ReadonlyArray<Pos>, public flags = 0) {
+    this.hash = hashPositions(set)
+  }
 
   get ambiguous() { return (this.flags & AMBIGUOUS) > 0 }
   get accepting() { return (this.flags & ACCEPTING) > 0 }
@@ -148,29 +184,54 @@ export class State {
   getGoto(term: Term) {
     return this.goto.find(a => a.term == term)
   }
+
+  hasSet(set: ReadonlyArray<Pos>) {
+    return eqSet(this.set, set)
+  }
+}
+
+class AddedPos {
+  constructor(readonly rule: Rule, readonly ahead: Term[], readonly origIndex: number, public prec: ReadonlyArray<Precedence>) {}
 }
 
 function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[name: string]: Term[]}) {
-  let result = set.slice(), added: {[key: string]: boolean} = Object.create(null)
-  for (let x of result) if (x.pos == 0) added[x.rule.id + "." + x.ahead.id] = true
-  for (let pos of result) {
-    let next = pos.next
-    if (!next || next.terminal) continue
-    let ahead = pos.termsAhead(first)
-    for (let rule of rules) if (rule.name == next) {
-      for (let a of ahead) {
-        let key = rule.id + "." + a.id
-        if (!added[key]) {
-          result.push(new Pos(rule, 0, a, Precedence.join(pos.prec, rule.precAt(0))))
-          added[key] = true
-        }
+  let added: AddedPos[] = [], redo: AddedPos[] = []
+  function addFor(name: Term, ahead: ReadonlyArray<Term>, prec: readonly Precedence[]) {
+    for (let rule of rules) if (rule.name == name) {
+      let add = added.find(a => a.rule == rule)
+      if (!add) {
+        let existing = set.findIndex(p => p.pos == 0 && p.rule == rule)
+        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing,
+                           existing < 0 ? prec : Precedence.join(prec, set[existing].prec))
+        added.push(add)
+      }
+      add.prec = Precedence.join(add.prec, rule.precAt(0))
+      for (let term of ahead) if (!add.ahead.includes(term)) {
+        add.ahead.push(term)
+        if (add.rule.parts.length && !add.rule.parts[0].terminal) addTo(add, redo)
       }
     }
+  }
+  
+  for (let pos of set) {
+    let next = pos.next
+    if (next && !next.terminal) addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first), pos.prec)
+  }
+  while (redo.length) {
+    let add = redo.pop()!
+    addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first), add.prec)
+  }
+
+  let result = set.slice()
+  for (let add of added) {
+    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.id - b.id), add.prec)
+    if (add.origIndex > -1) result[add.origIndex] = pos
+    else result.push(pos)
   }
   return result.sort((a, b) => a.cmp(b))
 }
 
-function add<T>(value: T, array: T[]) {
+function addTo<T>(value: T, array: T[]) {
   if (!array.includes(value)) array.push(value)
 }
 
@@ -185,29 +246,35 @@ function computeFirst(rules: ReadonlyArray<Rule>, nonTerminals: Term[]) {
       for (let part of rule.parts) {
         found = true
         if (part.terminal) {
-          add(part, set)
+          addTo(part, set)
         } else {
           for (let t of table[part.name]) {
             if (t == null) found = false
-            else add(t, set)
+            else addTo(t, set)
           }
         }
         if (found) break
       }
-      if (!found) add(null, set)
+      if (!found) addTo(null, set)
       if (set.length > startLen) change = true
     }
     if (!change) return table
   }
 }
 
+function findState(states: ReadonlyArray<State>, set: ReadonlyArray<Pos>) {
+  let hash = hashPositions(set)
+  for (let state of states) if (state.hash == hash && state.hasSet(set)) return state
+  return null
+}
+
 // Builds a full LR(1) automaton
 export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, first: {[name: string]: Term[]}) {
   let states: State[] = []
-  function explore(set: Pos[]) {
+  function explore(set: ReadonlyArray<Pos>) {
     if (set.length == 0) return null
     set = closure(set, rules, first)
-    let state = states.find(s => cmpSet(s.set, set, (a, b) => a.cmp(b)) == 0)
+    let state = findState(states, set)
     if (!state) {
       states.push(state = new State(states.length, set))
       for (let term of terms.terminals) if (!term.eof && !term.error) {
@@ -225,13 +292,13 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, f
         states.push(accepting)
         state.goto.push(new Shift(state.set[program].rule.name, accepting))
       }
-      for (let pos of set) if (pos.next == null)
-        state.addAction(new Reduce(pos.ahead, pos.rule), pos.rule.rulePrec(), pos)
+      for (let pos of set) if (pos.next == null) for (let ahead of pos.ahead)
+        state.addAction(new Reduce(ahead, pos.rule), pos.rule.rulePrec(), pos)
     }
     return state
   }
 
-  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, terms.eof, rule.precAt(0))))
+  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, [terms.eof], rule.precAt(0))))
   return states
 }
 
@@ -323,3 +390,5 @@ export function buildAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet) {
   addRecoveryRules(table, rules, first)
   return table
 }
+
+function hash(a: number, b: number): number { return (a << 5) + a + b }

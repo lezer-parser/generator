@@ -313,7 +313,6 @@ class Builder {
 
   getParserString({includeNames = false, moduleStyle = "CommonJS"}: GenOptions) {
     let {states, specialized, specializations} = this.getParserData()
-
     let counts: {[key: string]: number} = Object.create(null)
     function count(value: any) { let key = "" + value; counts[key] = (counts[key] || 0) + 1 }
 

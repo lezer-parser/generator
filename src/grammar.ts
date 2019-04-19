@@ -61,10 +61,15 @@ export class TermSet {
 }
 
 export class Precedence {
+  hash: number
+
   constructor(readonly isAmbig: boolean,
               readonly value: number,
               readonly associativity: "left" | "right" | null,
-              readonly group: string | null) {}
+              readonly group: string | null) {
+    this.hash = +isAmbig + (value << 1) + (associativity == "left" ? 387 : associativity ? 812 : 0) +
+      (!group ? 0 : group.charCodeAt(0) << 6 + (group.length > 1 ? group.charCodeAt(1) << 8 : 0))
+  }
 
   cmp(other: Precedence) {
     return +this.isAmbig - +other.isAmbig || this.value - other.value || cmpStr(this.associativity || "", other.associativity || "") ||
@@ -76,7 +81,7 @@ export class Precedence {
   }
 
   static join(a: ReadonlyArray<Precedence>, b: ReadonlyArray<Precedence>): ReadonlyArray<Precedence> {
-    if (a.length == 0) return b
+    if (a.length == 0 || a == b) return b
     if (b.length == 0) return a
     let result = a.slice()
     for (let p of b) {
