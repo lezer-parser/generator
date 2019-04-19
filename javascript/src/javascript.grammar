@@ -2,6 +2,8 @@ prec {
  statement,
  else left,
  member,
+ prefix,
+ newArgs,
  call,
  suffix,
  typeof,
@@ -70,10 +72,10 @@ ClassItem {
 }
 
 VariableDeclaration {
-  (kw<"let"> | kw<"var"> | kw<"const">) CommaSep<pattern (op<"="> expressionNoComma)?> ";"
+  (kw<"let"> | kw<"var"> | kw<"const">) commaSep<pattern (op<"="> expressionNoComma)?> ";"
 }
 
-CommaSep<content> {
+commaSep<content> {
   content ("," content)*
 }
 
@@ -82,15 +84,15 @@ pattern {
 }
 
 ObjectPattern {
-  "{" CommaSep<"..."? Property (":" pattern)? (op<"="> expressionNoComma)?>? "}"
+  "{" commaSep<"..."? Property (":" pattern)? (op<"="> expressionNoComma)?>? "}"
 }
 
 ArrayPattern {
-  "[" CommaSep<"..."? pattern (op<"="> expressionNoComma)?>? "]"
+  "[" commaSep<"..."? pattern (op<"="> expressionNoComma)?>? "]"
 }
 
 ParamList {
-  "(" CommaSep<pattern (op<"="> expressionNoComma)?>? ")"
+  "(" commaSep<pattern (op<"="> expressionNoComma)?>? ")"
 }
 
 IfStatement {
@@ -121,7 +123,7 @@ expression {
   expressionNoComma ("," expressionNoComma)*
 }
 
-calleeExpression {
+expressionInner {
   Number |
   String |
   Identifier |
@@ -129,26 +131,34 @@ calleeExpression {
   NewExpression |
   PrefixExpression |
   "(" expression ")" |
+  ClassExpression |
+  FunctionExpression
+}
+
+expressionNoComma {
+  expressionInner |
+  MemberExpression<expressionNoComma> |
+  BinaryExpression |
+  SuffixExpression |
+  CallExpression 
+}
+
+ClassExpression {
   kw<"class"> (kw<"extends"> expression)? ClassBody |
-  kw<"class"> Identifier (kw<"extends"> expression)? ClassBody |
+  kw<"class"> Identifier (kw<"extends"> expression)? ClassBody
+}
+
+FunctionExpression {
   kw<"function"> "*"? ParamList Block |
   kw<"function"> Identifier "*"? ParamList Block
 }
 
-expressionNoComma {
-  calleeExpression |
-  BinaryExpression |
-  CallExpression |
-  SuffixExpression |
-  MemberExpression
-}
-
 NewExpression {
-  kw<"new"> calleeExpression ArgList
+  kw<"new"> (expressionInner | MemberExpression<expressionInner>) !newArgs ArgList?
 }
 
 PrefixExpression {
-  (kw<"void"> | kw<"typeof"> | op<"!"> | op<"++"> | op<"--"> | op<"+"> | op<"-">) calleeExpression
+  !prefix (kw<"void"> | kw<"typeof"> | op<"!"> | op<"++"> | op<"--"> | op<"+"> | op<"-">) expressionInner
 }
 
 BinaryExpression {
@@ -160,11 +170,11 @@ BinaryExpression {
 }
 
 CallExpression {
-  calleeExpression !call ArgList
+  expressionNoComma !call ArgList
 }
 
-MemberExpression {
-  expressionNoComma !member ("." Property | "[" expression "]")
+MemberExpression<inner> {
+  inner !member ("." Property | "[" expression "]")
 }
 
 SuffixExpression {
@@ -172,7 +182,7 @@ SuffixExpression {
 }
 
 ArgList {
-  "(" CommaSep<expressionNoComma>? ")"
+  "(" commaSep<expressionNoComma>? ")"
 }
 
 kw<word> { tag.Keyword<specialize<identifier, word>> }
@@ -202,11 +212,11 @@ tokens {
   }
 
   String {
-    '"' ([^\\\n] | "\\" [^\n])* '"'? |
-    "'" ([^\\\n] | "\\" [^\n])* "'"?
+    '"' ([^\\\n"] | "\\" _)* '"'? |
+    "'" ([^\\\n'] | "\\" _)* "'"?
   }
 
   group {
-    RegExp { "/" ([^/\n] | "\\" [^\n])+ "/"? }
+    RegExp { "/" ([^/\\\n[] | "\\" [^\n] | "[" ([^\n\]] | "\\" [^\n])* "]")+ ("/" [gimsuy]*)? }
   }
 }

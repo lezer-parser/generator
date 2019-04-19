@@ -1,0 +1,49 @@
+"A string with \"double\" and 'single' quotes";
+'A string with "double" and \'single\' quotes';
+'\\';
+"\\";
+
+'A string with new \
+line';
+
+==>
+
+String,String,String,String,String
+
+---
+
+101;
+3.14;
+3.14e+1;
+0x1ABCDEFabcdef;
+0o7632157312;
+0b1010101001;
+1e+3;
+
+==> Number,Number,Number,Number,Number,Number,Number
+
+---
+
+theVar;
+theVar2;
+$_;
+
+==> Identifier,Identifier,Identifier
+
+---
+
+/one\\/;
+/one/g;
+/one/i;
+/one/gim;
+/on\/e/gim;
+/on[^/]afe/gim;
+/[\]/]/;
+
+==> RegExp,RegExp,RegExp,RegExp,RegExp,RegExp,RegExp
+
+---
+
+f(new foo.bar(1), 2);
+
+==> CallExpression(Identifier, ArgList(NewExpression(Keyword, MemberExpression(Identifier, Property), ArgList(Number)), Number))
