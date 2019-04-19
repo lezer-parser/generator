@@ -13,7 +13,7 @@ prec {
  and left,
  or left,
  ternary,
- assign,
+ assign left,
  comma
 }
 
@@ -32,7 +32,7 @@ statement {
 }
 
 ExportStatement {
-  kw<"export"> "*" kw<"from"> String ";" |
+  kw<"export"> plainStar kw<"from"> String ";" |
   kw<"export"> kw<"default"> expression ";" |
   kw<"export"> declaration ";" |
   kw<"export"> ExportGroup (kw<"from"> String)? ";"
@@ -43,7 +43,7 @@ ExportGroup {
 }
 
 ImportStatement {
-  kw<"import"> ("*" kw<"as"> Identifier | Identifier | ImportGroup) kw<"from"> String ";"
+  kw<"import"> (plainStar kw<"as"> Identifier | Identifier | ImportGroup) kw<"from"> String ";"
   kw<"import"> String ";"
 }
 
@@ -56,7 +56,7 @@ declaration {
 }
 
 FunctionDeclaration {
-  !statement kw<"function"> Identifier "*"? ParamList Block
+  !statement kw<"function"> Identifier plainStar? ParamList Block
 }
 
 ClassDeclaration {
@@ -72,27 +72,27 @@ ClassItem {
 }
 
 VariableDeclaration {
-  (kw<"let"> | kw<"var"> | kw<"const">) commaSep<pattern (op<"="> expressionNoComma)?> ";"
-}
-
-commaSep<content> {
-  content ("," content)*
+  (kw<"let"> | kw<"var"> | kw<"const">) commaSep1<patternAssign> ";"
 }
 
 pattern {
   Identifier | ArrayPattern | ObjectPattern
 }
 
+patternAssign {
+  pattern (op<"="> expressionNoComma)?
+}
+
 ObjectPattern {
-  "{" commaSep<"..."? Property (":" pattern)? (op<"="> expressionNoComma)?>? "}"
+  "{" commaSep<"..."? Property (":" pattern)? (op<"="> expressionNoComma)?> "}"
 }
 
 ArrayPattern {
-  "[" commaSep<"..."? pattern (op<"="> expressionNoComma)?>? "]"
+  "[" commaSep<"..."? patternAssign> "]"
 }
 
 ParamList {
-  "(" commaSep<pattern (op<"="> expressionNoComma)?>? ")"
+  "(" commaSep<"..."? patternAssign> ")"
 }
 
 IfStatement {
@@ -128,6 +128,7 @@ expressionInner {
   String |
   Identifier |
   RegExp |
+  ArrayExpression |
   NewExpression |
   PrefixExpression |
   "(" expression ")" |
@@ -139,8 +140,13 @@ expressionNoComma {
   expressionInner |
   MemberExpression<expressionNoComma> |
   BinaryExpression |
+  AssignmentExpression |
   SuffixExpression |
   CallExpression 
+}
+
+ArrayExpression {
+  "[" commaSep<expressionNoComma> "]"
 }
 
 ClassExpression {
@@ -149,8 +155,8 @@ ClassExpression {
 }
 
 FunctionExpression {
-  kw<"function"> "*"? ParamList Block |
-  kw<"function"> Identifier "*"? ParamList Block
+  kw<"function"> plainStar? ParamList Block |
+  kw<"function"> Identifier plainStar? ParamList Block
 }
 
 NewExpression {
@@ -158,7 +164,7 @@ NewExpression {
 }
 
 PrefixExpression {
-  !prefix (kw<"void"> | kw<"typeof"> | op<"!"> | op<"++"> | op<"--"> | op<"+"> | op<"-">) expressionInner
+  !prefix (kw<"void"> | kw<"typeof"> | op<"!"> | op<"++" | "--"> | op<"+" | "-">) expressionNoComma
 }
 
 BinaryExpression {
@@ -167,6 +173,10 @@ BinaryExpression {
   expressionNoComma !and op<"&&"> expressionNoComma |
   expressionNoComma !or op<"||"> expressionNoComma
   // FIXME
+}
+
+AssignmentExpression {
+  expressionNoComma !assign (op<([+\-/|&%^] | "*" "*"? | "<<" | ">>" ">"?) "="> | op<"=">) expressionNoComma
 }
 
 CallExpression {
@@ -182,12 +192,18 @@ SuffixExpression {
 }
 
 ArgList {
-  "(" commaSep<expressionNoComma>? ")"
+  "(" commaSep<"..."? expressionNoComma> ")"
 }
 
-kw<word> { tag.Keyword<specialize<identifier, word>> }
+commaSep<content> {
+  content? ("," content?)*
+}
 
-op<word> { tag.Operator<word> }
+commaSep1<content> {
+  content? ("," content)*
+}
+
+kw<word> { specialize<identifier, word, Keyword> }
 
 Property { identifier }
 
@@ -216,7 +232,13 @@ tokens {
     "'" ([^\\\n'] | "\\" _)* "'"?
   }
 
+  op<expr>=Operator { expr }
+
   group {
     RegExp { "/" ([^/\\\n[] | "\\" [^\n] | "[" ([^\n\]] | "\\" [^\n])* "]")+ ("/" [gimsuy]*)? }
+  }
+
+  group {
+    plainStar { "*" }
   }
 }

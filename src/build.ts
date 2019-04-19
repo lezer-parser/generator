@@ -148,7 +148,9 @@ class Context {
   buildRule(rule: RuleDeclaration, args: ReadonlyArray<Expression>): Term[] {
     let cx = new Context(this.b, rule)
     let expr = this.b.substituteArgs(rule.expr, args, rule.params)
-    let name = this.b.newName(rule.id.name, rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
+    this.b.used[rule.id.name] = true
+    let name = this.b.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
+                              rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
     this.b.built.push(new BuiltRule(rule.id.name, args, name))
     return cx.defineRule(name, cx.normalizeTopExpr(expr, name))
   }
@@ -218,6 +220,7 @@ class Builder {
   ruleNames: {[name: string]: boolean} = Object.create(null)
   namespaces: {[name: string]: Namespace} = Object.create(null)
   tokens: {[name: string]: TokenGroup} = Object.create(null)
+  used: {[name: string]: boolean} = Object.create(null)
 
   constructor(text: string, fileName: string | null = null) {
     this.input = new Input(text, fileName)
@@ -240,11 +243,9 @@ class Builder {
 
     if (!this.rules.length)
       this.input.raise(`Missing 'program' rule declaration`)
-    for (let rule of this.ast.rules) {
-      if (!this.rules.some(r => r.name.name == rule.id.name))
-        // FIXME should probably be a warning
-        this.input.raise(`Unused rule '${rule.id.name}'`, rule.start)
-    }
+    for (let rule of this.ast.rules) if (!this.used[rule.id.name])
+      // FIXME should probably be a warning
+      this.input.raise(`Unused rule '${rule.id.name}'`, rule.start)
     for (let rule of this.rules) if (rule.parts.length >= 64)
       this.input.raise(`Overlong rule (${rule.parts.length} > 63) in grammar`)
     for (let tokens of this.tokenGroups) tokens.checkUnused()
@@ -516,7 +517,7 @@ class TokenGroup {
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    let term = this.b.makeTerminal(name + (expr.args.length ? "<" + expr.args.join(",") + ">" : ""), rule.tag ? rule.tag.name : isTag(name), this)
+    let term = this.b.makeTerminal(expr.toString(), rule.tag ? rule.tag.name : isTag(name), this)
     let end = new State(term)
     end.connect(this.buildRule(rule, expr, this.startState))
     this.built.push(new BuiltRule(name, expr.args, term))

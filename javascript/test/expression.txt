@@ -10,7 +10,7 @@ line';
 
 ==>
 
-String,String,String,String,String
+String, String, String, String, String
 
 # Numbers
 
@@ -22,7 +22,7 @@ String,String,String,String,String
 0b1010101001;
 1e+3;
 
-==> Number,Number,Number,Number,Number,Number,Number
+==> Number, Number, Number, Number, Number, Number, Number
 
 # Identifiers
 
@@ -31,7 +31,7 @@ theVar2;
 $_;
 é象𫝄;
 
-==> Identifier,Identifier,Identifier,Identifier
+==> Identifier, Identifier, Identifier, Identifier
 
 # RegExps
 
@@ -43,10 +43,49 @@ $_;
 /on[^/]afe/gim;
 /[\]/]/;
 
-==> RegExp,RegExp,RegExp,RegExp,RegExp,RegExp,RegExp
+==> RegExp, RegExp, RegExp, RegExp, RegExp, RegExp, RegExp
 
 # Calls
 
 f(new foo.bar(1), 2);
 
 ==> CallExpression(Identifier, ArgList(NewExpression(Keyword, MemberExpression(Identifier, Property), ArgList(Number)), Number))
+
+# Arrays
+
+[];
+[ "item1" ];
+[ "item1", ];
+[ "item1", item2 ];
+[ , item2 ];
+[ item2 = 5 ];
+
+==>
+
+ArrayExpression,
+ArrayExpression(String),
+ArrayExpression(String),
+ArrayExpression(String, Identifier),
+ArrayExpression(Identifier),
+ArrayExpression(AssignmentExpression(Identifier, Operator, Number))
+
+# Functions
+
+[
+  function() {},
+  function(arg1, ...arg2) {
+    arg2;
+  },
+  function stuff() {},
+  function trailing(a,) {},
+  function trailing(a,b,) {}
+]
+
+==>
+
+ArrayExpression(
+  FunctionExpression(Keyword, ParamList, Block),
+  FunctionExpression(Keyword, ParamList(Identifier, Identifier), Block(Identifier)),
+  FunctionExpression(Keyword, Identifier, ParamList, Block),
+  FunctionExpression(Keyword, Identifier, ParamList(Identifier), Block),
+  FunctionExpression(Keyword, Identifier, ParamList(Identifier, Identifier), Block))
