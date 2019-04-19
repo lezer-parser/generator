@@ -154,9 +154,16 @@ class Context {
   }
 
   resolveSpecialization(expr: NamedExpression) {
-    if (expr.args.length != 2) this.raise(`'specialize' takes two arguments`, expr.start)
+    if (expr.args.length < 2 || expr.args.length > 3) this.raise(`'specialize' takes two or three arguments`, expr.start)
     if (!(expr.args[1] instanceof LiteralExpression))
       this.raise(`The second argument to 'specialize' must be a literal`, expr.args[1].start)
+    let tag = null
+    if (expr.args.length == 3) {
+      let tagArg = expr.args[2]
+      if (!(tagArg instanceof NamedExpression) || tagArg.args.length)
+        return this.raise(`The third argument to 'specialize' must be a name (without arguments)`)
+      tag = tagArg.id.name
+    }
     let terminal = this.normalizeExpr(expr.args[0])
     if (terminal.length != 1 || !terminal[0].terminal)
       this.raise(`The first argument to 'specialize' must resolve to a token`, expr.args[0].start)
@@ -164,7 +171,7 @@ class Context {
     let table = this.b.specialized[term] || (this.b.specialized[term] = Object.create(null))
     let known = table[value], token: Term
     if (known == null) {
-      token = this.b.makeTerminal(term + "-" + JSON.stringify(value), null, this.b.tokens[term])
+      token = this.b.makeTerminal(term + "-" + JSON.stringify(value), tag, this.b.tokens[term])
       table[value] = token.id
     } else {
       token = this.b.terms.terminals.find(t => t.id == known)!

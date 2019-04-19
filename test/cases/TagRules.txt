@@ -1,13 +1,14 @@
-program { (a | b)+ }
+program { (a | b | specialize<i, "ii", I>)+ }
 
 a=A { "a" }
 
 tokens {
   b=B { "b" }
+  i { "i"+ }
 }
 
 ---
 
-aba
+abaii
 
-==> A, B, A
+==> A, B, A, I
