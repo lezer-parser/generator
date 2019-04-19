@@ -200,7 +200,7 @@ tokens {
 
   BlockComment { "/*" ([^*] | "*" [^/])* "*/" }
 
-  identifierChar { std.asciiLetter | "_" | "$" }
+  identifierChar { std.asciiLetter | [_$\u{a1}-\u{10ffff}] }
 
   identifier { identifierChar (identifierChar | std.digit)* }
 

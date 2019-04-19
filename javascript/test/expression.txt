@@ -1,3 +1,5 @@
+# Strings
+
 "A string with \"double\" and 'single' quotes";
 'A string with "double" and \'single\' quotes';
 '\\';
@@ -10,7 +12,7 @@ line';
 
 String,String,String,String,String
 
----
+# Numbers
 
 101;
 3.14;
@@ -22,15 +24,16 @@ String,String,String,String,String
 
 ==> Number,Number,Number,Number,Number,Number,Number
 
----
+# Identifiers
 
 theVar;
 theVar2;
 $_;
+é象𫝄;
 
-==> Identifier,Identifier,Identifier
+==> Identifier,Identifier,Identifier,Identifier
 
----
+# RegExps
 
 /one\\/;
 /one/g;
@@ -42,7 +45,7 @@ $_;
 
 ==> RegExp,RegExp,RegExp,RegExp,RegExp,RegExp,RegExp
 
----
+# Calls
 
 f(new foo.bar(1), 2);
 
