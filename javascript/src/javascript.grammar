@@ -1,20 +1,20 @@
 prec {
- statement,
- else left,
- member,
- prefix,
- newArgs,
- call,
- suffix,
- typeof,
- exp left,
- times left,
- plus left,
- and left,
- or left,
- ternary,
- assign left,
- comma
+  statement,
+  else left,
+  member,
+  prefix,
+  newArgs,
+  call,
+  suffix,
+  typeof,
+  exp left,
+  times left,
+  plus left,
+  and left,
+  or left,
+  ternary,
+  assign left,
+  comma left
 }
 
 program { statement+ }
@@ -22,20 +22,29 @@ program { statement+ }
 statement {
   ExportStatement |
   ImportStatement |
-  IfStatement |
-  ForStatement |
-  WhileStatement |
-  DoWhileStatement |
+  tag.ForStatement<kw<"for"> "(" statement expression? semi expression? ")" statement> | // FIXME
+  tag.WhileStatement<kw<"while"> parenExpression statement> |
+  tag.DoWhileStatement<kw<"do"> statement kw<"while"> parenExpression semi> |
+  tag.IfStatement<kw<"if"> parenExpression statement !else (kw<"else"> statement)?> |
+  tag.SwitchStatement<kw<"switch"> parenExpression tag.Block<"{" switchItem* "}">> |
+  tag.TryStatement<kw<"try"> Block (kw<"catch"> ("(" pattern ")")? Block)? (kw<"finally"> Block)?> |
+  tag.ReturnStatement<kw<"return"> expression semi> |
+  tag.ThrowStatement<kw<"throw"> expression semi> |
+  tag.BreakStatement<kw<"break"> Label? semi> |
+  tag.ContinueStatement<kw<"continue"> Label? semi> |
+  tag.DebuggerStatement<kw<"debugger"> semi> |
+  Block |
+  LabeledStatement |
   declaration |
-  expression ";" |
-  ";"
+  expression semi |
+  semi
 }
 
 ExportStatement {
-  kw<"export"> plainStar kw<"from"> String ";" |
-  kw<"export"> kw<"default"> expression ";" |
-  kw<"export"> declaration ";" |
-  kw<"export"> ExportGroup (kw<"from"> String)? ";"
+  kw<"export"> plainStar kw<"from"> String semi |
+  kw<"export"> kw<"default"> expression semi |
+  kw<"export"> declaration semi |
+  kw<"export"> ExportGroup (kw<"from"> String)? semi
 }
 
 ExportGroup {
@@ -43,12 +52,16 @@ ExportGroup {
 }
 
 ImportStatement {
-  kw<"import"> (plainStar kw<"as"> Identifier | Identifier | ImportGroup) kw<"from"> String ";"
-  kw<"import"> String ";"
+  kw<"import"> (plainStar kw<"as"> Identifier | Identifier | ImportGroup) kw<"from"> String semi
+  kw<"import"> String semi
 }
 
 ImportGroup {
   "{" (Identifier (kw<"as"> Identifier)?)* "}"
+}
+
+LabeledStatement {
+  Label ":" statement
 }
 
 declaration {
@@ -56,7 +69,8 @@ declaration {
 }
 
 FunctionDeclaration {
-  !statement kw<"function"> Identifier plainStar? ParamList Block
+  !statement kw<"function"> Identifier plainStar? ParamList Block |
+  kw<"async"> kw<"function"> Identifier plainStar? ParamList Block
 }
 
 ClassDeclaration {
@@ -72,7 +86,7 @@ ClassItem {
 }
 
 VariableDeclaration {
-  (kw<"let"> | kw<"var"> | kw<"const">) commaSep1<patternAssign> ";"
+  (kw<"let"> | kw<"var"> | kw<"const">) commaSep1<patternAssign> semi
 }
 
 pattern {
@@ -95,38 +109,34 @@ ParamList {
   "(" commaSep<"..."? patternAssign> ")"
 }
 
-IfStatement {
-  kw<"if"> parenExpression statement !else (kw<"else"> statement)?
-}
-
 parenExpression {
   "(" expression ")"
-}
-
-ForStatement { // FIXME
-  kw<"for"> "(" statement expression? ";" expression? ")" statement
-}
-
-WhileStatement {
-  kw<"while"> parenExpression statement
-}
-
-DoWhileStatement {
-  kw<"do"> statement kw<"while"> parenExpression ";"
 }
 
 Block {
   "{" statement* "}"
 }
 
+switchItem {
+  tag.SwitchCase<kw<"case"> expression ":"> |
+  tag.SwitchDefault<kw<"default"> ":"> |
+  statement
+}
+
 expression {
-  expressionNoComma ("," expressionNoComma)*
+  expressionNoComma | SequenceExpression
+}
+
+SequenceExpression {
+  expressionNoComma !comma "," expressionNoComma
 }
 
 expressionInner {
   Number |
   String |
   Identifier |
+  boolean |
+  null |
   RegExp |
   ArrayExpression |
   NewExpression |
@@ -205,9 +215,15 @@ commaSep1<content> {
 
 kw<word> { specialize<identifier, word, Keyword> }
 
+boolean { specialize<identifier, "true", Boolean> | specialize<identifier, "false", Boolean> }
+
+null { specialize<identifier, "null", Null> }
+
 Property { identifier }
 
 Identifier { identifier }
+
+Label { identifier }
 
 tokens {
   skip { std.whitespace+ | LineComment | BlockComment }
@@ -233,6 +249,8 @@ tokens {
   }
 
   op<expr>=Operator { expr }
+
+  semi { ";" }
 
   group {
     RegExp { "/" ([^/\\\n[] | "\\" [^\n] | "[" ([^\n\]] | "\\" [^\n])* "]")+ ("/" [gimsuy]*)? }

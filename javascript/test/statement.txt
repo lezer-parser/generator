@@ -1,0 +1,65 @@
+# Expressions
+
+1;
+"two";
+
+==> Number, String
+
+# While loop
+
+while (1) debugger;
+while (2) {
+  a;
+  b;
+}
+
+==>
+
+WhileStatement(Keyword, Number, DebuggerStatement(Keyword)),
+WhileStatement(Keyword, Number, Block(Identifier, Identifier))
+
+# Labels
+
+foo: 1;
+foo: while(2) break foo;
+
+==>
+
+LabeledStatement(Label, Number),
+LabeledStatement(Label, WhileStatement(Keyword, Number, BreakStatement(Keyword, Label)))
+
+# Try
+
+try {} catch {}
+try { 1; } catch (x) { 2; } finally { 3; }
+
+==>
+
+TryStatement(Keyword, Block, Keyword, Block),
+TryStatement(Keyword, Block(Number), Keyword, Identifier, Block(Number), Keyword, Block(Number))
+
+# Switch
+
+switch (x) {
+  case 1:
+    return true;
+  case 2:
+  case 50 * 3:
+    console.log("ok");
+  default:
+    return false;
+}
+
+==>
+
+SwitchStatement(
+  Keyword,
+  Identifier,
+  Block(
+    SwitchCase(Keyword, Number),
+    ReturnStatement(Keyword, Boolean),
+    SwitchCase(Keyword, Number),
+    SwitchCase(Keyword, BinaryExpression(Number, Operator, Number)),
+    CallExpression(MemberExpression(Identifier, Property), ArgList(String)),
+    SwitchDefault(Keyword),
+    ReturnStatement(Keyword, Boolean)))
