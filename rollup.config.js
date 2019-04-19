@@ -7,7 +7,7 @@ export default {
   output: {
     format: "cjs",
     file: "./dist/index.js",
-    sourcemap: true,
+    sourcemap: true
   },
   external(id) { return !/^[\.\/]/.test(id) },
   plugins: [
@@ -15,9 +15,16 @@ export default {
     typescript({
       check: false,
       tsconfigOverride: {
-        compilerOptions: {lib: ["es2018"], sourceMap: true, target: "es2018", strict: false},
-        include: null
-      }
+        compilerOptions: {
+          lib: ["es2018"],
+          sourceMap: true,
+          target: "es2018",
+          strict: false,
+          declaration: true
+        },
+        include: ["src/*.ts"]
+      },
+      include: ["src/*.ts"]
     }),
     commonjs()
   ]

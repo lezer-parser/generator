@@ -15,8 +15,14 @@ export default {
     typescript({
       check: false,
       tsconfigOverride: {
-        compilerOptions: {lib: ["es2018"], sourceMap: true, target: "es2018", strict: false},
-        include: null
+        compilerOptions: {
+          lib: ["es2018"],
+          sourceMap: true,
+          target: "es2018",
+          strict: false,
+          declaration: false
+        },
+        include: ["bin/*.ts", "src/*.ts"]
       }
     }),
     commonjs()
