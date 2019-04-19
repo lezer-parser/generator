@@ -17,6 +17,7 @@ export class GrammarDeclaration extends Node {
 export class RuleDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
+              readonly tag: Identifier | null,
               readonly params: A<Identifier>,
               readonly expr: Expression) {
     super(start)

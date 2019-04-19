@@ -148,7 +148,7 @@ class Context {
   buildRule(rule: RuleDeclaration, args: ReadonlyArray<Expression>): Term[] {
     let cx = new Context(this.b, rule)
     let expr = this.b.substituteArgs(rule.expr, args, rule.params)
-    let name = this.b.newName(rule.id.name, isTag(rule.id.name) || true)
+    let name = this.b.newName(rule.id.name, rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
     this.b.built.push(new BuiltRule(rule.id.name, args, name))
     return cx.defineRule(name, cx.normalizeTopExpr(expr, name))
   }
@@ -493,7 +493,11 @@ class TokenGroup {
       this.skipState = new State
       let nameless = new State(b.terms.eof)
       for (let choice of skip.expr instanceof ChoiceExpression ? skip.expr.exprs : [skip.expr]) {
-        let tag = choice instanceof NamedExpression ? isTag(choice.id.name) : null
+        let tag = null
+        if (choice instanceof NamedExpression) {
+          let rule = this.rules.find(r => r.id.name == (choice as NamedExpression).id.name)
+          if (rule) tag = rule.tag ? rule.tag.name : isTag(rule.id.name)
+        }
         let dest = tag ? new State(this.b.makeTerminal(tag, tag, this)) : nameless
         dest.connect(this.build(choice, this.skipState, none))
       }
@@ -505,7 +509,7 @@ class TokenGroup {
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    let term = this.b.makeTerminal(name, isTag(name), this)
+    let term = this.b.makeTerminal(name, rule.tag ? rule.tag.name : isTag(name), this)
     let end = new State(term)
     end.connect(this.buildRule(rule, expr, this.startState))
     this.built.push(new BuiltRule(name, expr.args, term))

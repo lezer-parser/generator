@@ -61,7 +61,7 @@ export class Input {
       let end = this.match(start + 1, /^(?:\\.|[^\]])*\]/)
       if (end == -1) this.raise("Unterminated character set", start)
       return this.set("set", this.string.slice(start + 1, end - 1), start, end)
-    } else if (/[()!+*?{}<>\.,|]/.test(next)) {
+    } else if (/[()!+*?{}<>\.,|=]/.test(next)) {
       return this.set(next, null, start, start + 1)
     } else if (wordChar.test(next)) {
       let end = start + 1
@@ -122,17 +122,18 @@ function parseTop(input: Input) {
 }
 
 function parseRule(input: Input) {
-  let id = parseIdent(input), params: Identifier[] = []
+  let id = parseIdent(input), params: Identifier[] = [], tag: Identifier | null = null
   let start = input.start
 
   if (input.eat("<")) while (!input.eat(">")) {
     if (params.length) input.expect(",")
     params.push(parseIdent(input))
   }
+  if (input.eat("=")) tag = parseIdent(input)
   input.expect("{")
   let expr = parseExprChoice(input)
   input.expect("}")
-  return new RuleDeclaration(start, id, params, expr)
+  return new RuleDeclaration(start, id, tag, params, expr)
 }
 
 const SET_MARKER = "\ufdda" // (Invalid unicode character)

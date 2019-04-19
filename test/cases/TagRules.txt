@@ -1,0 +1,13 @@
+program { (a | b)+ }
+
+a=A { "a" }
+
+tokens {
+  b=B { "b" }
+}
+
+---
+
+aba
+
+==> A, B, A
