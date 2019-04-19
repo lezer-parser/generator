@@ -31,7 +31,7 @@ theVar2;
 $_;
 é象𫝄;
 
-==> Identifier, Identifier, Identifier, Identifier
+==> Variable, Variable, Variable, Variable
 
 # RegExps
 
@@ -49,7 +49,7 @@ $_;
 
 f(new foo.bar(1), 2);
 
-==> CallExpression(Identifier, ArgList(NewExpression(Keyword, MemberExpression(Identifier, Property), ArgList(Number)), Number))
+==> CallExpression(Variable, ArgList(NewExpression(Keyword, MemberExpression(Variable, Property), ArgList(Number)), Number))
 
 # Arrays
 
@@ -65,9 +65,9 @@ f(new foo.bar(1), 2);
 ArrayExpression,
 ArrayExpression(String),
 ArrayExpression(String),
-ArrayExpression(String, Identifier),
-ArrayExpression(Identifier),
-ArrayExpression(AssignmentExpression(Identifier, Operator, Number))
+ArrayExpression(String, Variable),
+ArrayExpression(Variable),
+ArrayExpression(AssignmentExpression(Variable, Operator, Number))
 
 # Functions
 
@@ -85,7 +85,7 @@ ArrayExpression(AssignmentExpression(Identifier, Operator, Number))
 
 ArrayExpression(
   FunctionExpression(Keyword, ParamList, Block),
-  FunctionExpression(Keyword, ParamList(Identifier, Identifier), Block(Identifier)),
-  FunctionExpression(Keyword, Identifier, ParamList, Block),
-  FunctionExpression(Keyword, Identifier, ParamList(Identifier), Block),
-  FunctionExpression(Keyword, Identifier, ParamList(Identifier, Identifier), Block))
+  FunctionExpression(Keyword, ParamList(Definition, Definition), Block(Variable)),
+  FunctionExpression(Keyword, Definition, ParamList, Block),
+  FunctionExpression(Keyword, Definition, ParamList(Definition), Block),
+  FunctionExpression(Keyword, Definition, ParamList(Definition, Definition), Block))

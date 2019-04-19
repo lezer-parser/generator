@@ -48,16 +48,16 @@ ExportStatement {
 }
 
 ExportGroup {
-  "{" (Identifier (kw<"as"> Identifier)?)* "}"
+  "{" (Variable (kw<"as"> Variable)?)* "}"
 }
 
 ImportStatement {
-  kw<"import"> (plainStar kw<"as"> Identifier | Identifier | ImportGroup) kw<"from"> String semi
+  kw<"import"> (plainStar kw<"as"> Definition | Definition | ImportGroup) kw<"from"> String semi
   kw<"import"> String semi
 }
 
 ImportGroup {
-  "{" (Identifier (kw<"as"> Identifier)?)* "}"
+  "{" (Definition (kw<"as"> Definition)?)* "}"
 }
 
 LabeledStatement {
@@ -69,12 +69,12 @@ declaration {
 }
 
 FunctionDeclaration {
-  !statement kw<"function"> Identifier plainStar? ParamList Block |
-  kw<"async"> kw<"function"> Identifier plainStar? ParamList Block
+  !statement kw<"function"> Definition plainStar? ParamList Block |
+  kw<"async"> kw<"function"> Definition plainStar? ParamList Block
 }
 
 ClassDeclaration {
-  !statement kw<"class"> Identifier (kw<"extends"> expression)? ClassBody
+  !statement kw<"class"> Definition (kw<"extends"> expression)? ClassBody
 }
 
 ClassBody {
@@ -82,7 +82,7 @@ ClassBody {
 }
 
 ClassItem {
-  Identifier // FIXME
+  Variable // FIXME
 }
 
 VariableDeclaration {
@@ -90,7 +90,7 @@ VariableDeclaration {
 }
 
 pattern {
-  Identifier | ArrayPattern | ObjectPattern
+  Definition | ArrayPattern | ObjectPattern
 }
 
 patternAssign {
@@ -134,7 +134,7 @@ SequenceExpression {
 expressionInner {
   Number |
   String |
-  Identifier |
+  Variable |
   boolean |
   null |
   RegExp |
@@ -161,12 +161,12 @@ ArrayExpression {
 
 ClassExpression {
   kw<"class"> (kw<"extends"> expression)? ClassBody |
-  kw<"class"> Identifier (kw<"extends"> expression)? ClassBody
+  kw<"class"> Definition (kw<"extends"> expression)? ClassBody
 }
 
 FunctionExpression {
   kw<"function"> plainStar? ParamList Block |
-  kw<"function"> Identifier plainStar? ParamList Block
+  kw<"function"> Definition plainStar? ParamList Block
 }
 
 NewExpression {
@@ -221,7 +221,9 @@ null { specialize<identifier, "null", Null> }
 
 Property { identifier }
 
-Identifier { identifier }
+Variable { identifier }
+
+Definition { identifier }
 
 Label { identifier }
 

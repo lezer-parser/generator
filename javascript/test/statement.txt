@@ -16,7 +16,7 @@ while (2) {
 ==>
 
 WhileStatement(Keyword, Number, DebuggerStatement(Keyword)),
-WhileStatement(Keyword, Number, Block(Identifier, Identifier))
+WhileStatement(Keyword, Number, Block(Variable, Variable))
 
 # Labels
 
@@ -36,7 +36,7 @@ try { 1; } catch (x) { 2; } finally { 3; }
 ==>
 
 TryStatement(Keyword, Block, Keyword, Block),
-TryStatement(Keyword, Block(Number), Keyword, Identifier, Block(Number), Keyword, Block(Number))
+TryStatement(Keyword, Block(Number), Keyword, Definition, Block(Number), Keyword, Block(Number))
 
 # Switch
 
@@ -54,12 +54,12 @@ switch (x) {
 
 SwitchStatement(
   Keyword,
-  Identifier,
+  Variable,
   Block(
     SwitchCase(Keyword, Number),
     ReturnStatement(Keyword, Boolean),
     SwitchCase(Keyword, Number),
     SwitchCase(Keyword, BinaryExpression(Number, Operator, Number)),
-    CallExpression(MemberExpression(Identifier, Property), ArgList(String)),
+    CallExpression(MemberExpression(Variable, Property), ArgList(String)),
     SwitchDefault(Keyword),
     ReturnStatement(Keyword, Boolean)))
