@@ -305,8 +305,8 @@ class Builder {
       return source == null ? noToken : evaluated[source] || (evaluated[source] = (1,eval)("(" + source + ")"))
     }
     let stateObjs = states.map((s, i) => {
-      let {actions, goto, recover, alwaysReduce, defaultReduce, skip, tokenizers} = s
-      return new ParseState(i, actions, goto, recover, alwaysReduce, defaultReduce, getFunc(skip), tokenizers.map(getFunc))
+      let {actions, goto, recover, defaultReduce, forcedReduce, skip, tokenizers} = s
+      return new ParseState(i, actions, goto, recover, defaultReduce, forcedReduce, getFunc(skip), tokenizers.map(getFunc))
     })
     return new Parser(stateObjs, this.terms.tags, this.terms.repeatInfo, specialized, specializations, this.terms.names)
   }
@@ -356,8 +356,8 @@ class Builder {
 
     let stateText = []
     for (let state of states) {
-      stateText.push(`s(${state.alwaysReduce > -1 ? state.alwaysReduce : reference(numbersToCode(state.actions))}, ${
-                      reference(numbersToCode(state.goto))}, ${state.defaultReduce}, ${
+      stateText.push(`s(${state.defaultReduce || reference(numbersToCode(state.actions))
+                      }, ${reference(numbersToCode(state.goto))}, ${state.forcedReduce}, ${
                       tokenizerName(state.skip)}, ${reference(tokenizersToCode(state.tokenizers))}${
                       state.recover.length ? ", " + reference(numbersToCode(state.recover)) : ""})`)
     }
@@ -390,13 +390,17 @@ JSON.stringify(this.terms.repeatInfo)},\n${JSON.stringify(specialized)},\n${JSON
   }
 
   stateData(state: LRState, skipped: (null | string)[], tokenizers: string[]) {
-    let actions = [], goto = [], recover = [], alwaysReduce = -1, defaultReduce = -1
-    if (state.terminals.length && state.terminals.every(a => a instanceof Reduce && a.rule == (state.terminals[0] as Reduce).rule)) {
-      alwaysReduce = reduce((state.terminals[0] as Reduce).rule)
-    } else {
-      for (let action of state.terminals)
-        actions.push(action.term.id, action instanceof Shift ? -action.target.id : reduce(action.rule))
+    let actions = [], goto = [], recover = [], forcedReduce = 0, defaultReduce = 0
+    if (state.actions.length) {
+      let first = state.actions[0] as Reduce
+      if (state.actions.every(a => a instanceof Reduce && a.rule == first.rule))
+        defaultReduce = reduce(first.rule)
     }
+    for (let action of state.actions) {
+      let value = action instanceof Shift ? -action.target.id : reduce(action.rule)
+      if (value != defaultReduce) actions.push(action.term.id, value)
+    }
+    // FIXME maybe also have a default goto? see how often duplicates occur
     for (let action of state.goto)
       goto.push(action.term.id, action.target.id)
     for (let action of state.recover)
@@ -404,15 +408,15 @@ JSON.stringify(this.terms.repeatInfo)},\n${JSON.stringify(specialized)},\n${JSON
     let positions = state.set.filter(p => p.pos > 0)
     if (positions.length) {
       let defaultPos = positions.reduce((a, b) => a.pos - b.pos || b.rule.parts.length - a.rule.parts.length < 0 ? b : a)
-      defaultReduce = (defaultPos.rule.name.id << REDUCE_DEPTH_SIZE) | defaultPos.pos
+      forcedReduce = (defaultPos.rule.name.id << REDUCE_DEPTH_SIZE) | defaultPos.pos
     }
     let {skip, tokenizers: tok} = this.tokensForState(state, skipped, tokenizers)
-    return {actions, goto, recover, alwaysReduce, defaultReduce, skip, tokenizers: tok}
+    return {actions, goto, recover, defaultReduce, forcedReduce, skip, tokenizers: tok}
   }
 
   tokensForState(state: LRState, skipped: (null | string)[], tokenizers: string[]) {
     let found: (string | null)[] = [], skip = null
-    for (let action of state.terminals) {
+    for (let action of state.actions) {
       let group = this.tokens[action.term.name]
       let index = this.tokenGroups.indexOf(group)
       let curSkip = skipped[index < 0 ? 0 : index]

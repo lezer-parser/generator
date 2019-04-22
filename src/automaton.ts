@@ -126,8 +126,8 @@ function hashPositions(set: ReadonlyArray<Pos>) {
 }
 
 export class State {
-  terminals: (Shift | Reduce)[] = []
-  terminalPrec: ReadonlyArray<Precedence>[] = []
+  actions: (Shift | Reduce)[] = []
+  actionPrec: ReadonlyArray<Precedence>[] = []
   goto: Shift[] = []
   recover: Shift[] = []
   hash: number
@@ -140,19 +140,19 @@ export class State {
   get accepting() { return (this.flags & ACCEPTING) > 0 }
 
   toString() {
-    let actions = this.terminals.map(t => t.term + "=" + t).join(",") +
+    let actions = this.actions.map(t => t.term + "=" + t).join(",") +
       (this.goto.length ? " | " + this.goto.map(g => g.term + "=" + g).join(",") : "")
     return this.id + ": " + this.set.filter(p => p.pos > 0).join() + (actions.length ? "\n  " + actions : "")
   }
 
   addAction(value: Shift | Reduce, prec: ReadonlyArray<Precedence>, pos?: Pos): boolean {
-    check: for (let i = 0; i < this.terminals.length; i++) {
-      let action = this.terminals[i]
+    check: for (let i = 0; i < this.actions.length; i++) {
+      let action = this.actions[i]
       if (action.term == value.term) {
         if (action.eq(value)) return true
         if (!prec.some(p => p.value == Precedence.REPEAT))
           this.flags |= AMBIGUOUS
-        let prev = this.terminalPrec[i]
+        let prev = this.actionPrec[i]
         for (let p of prec) if (p.isAmbig) {
           if (prev.some(x => x.isAmbig && x.group == p.group)) continue check
         }
@@ -161,8 +161,8 @@ export class State {
         if (diff == 0 && main && main.associativity)
           diff = main.associativity == "left" ? 1 : -1
         if (diff > 0) { // Drop the existing action
-          this.terminals.splice(i, 1)
-          this.terminalPrec.splice(i, 1)
+          this.actions.splice(i, 1)
+          this.actionPrec.splice(i, 1)
           i--
           continue check
         } else if (diff < 0) { // Drop this one
@@ -176,8 +176,8 @@ export class State {
         }
       }
     }
-    this.terminals.push(value)
-    this.terminalPrec.push(prec)
+    this.actions.push(value)
+    this.actionPrec.push(prec)
     return true
   }
 
@@ -303,8 +303,8 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, f
 }
 
 function mergeState(mapping: number[], newStates: State[], state: State, target: State): boolean {
-  for (let j = 0; j < state.terminals.length; j++)
-    if (!target.addAction(state.terminals[j].map(mapping, newStates), state.terminalPrec[j]))
+  for (let j = 0; j < state.actions.length; j++)
+    if (!target.addAction(state.actions[j].map(mapping, newStates), state.actionPrec[j]))
       return false
   for (let goto of state.goto) {
     if (!target.goto.find(a => a.term == goto.term))
@@ -375,7 +375,7 @@ function addRecoveryRules(table: State[], rules: ReadonlyArray<Rule>, first: {[n
         let part = pos.rule.parts[i]
         terms: for (let term of (part.terminal ? [part] : first[part.name])) if (term && !state.recover.some(a => a.term == term)) {
           let next = pos.rule.parts[pos.pos]
-          let action = next.terminal ? state.terminals.find(t => t.term == next) : state.getGoto(next)
+          let action = next.terminal ? state.actions.find(t => t.term == next) : state.getGoto(next)
           if (!action || !(action instanceof Shift)) continue
           state.recover.push(new Shift(term, action.target))
         }
