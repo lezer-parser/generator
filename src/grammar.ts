@@ -71,50 +71,13 @@ export class TermSet {
   }
 }
 
-export class Precedence {
-  hash: number
+export const ASSOC_LEFT = 1, ASSOC_RIGHT = 2, PREC_REPEAT = 2e8
 
-  constructor(readonly isAmbig: boolean,
-              readonly value: number,
-              readonly associativity: "left" | "right" | null,
-              readonly group: string | null) {
-    this.hash = +isAmbig + (value << 1) + (associativity == "left" ? 387 : associativity ? 812 : 0) +
-      (!group ? 0 : group.charCodeAt(0) << 6 + (group.length > 1 ? group.charCodeAt(1) << 8 : 0))
-  }
+export function precedence(assoc: number, value: number) { return assoc | (value << 2) }
 
-  cmp(other: Precedence) {
-    return +this.isAmbig - +other.isAmbig || this.value - other.value || cmpStr(this.associativity || "", other.associativity || "") ||
-      cmpStr(this.group || "", other.group || "")
-  }
+export function precedenceValue(prec: number) { return prec >> 2 }
 
-  eq(other: Precedence) {
-    return this.cmp(other) == 0
-  }
-
-  static join(a: ReadonlyArray<Precedence>, b: ReadonlyArray<Precedence>): ReadonlyArray<Precedence> {
-    if (a.length == 0 || a == b) return b
-    if (b.length == 0) return a
-    let result = a.slice()
-    for (let p of b) {
-      if (p.isAmbig) {
-        if (!result.some(x => x.isAmbig && x.group == p.group)) result.push(p)
-      } else {
-        let found = result.findIndex(x => !x.isAmbig)
-        if (found < 0) result.push(p)
-        else if (result[found].value < p.value) result[found] = p
-      }
-    }
-    return result
-  }
-
-  static REPEAT = 1e9
-}
-
-function cmpStr(a: string, b: string) {
-  return a == b ? 0 : a < b ? -1 : 1
-}
-
-const none: ReadonlyArray<any> = []
+export function precedenceAssoc(prec: number) { return prec & 3 }
 
 let ruleID = 0
 
@@ -122,8 +85,9 @@ export class Rule {
   id = ruleID++
 
   constructor(readonly name: Term,
-              readonly parts: Term[],
-              readonly precedence: ReadonlyArray<ReadonlyArray<Precedence>>) {}
+              readonly parts: readonly Term[],
+              public rulePrecedence: number,
+              readonly posPrecedence: number[]) {}
 
   cmp(rule: Rule) {
     return this.id - rule.id
@@ -132,23 +96,7 @@ export class Rule {
   cmpNoName(rule: Rule) {
     return this.parts.length - rule.parts.length ||
       this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0) ||
-      this.precedence.length - rule.precedence.length ||
-      this.precedence.reduce((d, ps, i) => d || ps.reduce((d, p, j) => d || p.cmp(rule.precedence[i][j]), 0), 0)
-  }
-
-  precAt(pos: number): ReadonlyArray<Precedence> {
-    return pos >= this.precedence.length ? none : this.precedence[pos] || none
-  }
-
-  rulePrec(): ReadonlyArray<Precedence> {
-    let result = none as Precedence[]
-    for (let value of this.precedence) {
-      if (value) for (let prec of value) {
-        if (result == none) result = []
-        if (!result.some(p => prec.eq(p))) result.push(prec)
-      }
-    }
-    return result
+      this.posPrecedence.reduce((d, p, i) => d || p - rule.posPrecedence[i], 0)
   }
 
   toString() {

@@ -1,15 +1,13 @@
-import {Term, TermSet, Precedence, Rule} from "./grammar"
+import {Term, TermSet, Rule, precedenceValue, precedenceAssoc, PREC_REPEAT, ASSOC_LEFT} from "./grammar"
 
 export class Pos {
   hash: number
 
   constructor(readonly rule: Rule,
               readonly pos: number,
-              readonly ahead: ReadonlyArray<Term>,
-              readonly prec: ReadonlyArray<Precedence>) {
+              readonly ahead: ReadonlyArray<Term>) {
     let h = hash(rule.id, pos)
     for (let a of this.ahead) h = hash(h, a.hash)
-    for (let p of prec) h = hash(h, p.hash)
     this.hash = h
   }
 
@@ -18,13 +16,11 @@ export class Pos {
   }
 
   advance() {
-    let prec = this.rule.precAt(this.pos + 1)
-    for (let p of this.prec) if (p.isAmbig) prec = Precedence.join([p], prec)
-    return new Pos(this.rule, this.pos + 1, this.ahead, prec)
+    return new Pos(this.rule, this.pos + 1, this.ahead)
   }
 
   cmp(pos: Pos) {
-    return this.cmpSimple(pos) || cmpSet(this.ahead, pos.ahead, (a, b) => a.cmp(b)) || cmpSet(this.prec, pos.prec, (a, b) => a.cmp(b))
+    return this.cmpSimple(pos) || cmpSet(this.ahead, pos.ahead, (a, b) => a.cmp(b))
   }
 
   cmpSimple(pos: Pos) {
@@ -40,7 +36,7 @@ export class Pos {
   eq(other: Pos) {
     return this == other ||
       this.hash == other.hash && this.rule == other.rule && this.pos == other.pos &&
-      sameSet(this.ahead, other.ahead) && eqSet(this.prec, other.prec)
+      sameSet(this.ahead, other.ahead)
   }
 }
 
@@ -66,13 +62,10 @@ function advance(set: readonly Pos[], expr: Term): Pos[] {
   return result
 }
 
-function advanceWithPrec(set: readonly Pos[], expr: Term): {set: Pos[], prec: readonly Precedence[]} {
-  let result = [], prec = none as Precedence[]
+function advanceWithPrec(set: readonly Pos[], expr: Term): {set: Pos[], prec: number} {
+  let result = [], prec = 0
   for (let pos of set) if (pos.next == expr) {
-    for (let p of pos.prec) {
-      if (prec == none) prec = []
-      if (!prec.some(x => x.eq(p))) prec.push(p)
-    }
+    prec = Math.max(pos.rule.posPrecedence[pos.pos], prec)
     result.push(pos.advance())
   }
   return {set: result, prec}
@@ -129,7 +122,7 @@ function hashPositions(set: ReadonlyArray<Pos>) {
 
 export class State {
   actions: (Shift | Reduce)[] = []
-  actionPrec: ReadonlyArray<Precedence>[] = []
+  actionPrec: number[] = []
   goto: Shift[] = []
   recover: Shift[] = []
   hash: number
@@ -147,21 +140,16 @@ export class State {
     return this.id + ": " + this.set.filter(p => p.pos > 0).join() + (actions.length ? "\n  " + actions : "")
   }
 
-  addAction(value: Shift | Reduce, prec: ReadonlyArray<Precedence>, pos?: Pos): boolean {
+  addAction(value: Shift | Reduce, prec: number, pos?: Pos): boolean {
     check: for (let i = 0; i < this.actions.length; i++) {
       let action = this.actions[i]
       if (action.term == value.term) {
         if (action.eq(value)) return true
-        if (!prec.some(p => p.value == Precedence.REPEAT))
-          this.flags |= AMBIGUOUS
+        if (precedenceValue(prec) != PREC_REPEAT) this.flags |= AMBIGUOUS
         let prev = this.actionPrec[i]
-        for (let p of prec) if (p.isAmbig) {
-          if (prev.some(x => x.isAmbig && x.group == p.group)) continue check
-        }
-        let main = prec.find(x => !x.isAmbig), prevMain = prev.find(x => !x.isAmbig)
-        let diff = (main ? main.value : 0) - (prevMain ? prevMain.value : 0)
-        if (diff == 0 && main && main.associativity)
-          diff = main.associativity == "left" ? 1 : -1
+        let diff = precedenceValue(prec) - precedenceValue(prev)
+        if (diff == 0 && precedenceAssoc(prec))
+          diff = precedenceAssoc(prec) == ASSOC_LEFT ? 1 : -1
         if (diff > 0) { // Drop the existing action
           this.actions.splice(i, 1)
           this.actionPrec.splice(i, 1)
@@ -170,6 +158,7 @@ export class State {
         } else if (diff < 0) { // Drop this one
           return true
         } else { // Not resolved
+          // FIXME check for ambiguity
           if (!pos) return false
           if (action instanceof Shift)
             throw new Error(`shift/reduce conflict at ${pos} for ${action.term}`)
@@ -193,18 +182,17 @@ export class State {
 }
 
 class AddedPos {
-  constructor(readonly rule: Rule, readonly ahead: Term[], readonly origIndex: number, public prec: ReadonlyArray<Precedence>) {}
+  constructor(readonly rule: Rule, readonly ahead: Term[], readonly origIndex: number) {}
 }
 
 function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[name: string]: Term[]}) {
   let added: AddedPos[] = [], redo: AddedPos[] = []
-  function addFor(name: Term, ahead: ReadonlyArray<Term>, prec: readonly Precedence[]) {
+  function addFor(name: Term, ahead: ReadonlyArray<Term>) {
     for (let rule of rules) if (rule.name == name) {
       let add = added.find(a => a.rule == rule)
       if (!add) {
         let existing = set.findIndex(p => p.pos == 0 && p.rule == rule)
-        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing,
-                           Precedence.join(existing < 0 ? prec : Precedence.join(prec, set[existing].prec), rule.precAt(0)))
+        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing)
         added.push(add)
       }
       for (let term of ahead) if (!add.ahead.includes(term)) {
@@ -216,16 +204,16 @@ function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[n
   
   for (let pos of set) {
     let next = pos.next
-    if (next && !next.terminal) addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first), pos.prec)
+    if (next && !next.terminal) addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first))
   }
   while (redo.length) {
     let add = redo.pop()!
-    addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first), add.prec)
+    addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first))
   }
 
   let result = set.slice()
   for (let add of added) {
-    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.prec)
+    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash))
     if (add.origIndex > -1) result[add.origIndex] = pos
     else result.push(pos)
   }
@@ -294,12 +282,12 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, f
         state.goto.push(new Shift(state.set[program].rule.name, accepting))
       }
       for (let pos of set) if (pos.next == null) for (let ahead of pos.ahead)
-        state.addAction(new Reduce(ahead, pos.rule), Precedence.join(pos.prec, pos.rule.rulePrec()), pos)
+        state.addAction(new Reduce(ahead, pos.rule), pos.rule.rulePrecedence, pos)
     }
     return state
   }
 
-  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, [terms.eof], rule.precAt(0))))
+  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, [terms.eof])))
   return states
 }
 

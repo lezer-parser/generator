@@ -2,7 +2,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, MarkedExpression,
         exprsEq, exprEq} from "./node"
-import {Term, TermSet, Precedence, Rule} from "./grammar"
+import {Term, TermSet, precedence, ASSOC_LEFT, ASSOC_RIGHT, PREC_REPEAT, Rule} from "./grammar"
 import {Edge, State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
@@ -13,17 +13,16 @@ const none: ReadonlyArray<any> = []
 const verbose = (typeof process != "undefined" && process.env.LOG) || ""
 
 class PrecTerm {
-  constructor(readonly term: Term, readonly prec: Precedence[]) {}
+  constructor(readonly term: Term, readonly prec: number) {}
 
   get terminal() { return this.term.terminal }
   get name() { return this.term.name }
 
-  static from(term: Term$, prec: Precedence): Term$ {
-    if (term instanceof PrecTerm) return new PrecTerm(term.term, [prec].concat(term.prec))
-    else return new PrecTerm(term, [prec])
+  static from(term: Term$, prec: number): Term$ {
+    return new PrecTerm(term instanceof PrecTerm ? term.term : term, prec)
   }
 
-  static onFirst(terms: Term$[], prec: Precedence): Term$[] {
+  static onFirst(terms: Term$[], prec: number): Term$[] {
     return terms.length ? [PrecTerm.from(terms[0], prec)].concat(terms.slice(1)) : terms
   }
 }
@@ -45,15 +44,16 @@ class Context {
 
   defineRule(name: Term, choices: Term$[][]) {
     for (let choice of choices) {
-      let precedences = none as ReadonlyArray<Precedence>[]
+      let precedences = [], rulePrec = 0
+      for (let i = 0; i < choice.length; i++) precedences.push(0)
       let terms = choice.map((term, i) => {
         if (!(term instanceof PrecTerm)) return term
-        if (precedences == none) precedences = []
-        for (let j = 0; j < i; j++) precedences.push(none)
-        precedences[i] = term.prec
+        if (rulePrec && rulePrec != term.prec)
+          this.b.input.raise(`Conflicting precedences for rule ${name.name}`)
+        precedences[i] = rulePrec = term.prec
         return term.term
       })
-      this.b.rules.push(new Rule(name, terms, precedences))
+      this.b.rules.push(new Rule(name, terms, rulePrec, precedences))
     }
     return [name]
   }
@@ -114,7 +114,7 @@ class Context {
     this.b.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
     let top = this.normalizeTopExpr(expr.expr, inner)
-    top.push([inner, PrecTerm.from(inner, new Precedence(false, Precedence.REPEAT, "left", null))])
+    top.push([inner, PrecTerm.from(inner, precedence(ASSOC_LEFT, PREC_REPEAT))])
     this.defineRule(inner, top)
     this.defineRule(outer, expr.kind == "+" ? [[inner]] : [[], [inner]])
     return [outer]
@@ -271,7 +271,7 @@ class Builder {
   }
 
   getParserData() {
-    let rules = simplifyRules(this.rules)
+    let rules = propagatePrecedences(simplifyRules(this.rules))
     let {tags, names, repeatInfo} = this.terms.finish(rules)
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
     let table = buildAutomaton(rules, this.terms)
@@ -455,16 +455,15 @@ class Builder {
     })
   }
 
-  getPrecedence(expr: MarkedExpression): Precedence {
+  getPrecedence(expr: MarkedExpression): number {
     if (!expr.namespace) {
       let precs = this.ast.precedences!
       let pos = precs ? precs.names.findIndex(id => id.name == expr.id.name) : -1
       if (pos < 0) this.input.raise(`Reference to unknown precedence: '${expr.id.name}'`, expr.start)
-      return new Precedence(false, precs.names.length - pos, precs.assoc[pos], null)
+      let assoc = precs.assoc[pos]
+      return precedence(assoc == "left" ? ASSOC_LEFT : assoc == "right" ? ASSOC_RIGHT : 0, precs.names.length - pos)
     }
-    if (expr.namespace.name != "ambig")
-      this.input.raise(`Unrecognized conflict marker '!${expr.namespace.name}.${expr.id.name}'`, expr.start)
-    return new Precedence(true, 0, null, expr.id.name)
+    return this.input.raise(`Unrecognized conflict marker '!${expr.namespace.name}.${expr.id.name}'`, expr.start)
   }
 }
 
@@ -727,6 +726,7 @@ function inlineRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
       let rule = rules[i]
       if (!rule.name.interesting && !rule.parts.includes(rule.name) && rule.parts.length < 3 &&
           !rule.parts.some(p => !!inlinable[p.name]) &&
+          !rule.rulePrecedence &&
           !rules.some((r, j) => j != i && r.name == rule.name))
         found = inlinable[rule.name.name] = rule
     }
@@ -738,27 +738,20 @@ function inlineRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
         newRules.push(rule)
         continue
       }
-      let prec = [], parts = []
+      let prec = [rule.posPrecedence[0]], parts = []
       for (let i = 0; i < rule.parts.length; i++) {
         let replace = inlinable[rule.parts[i].name]
-        if (!replace) {
-          if (i < rule.precedence.length) {
-            while (prec.length < parts.length) prec.push(none)
-            prec.push(rule.precedence[i])
-          }
-          parts.push(rule.parts[i])
-        } else {
+        if (replace) {
           for (let j = 0; j < replace.parts.length; j++) {
-            let partPrec = j ? replace.precAt(j) : Precedence.join(rule.precAt(i), replace.precAt(j))
-            if (partPrec.length) {
-              while (prec.length < parts.length) prec.push(none)
-              prec.push(partPrec)
-            }
             parts.push(replace.parts[j])
+            prec.push(replace.posPrecedence[j + 1])
           }
+        } else {
+          parts.push(rule.parts[i])
+          prec.push(rule.posPrecedence[i + 1])
         }
       }
-      newRules.push(new Rule(rule.name, parts, prec))
+      newRules.push(new Rule(rule.name, parts, rule.rulePrecedence, prec))
     }
     rules = newRules
   }
@@ -788,13 +781,44 @@ function mergeRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
   let newRules = []
   for (let rule of rules) if (!merged[rule.name.name]) {
     newRules.push(rule.parts.every(p => !merged[p.name]) ? rule :
-                  new Rule(rule.name, rule.parts.map(p => merged[p.name] || p), rule.precedence))
+                  new Rule(rule.name, rule.parts.map(p => merged[p.name] || p), rule.rulePrecedence, rule.posPrecedence))
   }
   return newRules
 }
 
 function simplifyRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
   return mergeRules(inlineRules(rules))
+}
+
+function propagatePrecedences(rules: readonly Rule[]): readonly Rule[] {
+  let conflicts: Rule[] = []
+
+  function propagate(term: Term, prec: number) {
+    for (let rule of rules) if (rule.name == term) {
+      if (rule.posPrecedence[0] < 0) {
+        if (!conflicts.includes(rule)) conflicts.push(rule)
+      } else if (rule.posPrecedence[0] == 0) {
+        rule.posPrecedence[0] = -prec
+        if (rule.parts.length && !rule.parts[0].terminal) propagate(rule.parts[0], prec)
+      }
+    }
+  }
+
+  for (let rule of rules) {
+    for (let i = 0; i < rule.parts.length; i++) {
+      let prec = rule.posPrecedence[i], term = rule.parts[i]
+      if (prec > 0 && !term.terminal) propagate(term, prec)
+    }
+  }
+
+  for (let rule of rules) {
+    for (let i = 0; i <= rule.parts.length; i++) {
+      let posPrec = rule.posPrecedence[i]
+      if (posPrec < 0) rule.posPrecedence[0] = (i == 0 && conflicts.includes(rule)) ? 0 : -posPrec
+    }
+  }
+
+  return rules
 }
 
 export function buildParser(text: string, fileName: string | null = null): Parser {
