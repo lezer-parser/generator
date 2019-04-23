@@ -18,7 +18,9 @@ export class Pos {
   }
 
   advance() {
-    return new Pos(this.rule, this.pos + 1, this.ahead, this.rule.precedence[this.pos + 1] || none)
+    let prec = this.rule.precAt(this.pos + 1)
+    for (let p of this.prec) if (p.isAmbig) prec = Precedence.join([p], prec)
+    return new Pos(this.rule, this.pos + 1, this.ahead, prec)
   }
 
   cmp(pos: Pos) {
@@ -32,7 +34,7 @@ export class Pos {
   toString() {
     let parts = this.rule.parts.map(t => t.name)
     parts.splice(this.pos, 0, "·")
-    return `${this.rule.name} -> ${parts.join(" ")} [${this.ahead.join(",")}]`
+    return `${this.rule.name} -> ${parts.join(" ")}`
   }
 
   eq(other: Pos) {
@@ -202,10 +204,9 @@ function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[n
       if (!add) {
         let existing = set.findIndex(p => p.pos == 0 && p.rule == rule)
         add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing,
-                           existing < 0 ? prec : Precedence.join(prec, set[existing].prec))
+                           Precedence.join(existing < 0 ? prec : Precedence.join(prec, set[existing].prec), rule.precAt(0)))
         added.push(add)
       }
-      add.prec = Precedence.join(add.prec, rule.precAt(0))
       for (let term of ahead) if (!add.ahead.includes(term)) {
         add.ahead.push(term)
         if (add.rule.parts.length && !add.rule.parts[0].terminal) addTo(add, redo)
@@ -293,7 +294,7 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, f
         state.goto.push(new Shift(state.set[program].rule.name, accepting))
       }
       for (let pos of set) if (pos.next == null) for (let ahead of pos.ahead)
-        state.addAction(new Reduce(ahead, pos.rule), pos.rule.rulePrec(), pos)
+        state.addAction(new Reduce(ahead, pos.rule), Precedence.join(pos.prec, pos.rule.rulePrec()), pos)
     }
     return state
   }

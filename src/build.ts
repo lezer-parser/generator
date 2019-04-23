@@ -185,7 +185,6 @@ class Context {
 function findNameFor(expr: Expression): string | null {
   if (expr instanceof NamedExpression) return `${expr.namespace ? expr.namespace.name + "." : ""}${expr.id.name}`
   if (expr instanceof RepeatExpression || expr instanceof MarkedExpression) return findNameFor(expr.expr)
-  if (expr instanceof ChoiceExpression || expr instanceof SequenceExpression) return findNameFor(expr.exprs[0])
   if (expr instanceof LiteralExpression) return JSON.stringify(expr.value)
   return null
 }
