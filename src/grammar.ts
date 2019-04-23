@@ -1,51 +1,40 @@
-import {FIRST_REPEAT_TERM, TERM_ERR, TERM_EOF} from "lezer"
+import {TERM_EOF} from "lezer"
 
-const TERMINAL = 1, REPEATED = 2, REPEATS = 4, PROGRAM = 8
+const TERMINAL = 1, REPEATED = 2, PROGRAM = 4, ERROR = 8, EOF = 16
+
+let termHash = 0
 
 export class Term {
-  constructor(readonly id: number,
-              readonly name: string,
+  hash = ++termHash // Used for sorting and hashing during parser generation
+  id = -1 // Assigned in a later stage, used in actual output
+
+  constructor(readonly name: string,
               private flags: number,
-              readonly tag: string | null) {}
+              readonly tag: string | null,
+              readonly repeats: Term | null = null) {}
   toString() { return this.name }
   get terminal() { return (this.flags & TERMINAL) > 0 }
-  get eof() { return this.id == TERM_EOF }
-  get error() { return this.id == TERM_ERR }
+  get eof() { return (this.flags & EOF) > 0 }
+  get error() { return (this.flags & ERROR) > 0 }
   get program() { return (this.flags & PROGRAM) > 0 }
-  get interesting() { return this.flags > 0 || this.tag != null }
+  get interesting() { return this.flags > 0 || this.tag != null || this.repeats != null }
   set repeated(value: boolean) { this.flags = value ? this.flags | REPEATED : this.flags & ~REPEATED }
-  cmp(other: Term) { return this.id - other.id }
+  cmp(other: Term) { return this.hash - other.hash }
 }
 
 export class TermSet {
   nonTerminals: Term[] = []
   terminals: Term[] = []
-  tags: string[] = []
-  repeatInfo: number[] = []
   eof: Term
   error: Term
-  anonID = -1
-  names: {[id: number]: string} = Object.create(null)
 
   constructor() {
-    this.eof = this.term("␄", null, TERMINAL)
-    this.error = this.term("⚠", "⚠", TERMINAL)
+    this.eof = this.term("␄", null, TERMINAL | EOF)
+    this.error = this.term("⚠", "⚠", ERROR)
   }
 
   term(name: string, tag: string | null, flags: number = 0, repeats?: Term) {
-    let id
-    if (tag) {
-      id = this.tags.length << 1
-      this.tags.push(tag)
-    } else if (repeats) {
-      flags |= REPEATS
-      id = (this.repeatInfo.length << 1) + FIRST_REPEAT_TERM
-      this.repeatInfo.push(repeats.id)
-    } else {
-      id = this.anonID += 2
-    }
-    let term = new Term(id, name, flags, tag)
-    this.names[id] = name
+    let term = new Term(name, flags, tag, repeats)
     ;(term.terminal ? this.terminals : this.nonTerminals).push(term)
     return term
   }
@@ -57,6 +46,28 @@ export class TermSet {
   makeNonTerminal(name: string, tag: string | null, repeats?: Term) {
     // FIXME maybe don't hard-code the start symbol name—some grammars don't even parse "programs" (JSON, Markdown)
     return this.term(name, tag, name == "program" ? PROGRAM : 0, repeats)
+  }
+
+  finish(rules: readonly Rule[]) {
+    let tags: string[] = []
+    let names: {[id: number]: string} = {}
+    let repeatInfo: number[] = []
+
+    let taggedID = -1, untaggedID = -2
+    for (let term of this.nonTerminals) if (term.repeats && rules.some(r => r.name == term))
+      term.id = (untaggedID += 2)
+    for (let term of this.nonTerminals) if (term.id < 0 && (term.error || rules.some(r => r.name == term)))
+      term.id = term.tag ? (taggedID += 2) : (untaggedID += 2)
+    for (let term of this.terminals)
+      term.id = term.eof ? TERM_EOF : term.tag ? (taggedID += 2) : (untaggedID += 2)
+
+    for (let term of this.terminals.concat(this.nonTerminals)) if (term.id > -1) {
+      if (term.tag) tags[term.id >> 1] = term.tag
+      if (term.repeats) repeatInfo.push(term.repeats.id)
+      names[term.id] = term.name
+    }
+
+    return {tags, names, repeatInfo}
   }
 }
 

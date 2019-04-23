@@ -8,7 +8,7 @@ export class Pos {
               readonly ahead: ReadonlyArray<Term>,
               readonly prec: ReadonlyArray<Precedence>) {
     let h = hash(rule.id, pos)
-    for (let a of this.ahead) h = hash(h, a.id)
+    for (let a of this.ahead) h = hash(h, a.hash)
     for (let p of prec) h = hash(h, p.hash)
     this.hash = h
   }
@@ -224,7 +224,7 @@ function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[n
 
   let result = set.slice()
   for (let add of added) {
-    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.id - b.id), add.prec)
+    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.prec)
     if (add.origIndex > -1) result[add.origIndex] = pos
     else result.push(pos)
   }

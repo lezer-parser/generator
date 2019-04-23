@@ -6,7 +6,7 @@ import {Term, TermSet, Precedence, Rule} from "./grammar"
 import {Edge, State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
-import {Parser, ParseState, REDUCE_DEPTH_SIZE, noToken, Tokenizer} from "lezer"
+import {Parser, ParseState, REDUCE_DEPTH_SIZE, noToken, Tokenizer, TERM_TAGGED} from "lezer"
 
 const none: ReadonlyArray<any> = []
 
@@ -169,14 +169,14 @@ class Context {
     let terminal = this.normalizeExpr(expr.args[0])
     if (terminal.length != 1 || !terminal[0].terminal)
       this.raise(`The first argument to 'specialize' must resolve to a token`, expr.args[0].start)
-    let term = terminal[0].name, value = (expr.args[1] as LiteralExpression).value
-    let table = this.b.specialized[term] || (this.b.specialized[term] = Object.create(null))
-    let known = table[value], token: Term
+    let term = terminal[0], value = (expr.args[1] as LiteralExpression).value
+    let table = this.b.specialized[term.name] || (this.b.specialized[term.name] = [])
+    let known = table.find(sp => sp.value == value), token
     if (known == null) {
-      token = this.b.makeTerminal(term + "-" + JSON.stringify(value), tag, this.b.tokens[term])
-      table[value] = token.id
+      token = this.b.makeTerminal(term + "-" + JSON.stringify(value), tag, this.b.tokens[term.name])
+      table.push({value, term: token})
     } else {
-      token = this.b.terms.terminals.find(t => t.id == known)!
+      token = known.term
     }
     return [token]
   }
@@ -214,7 +214,7 @@ class Builder {
   input: Input
   terms = new TermSet
   tokenGroups: TokenGroup[] = []
-  specialized: {[name: string]: {[value: string]: number}} = Object.create(null)
+  specialized: {[name: string]: {value: string, term: Term}[]} = Object.create(null)
   rules: Rule[] = []
   built: BuiltRule[] = []
   ruleNames: {[name: string]: boolean} = Object.create(null)
@@ -273,6 +273,7 @@ class Builder {
 
   getParserData() {
     let rules = simplifyRules(this.rules)
+    let {tags, names, repeatInfo} = this.terms.finish(rules)
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
     let table = buildAutomaton(rules, this.terms)
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
@@ -292,27 +293,33 @@ class Builder {
     let specialized = [], specializations = []
     for (let name in this.specialized) {
       specialized.push(this.terms.terminals.find(t => t.name == name)!.id)
-      specializations.push(this.specialized[name])
+      let table: {[value: string]: number} = {}
+      for (let {value, term} of this.specialized[name]) table[value] = term.id
+      specializations.push(table)
     }
     let states = table.map(s => this.stateData(s, skipped, tokenizers))
-    return {rules, states, specialized, specializations}
+    let {taggedGoto, untaggedGoto} = computeGotoTables(table)
+
+    return {rules, tags, names, repeatInfo, states, taggedGoto, untaggedGoto, specialized, specializations}
   }
 
   getParser() {
-    let {states, specialized, specializations} = this.getParserData()
+    let {states, tags, names, repeatInfo, taggedGoto, untaggedGoto, specialized, specializations} = this.getParserData()
     let evaluated: {[source: string]: Tokenizer} = Object.create(null)
     function getFunc(source: string | null): Tokenizer {
       return source == null ? noToken : evaluated[source] || (evaluated[source] = (1,eval)("(" + source + ")"))
     }
     let stateObjs = states.map((s, i) => {
-      let {actions, goto, recover, defaultReduce, forcedReduce, skip, tokenizers} = s
-      return new ParseState(i, actions, goto, recover, defaultReduce, forcedReduce, getFunc(skip), tokenizers.map(getFunc))
+      let {actions, recover, defaultReduce, forcedReduce, skip, tokenizers} = s
+      return new ParseState(i, actions, recover, defaultReduce, forcedReduce, getFunc(skip), tokenizers.map(getFunc))
     })
-    return new Parser(stateObjs, this.terms.tags, this.terms.repeatInfo, specialized, specializations, this.terms.names)
+    return new Parser(stateObjs, tags, repeatInfo, taggedGoto, untaggedGoto, specialized, specializations, names)
   }
 
+  // FIXME at some point compress the various tables into a single big
+  // array, encode it as a string and decode into Uint16Array
   getParserString({includeNames = false, moduleStyle = "CommonJS"}: GenOptions) {
-    let {states, specialized, specializations} = this.getParserData()
+    let {states, taggedGoto, untaggedGoto, specialized, specializations, tags, names, repeatInfo} = this.getParserData()
     let counts: {[key: string]: number} = Object.create(null)
     function count(value: any) { let key = "" + value; counts[key] = (counts[key] || 0) + 1 }
 
@@ -336,7 +343,6 @@ class Builder {
 
     for (let state of states) {
       count(numbersToCode(state.actions))
-      count(numbersToCode(state.goto))
       count(numbersToCode(state.recover))
       count(tokenizersToCode(state.tokenizers))
     }
@@ -357,7 +363,7 @@ class Builder {
     let stateText = []
     for (let state of states) {
       stateText.push(`s(${state.defaultReduce || reference(numbersToCode(state.actions))
-                      }, ${reference(numbersToCode(state.goto))}, ${state.forcedReduce}, ${
+                      }, ${state.forcedReduce}, ${
                       tokenizerName(state.skip)}, ${reference(tokenizersToCode(state.tokenizers))}${
                       state.recover.length ? ", " + reference(numbersToCode(state.recover)) : ""})`)
     }
@@ -369,9 +375,10 @@ class Builder {
       varText +
       "s.id = 0\n" +
       (moduleStyle == "es6" ? `export default` : `module.exports = `) +
-      `new Parser([\n  ${stateText.join(",\n  ")}\n],\n${JSON.stringify(this.terms.tags)},\n${
-JSON.stringify(this.terms.repeatInfo)},\n${JSON.stringify(specialized)},\n${JSON.stringify(specializations)
-}${includeNames ? `,\n${JSON.stringify(this.terms.names)}` : ""})`
+      `new Parser([\n  ${stateText.join(",\n  ")}\n],\n${JSON.stringify(tags)},\n${
+       JSON.stringify(repeatInfo)},\n${JSON.stringify(taggedGoto)},\n${JSON.stringify(untaggedGoto)},${
+       JSON.stringify(specialized)},\n${JSON.stringify(specializations)
+       }${includeNames ? `,\n${JSON.stringify(names)}` : ""})`
   }
 
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
@@ -390,7 +397,7 @@ JSON.stringify(this.terms.repeatInfo)},\n${JSON.stringify(specialized)},\n${JSON
   }
 
   stateData(state: LRState, skipped: (null | string)[], tokenizers: string[]) {
-    let actions = [], goto = [], recover = [], forcedReduce = 0, defaultReduce = 0
+    let actions = [], recover = [], forcedReduce = 0, defaultReduce = 0
     if (state.actions.length) {
       let first = state.actions[0] as Reduce
       if (state.actions.every(a => a instanceof Reduce && a.rule == first.rule))
@@ -400,18 +407,16 @@ JSON.stringify(this.terms.repeatInfo)},\n${JSON.stringify(specialized)},\n${JSON
       let value = action instanceof Shift ? -action.target.id : reduce(action.rule)
       if (value != defaultReduce) actions.push(action.term.id, value)
     }
-    // FIXME maybe also have a default goto? see how often duplicates occur
-    for (let action of state.goto)
-      goto.push(action.term.id, action.target.id)
+
     for (let action of state.recover)
       recover.push(action.term.id, action.target.id)
     let positions = state.set.filter(p => p.pos > 0)
     if (positions.length) {
       let defaultPos = positions.reduce((a, b) => a.pos - b.pos || b.rule.parts.length - a.rule.parts.length < 0 ? b : a)
-      forcedReduce = (defaultPos.rule.name.id << REDUCE_DEPTH_SIZE) | defaultPos.pos
+      forcedReduce = (defaultPos.rule.name.id << REDUCE_DEPTH_SIZE) | (defaultPos.pos + 1)
     }
     let {skip, tokenizers: tok} = this.tokensForState(state, skipped, tokenizers)
-    return {actions, goto, recover, defaultReduce, forcedReduce, skip, tokenizers: tok}
+    return {actions, recover, defaultReduce, forcedReduce, skip, tokenizers: tok}
   }
 
   tokensForState(state: LRState, skipped: (null | string)[], tokenizers: string[]) {
@@ -465,7 +470,33 @@ JSON.stringify(this.terms.repeatInfo)},\n${JSON.stringify(specialized)},\n${JSON
 }
 
 function reduce(rule: Rule) {
-  return (rule.name.id << REDUCE_DEPTH_SIZE) | rule.parts.length
+  return (rule.name.id << REDUCE_DEPTH_SIZE) | (rule.parts.length + 1)
+}
+
+function computeGotoTables(states: readonly LRState[]) {
+  let goto: {[term: number]: {[to: number]: number[]}} = {}
+  for (let state of states)
+    for (let entry of state.goto) {
+      let set = goto[entry.term.id] || (goto[entry.term.id] = {})
+      ;(set[entry.target.id] || (set[entry.target.id] = [])).push(state.id)
+    }
+  let taggedGoto: number[][] = [[]] // Empty spot for TERM_ERROR
+  let untaggedGoto: number[][] = []
+  for (let term in goto) {
+    let entries = goto[term], max = -1
+    for (let target in entries) {
+      let sources = entries[target]
+      if (max < 0 || sources.length > entries[max].length) max = +target
+    }
+    let assoc: number[] = []
+    for (let target in entries) if (+target != max) {
+      for (let source of entries[target]) assoc.push(+source, +target)
+    }
+    assoc.push(-1, max)
+    let table = +term & TERM_TAGGED ? taggedGoto : untaggedGoto
+    table[+term >> 1] = assoc
+  }
+  return {taggedGoto, untaggedGoto}
 }
 
 interface Namespace {

@@ -21,3 +21,9 @@ tokens {
 (a) => b
 
 ==> ArrowExpr(ParamName, Identifier)
+
+---
+
+(a)
+
+==> ParenExpr(Identifier)
