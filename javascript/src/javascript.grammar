@@ -10,6 +10,7 @@ prec {
   exp left,
   times left,
   plus left,
+  compare left,
   and left,
   or left,
   ternary,
@@ -22,7 +23,7 @@ program { statement+ }
 statement {
   ExportStatement |
   ImportStatement |
-  tag.ForStatement<kw<"for"> "(" statement expression? semi expression? ")" statement> | // FIXME
+  tag.ForStatement<kw<"for"> "(" forSpec ")" statement> |
   tag.WhileStatement<kw<"while"> parenExpression statement> |
   tag.DoWhileStatement<kw<"do"> statement kw<"while"> parenExpression semi> |
   tag.IfStatement<kw<"if"> parenExpression statement !else (kw<"else"> statement)?> |
@@ -62,6 +63,12 @@ ImportGroup {
 
 LabeledStatement {
   Label ":" statement
+}
+
+forSpec {
+  VariableDeclaration expression? ";" expression? |
+  tag.LoopDeclaration<(kw<"let"> | kw<"var"> | kw<"const">) pattern (kw<"in"> | kw<"of">) expression> |
+  ";" expression? ";" expression?
 }
 
 declaration {
@@ -178,6 +185,7 @@ PrefixExpression {
 }
 
 BinaryExpression {
+  expressionNoComma !compare op<"<" "="? | ">" "=" | "==" "="? | "!=" "="?> expressionNoComma |
   expressionNoComma !plus op<"+" | "-"> expressionNoComma |
   expressionNoComma !times op<"*" | "/"> expressionNoComma |
   expressionNoComma !and op<"&&"> expressionNoComma |
@@ -227,6 +235,8 @@ Definition { identifier }
 
 Label { identifier }
 
+semi { ";" }
+
 tokens {
   skip { std.whitespace+ | LineComment | BlockComment }
 
@@ -251,8 +261,6 @@ tokens {
   }
 
   op<expr>=Operator { expr }
-
-  semi { ";" }
 
   group {
     RegExp { "/" ([^/\\\n[] | "\\" [^\n] | "[" ([^\n\]] | "\\" [^\n])* "]")+ ("/" [gimsuy]*)? }

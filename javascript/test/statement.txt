@@ -63,3 +63,19 @@ SwitchStatement(
     CallExpression(MemberExpression(Variable, Property), ArgList(String)),
     SwitchDefault(Keyword),
     ReturnStatement(Keyword, Boolean)))
+
+# For
+
+for (let x = 1; x < 10; x++) {}
+for (const y of z) {}
+for (var m in n) {}
+
+==>
+
+ForStatement(Keyword,
+             VariableDeclaration(Keyword, Definition, Operator, Number),
+             BinaryExpression(Variable, Operator, Number),
+             SuffixExpression(Variable, Operator),
+             Block),
+ForStatement(Keyword, LoopDeclaration(Keyword, Definition, Keyword, Variable), Block),
+ForStatement(Keyword, LoopDeclaration(Keyword, Definition, Keyword, Variable), Block)
