@@ -55,23 +55,23 @@ class Context {
       })
       this.b.rules.push(new Rule(name, terms, rulePrec, precedences))
     }
-    return [name]
+    return name
   }
 
-  resolve(expr: NamedExpression): Term[] {
+  resolve(expr: NamedExpression): Term$[][] {
     if (expr.namespace) {
       let ns = this.b.namespaces[expr.namespace.name]
       if (!ns)
         this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
       return ns.resolve(expr, this)
     } else if (expr.id.name == "specialize") {
-      return this.resolveSpecialization(expr)
+      return [[this.resolveSpecialization(expr)]]
     } else {
-      for (let built of this.b.built) if (built.matches(expr)) return [built.term]
+      for (let built of this.b.built) if (built.matches(expr)) return [[built.term]]
 
       for (let tokens of this.b.tokenGroups) {
         let found = tokens.getToken(expr, this)
-        if (found) return [found]
+        if (found) return [[found]]
       }
 
       let known = this.b.ast.rules.find(r => r.id.name == expr.id.name)
@@ -79,19 +79,7 @@ class Context {
         return this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
       if (known.params.length != expr.args.length)
         this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
-      return this.buildRule(known, expr.args)
-    }
-  }
-
-  normalizeTopExpr(expr: Expression, self: Term): Term$[][] {
-    if (expr instanceof RepeatExpression && expr.kind == "?") {
-      return [[], ...this.normalizeTopExpr(expr.expr, self)]
-    } else if (expr instanceof ChoiceExpression) {
-      return expr.exprs.map(e => this.normalizeExpr(e))
-    } else if (expr instanceof MarkedExpression) {
-      return this.normalizeTopExpr(expr.expr, self).map(terms => PrecTerm.onFirst(terms, this.b.getPrecedence(expr)))
-    } else {
-      return [this.normalizeExpr(expr)]
+      return [[this.buildRule(known, expr.args)]]
     }
   }
 
@@ -106,36 +94,35 @@ class Context {
   // Returns the terms that make up the outer rule.
   normalizeRepeat(expr: RepeatExpression) {
     let known = this.b.built.find(b => b.matchesRepeat(expr))
-    if (known) return [known.term]
+    if (known) return known.term
 
     let inner = this.newNameFor(expr.expr, expr.kind)
     inner.repeated = true
     let outer = this.newNameFor(expr.expr, expr.kind + "-wrap", inner)
     this.b.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
-    let top = this.normalizeTopExpr(expr.expr, inner)
+    let top = this.normalizeExpr(expr.expr)
     top.push([inner, PrecTerm.from(inner, precedence(ASSOC_LEFT, PREC_REPEAT))])
     this.defineRule(inner, top)
     this.defineRule(outer, expr.kind == "+" ? [[inner]] : [[], [inner]])
-    return [outer]
+    return outer
   }
 
-  normalizeExpr(expr: Expression): Term$[] {
+  normalizeExpr(expr: Expression): Term$[][] {
     if (expr instanceof RepeatExpression && expr.kind == "?") {
-      let name = this.newNameFor(expr.expr, "?")
-      return this.defineRule(name, [[] as Term$[]].concat(this.normalizeTopExpr(expr.expr, name)))
+      return [[], ...this.normalizeExpr(expr.expr)]
     } else if (expr instanceof RepeatExpression) {
-      return this.normalizeRepeat(expr)
+      return [[this.normalizeRepeat(expr)]]
     } else if (expr instanceof ChoiceExpression) {
-      return this.defineRule(this.newName(), expr.exprs.map(e => this.normalizeExpr(e)))
+      return expr.exprs.reduce((o, e) => o.concat(this.normalizeExpr(e)), [] as Term$[][])
+    } else if (expr instanceof MarkedExpression) {
+      return this.normalizeExpr(expr.expr).map(terms => PrecTerm.onFirst(terms, this.b.getPrecedence(expr)))
     } else if (expr instanceof SequenceExpression) {
-      return expr.exprs.reduce((a, e) => a.concat(this.normalizeExpr(e)), [] as Term$[])
+      return branch(expr.exprs.map(e => this.normalizeExpr(e)))
     } else if (expr instanceof LiteralExpression) {
-      return expr.value ? [this.b.tokenGroups[0].getLiteral(expr)] : []
+      return [expr.value ? [this.b.tokenGroups[0].getLiteral(expr)] : []]
     } else if (expr instanceof NamedExpression) {
       return this.resolve(expr)
-    } else if (expr instanceof MarkedExpression) {
-      return PrecTerm.onFirst(this.normalizeExpr(expr.expr), this.b.getPrecedence(expr))
     } else {
       return this.raise("This type of expression may not occur in non-token rules", expr.start)
     }
@@ -145,14 +132,14 @@ class Context {
     return this.b.input.raise(message, pos)
   }
 
-  buildRule(rule: RuleDeclaration, args: ReadonlyArray<Expression>): Term[] {
+  buildRule(rule: RuleDeclaration, args: ReadonlyArray<Expression>): Term {
     let cx = new Context(this.b, rule)
     let expr = this.b.substituteArgs(rule.expr, args, rule.params)
     this.b.used[rule.id.name] = true
     let name = this.b.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
                               rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
     this.b.built.push(new BuiltRule(rule.id.name, args, name))
-    return cx.defineRule(name, cx.normalizeTopExpr(expr, name))
+    return cx.defineRule(name, cx.normalizeExpr(expr))
   }
 
   resolveSpecialization(expr: NamedExpression) {
@@ -167,9 +154,9 @@ class Context {
       tag = tagArg.id.name
     }
     let terminal = this.normalizeExpr(expr.args[0])
-    if (terminal.length != 1 || !terminal[0].terminal)
+    if (terminal.length != 1 || terminal[0].length != 1 || !terminal[0][0].terminal)
       this.raise(`The first argument to 'specialize' must resolve to a token`, expr.args[0].start)
-    let term = terminal[0], value = (expr.args[1] as LiteralExpression).value
+    let term = terminal[0][0], value = (expr.args[1] as LiteralExpression).value
     let table = this.b.specialized[term.name] || (this.b.specialized[term.name] = [])
     let known = table.find(sp => sp.value == value), token
     if (known == null) {
@@ -178,8 +165,18 @@ class Context {
     } else {
       token = known.term
     }
-    return [token]
+    return token
   }
+}
+
+function branch(parts: Term$[][][]): Term$[][] {
+  if (parts.length == 1) return parts[0]
+  let rest = branch(parts.slice(1))
+  let result: Term$[][] = []
+  for (let choice of parts[0]) {
+    for (let after of rest) result.push(choice.concat(after))
+  }
+  return result
 }
 
 function findNameFor(expr: Expression): string | null {
@@ -498,16 +495,16 @@ function computeGotoTables(states: readonly LRState[]) {
 }
 
 interface Namespace {
-  resolve(expr: NamedExpression, cx: Context): Term[]
+  resolve(expr: NamedExpression, cx: Context): Term$[][]
 }
 
 class TagNamespace implements Namespace {
-  resolve(expr: NamedExpression, cx: Context): Term[] {
+  resolve(expr: NamedExpression, cx: Context): Term[][] {
     if (expr.args.length != 1)
       cx.raise(`Tag wrappers take a single argument`, expr.start)
     let tag = expr.id.name
     let name = cx.b.newName(`tag.${tag}`, tag)
-    return cx.defineRule(name, cx.normalizeTopExpr(expr.args[0], name))
+    return [[cx.defineRule(name, cx.normalizeExpr(expr.args[0]))]]
   }
 }
 
