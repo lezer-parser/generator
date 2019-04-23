@@ -225,13 +225,9 @@ function parseExprSequence(input: Input) {
 function parseExprPrec(input: Input) {
   let start = input.start
   if (!input.eat("!")) return parseExprSuffix(input)
-  let id = parseIdent(input), namespace = null
-  if (input.eat(".")) {
-    namespace = id
-    id = parseIdent(input)
-  }
+  let id = parseIdent(input)
   let expr = parseExprSuffix(input)
-  return new MarkedExpression(start, namespace, id, expr)
+  return new MarkedExpression(start, id, expr)
 }
 
 function parseExprChoice(input: Input) {

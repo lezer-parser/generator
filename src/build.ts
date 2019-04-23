@@ -453,14 +453,11 @@ class Builder {
   }
 
   getPrecedence(expr: MarkedExpression): number {
-    if (!expr.namespace) {
-      let precs = this.ast.precedences!
-      let pos = precs ? precs.names.findIndex(id => id.name == expr.id.name) : -1
-      if (pos < 0) this.input.raise(`Reference to unknown precedence: '${expr.id.name}'`, expr.start)
-      let assoc = precs.assoc[pos]
-      return precedence(assoc == "left" ? ASSOC_LEFT : assoc == "right" ? ASSOC_RIGHT : 0, precs.names.length - pos)
-    }
-    return this.input.raise(`Unrecognized conflict marker '!${expr.namespace.name}.${expr.id.name}'`, expr.start)
+    let precs = this.ast.precedences!
+    let pos = precs ? precs.names.findIndex(id => id.name == expr.id.name) : -1
+    if (pos < 0) this.input.raise(`Reference to unknown precedence: '${expr.id.name}'`, expr.start)
+    let assoc = precs.assoc[pos]
+    return precedence(assoc == "left" ? ASSOC_LEFT : assoc == "right" ? ASSOC_RIGHT : 0, precs.names.length - pos)
   }
 }
 
