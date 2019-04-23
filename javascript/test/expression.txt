@@ -89,3 +89,21 @@ ArrayExpression(
   FunctionExpression(Keyword, Definition, ParamList, Block),
   FunctionExpression(Keyword, Definition, ParamList(Definition), Block),
   FunctionExpression(Keyword, Definition, ParamList(Definition, Definition), Block))
+
+# Arrow functions
+
+a => 1;
+() => 2;
+(d, e) => 3;
+(f, g,) => {
+  return h;
+};
+async () => 4;
+
+==>
+
+ArrowFunction(ParamList(Definition), Number),
+ArrowFunction(ParamList, Number),
+ArrowFunction(ParamList(Definition, Definition), Number,
+ArrowFunction(ParamList(Definition, Definition), Block(ReturnStatement(Variable)),
+ArrowFunction(Keyword, ParamList, Number)

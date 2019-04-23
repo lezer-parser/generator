@@ -85,11 +85,16 @@ ClassDeclaration {
 }
 
 ClassBody {
-  "{" ClassItem* "}"
+  "{" MethodDefinition* "}"
 }
 
-ClassItem {
-  Variable // FIXME
+MethodDefinition {
+  kw<"static">?
+  kw<"async">?
+  (kw<"get"> | kw<"set"> | plainStar)?
+  PropertyDefinition
+  ParamList
+  Block
 }
 
 VariableDeclaration {
@@ -109,11 +114,11 @@ ObjectPattern {
 }
 
 ArrayPattern {
-  "[" commaSep<"..."? patternAssign> "]"
+  "[" commaSep<"..." patternAssign | patternAssign> "]"
 }
 
 ParamList {
-  "(" commaSep<"..."? patternAssign> ")"
+  "(" commaSep<"..." patternAssign | patternAssign> ")"
 }
 
 parenExpression {
@@ -121,7 +126,7 @@ parenExpression {
 }
 
 Block {
-  "{" statement* "}"
+  !statement "{" statement* "}"
 }
 
 switchItem {
@@ -141,16 +146,17 @@ SequenceExpression {
 expressionInner {
   Number |
   String |
-  Variable |
+  !ambig.arrow Variable |
   boolean |
   null |
   RegExp |
   ArrayExpression |
   NewExpression |
   PrefixExpression |
-  "(" expression ")" |
+  !ambig.arrow "(" expression ")" |
   ClassExpression |
-  FunctionExpression
+  FunctionExpression |
+  !ambig.arrow ArrowFunction
 }
 
 expressionNoComma {
@@ -177,7 +183,8 @@ FunctionExpression {
 }
 
 NewExpression {
-  kw<"new"> (expressionInner | MemberExpression<expressionInner>) !newArgs ArgList?
+  kw<"new"> (expressionInner | MemberExpression<expressionInner>) !newArgs ArgList |
+  kw<"new"> (expressionInner | MemberExpression<expressionInner>)
 }
 
 PrefixExpression {
@@ -213,8 +220,13 @@ ArgList {
   "(" commaSep<"..."? expressionNoComma> ")"
 }
 
+ArrowFunction {
+  Definition "=>" (Block | expression) |
+  ParamList "=>" (Block | expression)
+}
+
 commaSep<content> {
-  content? ("," content?)*
+  "" | content ("," content?)*
 }
 
 commaSep1<content> {
@@ -232,6 +244,8 @@ Property { identifier }
 Variable { identifier }
 
 Definition { identifier }
+
+PropertyDefinition { identifier }
 
 Label { identifier }
 
