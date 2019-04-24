@@ -43,7 +43,7 @@ export class Pos {
   trail() {
     let result = []
     for (let cur = this.prev; cur; cur = cur.prev) result.push(cur.next)
-    return result.join(" ")
+    return result.reverse().join(" ")
   }
 }
 
@@ -165,9 +165,9 @@ export class State {
       let conflictPos = this.actionPositions[this.actions.indexOf(conflict)][0]
       let error
       if (conflict instanceof Shift)
-        error = `shift/reduce conflict between ${conflictPos} and ${positions[0].rule}`
+        error = `shift/reduce conflict between\n  ${conflictPos}\nand\n  ${positions[0].rule}`
       else
-        error = `reduce/reduce conflict between ${positions[0].rule} and ${conflictPos.rule}`
+        error = `reduce/reduce conflict between\n  ${positions[0].rule}\nand\n  ${conflictPos.rule}`
       let trail = positions[0].trail()
       if (trail.length > 50) trail = trail.slice(trail.length - 50).replace(/.*? /, "… ")
       error += `\nAfter input:\n  ${trail} · ${value.term} …`
@@ -254,45 +254,43 @@ function computeFirst(rules: ReadonlyArray<Rule>, nonTerminals: Term[]) {
   }
 }
 
-function findState(states: ReadonlyArray<State>, set: ReadonlyArray<Pos>) {
-  let hash = hashPositions(set)
-  for (let state of states) if (state.hash == hash && state.hasSet(set)) return state
-  return null
-}
-
 // Builds a full LR(1) automaton
 export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, first: {[name: string]: Term[]}) {
-  let states: State[] = []
-  function explore(set: ReadonlyArray<Pos>) {
+  let states: State[] = [], filled = 0
+  function getState(set: readonly Pos[]) {
     if (set.length == 0) return null
     set = closure(set, rules, first)
-    let state = findState(states, set)
-    if (!state) {
-      states.push(state = new State(states.length, set))
-      for (let term of terms.terminals) if (!term.eof && !term.error) {
-        let relevant = set.filter(pos => pos.next == term)
-        if (relevant.length) {
-          let next = explore(relevant.map(pos => pos.advance()))
-          if (next) state.addAction(new Shift(term, next), relevant)
-        }
-      }
-      for (let nt of terms.nonTerminals) {
-        let goto = explore(set.filter(pos => pos.next == nt).map(pos => pos.advance()))
-        if (goto) state.goto.push(new Shift(nt, goto))
-      }
-      let program = state.set.findIndex(pos => pos.pos == 0 && pos.rule.name.program)
-      if (program > -1) {
-        let accepting = new State(states.length, none, ACCEPTING)
-        states.push(accepting)
-        state.goto.push(new Shift(state.set[program].rule.name, accepting))
-      }
-      for (let pos of set) if (pos.next == null) for (let ahead of pos.ahead)
-        state.addAction(new Reduce(ahead, pos.rule), [pos])
-    }
+    let hash = hashPositions(set)
+    for (let state of states) if (state.hash == hash && state.hasSet(set)) return state
+    let state = new State(states.length, set)
+    states.push(state)
     return state
   }
+  getState(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, [terms.eof], null)))
 
-  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, [terms.eof], null)))
+  while (filled < states.length) {
+    let state = states[filled++]
+    for (let term of terms.terminals) if (!term.eof && !term.error) {
+      let relevant = state.set.filter(pos => pos.next == term)
+      if (relevant.length) {
+        let next = getState(relevant.map(pos => pos.advance()))
+        if (next) state.addAction(new Shift(term, next), relevant)
+      }
+    }
+    for (let nt of terms.nonTerminals) {
+      let goto = getState(state.set.filter(pos => pos.next == nt).map(pos => pos.advance()))
+      if (goto) state.goto.push(new Shift(nt, goto))
+    }
+    let program = state.set.findIndex(pos => pos.pos == 0 && pos.rule.name.program)
+    if (program > -1) {
+      let accepting = new State(states.length, none, ACCEPTING)
+      states.push(accepting)
+      state.goto.push(new Shift(state.set[program].rule.name, accepting))
+    }
+    for (let pos of state.set) if (pos.next == null) for (let ahead of pos.ahead)
+      state.addAction(new Reduce(ahead, pos.rule), [pos])
+  }
+
   return states
 }
 
