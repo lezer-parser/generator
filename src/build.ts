@@ -269,7 +269,7 @@ class Builder {
   }
 
   getParserData() {
-    let rules = propagatePrecedences(simplifyRules(this.rules))
+    let rules = simplifyRules(this.rules)
     let {tags, names, repeatInfo} = this.terms.finish(rules)
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
     let table = buildAutomaton(rules, this.terms)
@@ -784,37 +784,6 @@ function mergeRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
 
 function simplifyRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
   return mergeRules(inlineRules(rules))
-}
-
-function propagatePrecedences(rules: readonly Rule[]): readonly Rule[] {
-  let conflicts: Rule[] = []
-
-  function propagate(term: Term, prec: number) {
-    for (let rule of rules) if (rule.name == term) {
-      if (rule.posPrecedence[0] < 0) {
-        if (!conflicts.includes(rule)) conflicts.push(rule)
-      } else if (rule.posPrecedence[0] == 0) {
-        rule.posPrecedence[0] = -prec
-        if (rule.parts.length && !rule.parts[0].terminal) propagate(rule.parts[0], prec)
-      }
-    }
-  }
-
-  for (let rule of rules) {
-    for (let i = 0; i < rule.parts.length; i++) {
-      let prec = rule.posPrecedence[i], term = rule.parts[i]
-      if (prec > 0 && !term.terminal) propagate(term, prec)
-    }
-  }
-
-  for (let rule of rules) {
-    for (let i = 0; i <= rule.parts.length; i++) {
-      let posPrec = rule.posPrecedence[i]
-      if (posPrec < 0) rule.posPrecedence[0] = (i == 0 && conflicts.includes(rule)) ? 0 : -posPrec
-    }
-  }
-
-  return rules
 }
 
 export function buildParser(text: string, fileName: string | null = null): Parser {
