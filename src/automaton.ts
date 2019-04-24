@@ -5,7 +5,7 @@ export class Pos {
 
   constructor(readonly rule: Rule,
               readonly pos: number,
-              readonly ahead: ReadonlyArray<Term>,
+              readonly ahead: readonly Term[],
               readonly prev: Pos | null) {
     let h = hash(rule.id, pos)
     for (let a of this.ahead) h = hash(h, a.hash)
@@ -47,7 +47,7 @@ export class Pos {
   }
 }
 
-function termsAhead(rule: Rule, pos: number, after: ReadonlyArray<Term>, first: {[name: string]: Term[]}): Term[] {
+function termsAhead(rule: Rule, pos: number, after: readonly Term[], first: {[name: string]: Term[]}): Term[] {
   let found: Term[] = []
   for (let i = pos + 1; i < rule.parts.length; i++) {
     let next = rule.parts[i], cont = false
@@ -63,7 +63,7 @@ function termsAhead(rule: Rule, pos: number, after: ReadonlyArray<Term>, first: 
   return found
 }
 
-function eqSet<T extends {eq(other: T): boolean}>(a: ReadonlyArray<T>, b: ReadonlyArray<T>): boolean {
+function eqSet<T extends {eq(other: T): boolean}>(a: readonly T[], b: readonly T[]): boolean {
   if (a.length != b.length) return false
   for (let i = 0; i < a.length; i++) if (!a[i].eq(b[i])) return false
   return true
@@ -97,7 +97,7 @@ export class Reduce {
 
 const ACCEPTING = 1 /*FIXME unused*/, AMBIGUOUS = 2 // FIXME maybe store per terminal
 
-function hashPositions(set: ReadonlyArray<Pos>) {
+function hashPositions(set: readonly Pos[]) {
   let h = 5381
   for (let pos of set) h = hash(h, pos.hash)
   return h
@@ -110,7 +110,7 @@ export class State {
   recover: Shift[] = []
   hash: number
 
-  constructor(readonly id: number, readonly set: ReadonlyArray<Pos>, public flags = 0) {
+  constructor(readonly id: number, readonly set: readonly Pos[], public flags = 0) {
     this.hash = hashPositions(set)
   }
 
@@ -187,7 +187,7 @@ export class State {
     return this.goto.find(a => a.term == term)
   }
 
-  hasSet(set: ReadonlyArray<Pos>) {
+  hasSet(set: readonly Pos[]) {
     return eqSet(this.set, set)
   }
 }
@@ -196,9 +196,9 @@ class AddedPos {
   constructor(readonly rule: Rule, readonly ahead: Term[], readonly origIndex: number, readonly prev: Pos | null) {}
 }
 
-function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[name: string]: Term[]}) {
+function closure(set: readonly Pos[], rules: readonly Rule[], first: {[name: string]: Term[]}) {
   let added: AddedPos[] = [], redo: AddedPos[] = []
-  function addFor(name: Term, ahead: ReadonlyArray<Term>, prev: Pos | null) {
+  function addFor(name: Term, ahead: readonly Term[], prev: Pos | null) {
     for (let rule of rules) if (rule.name == name) {
       let add = added.find(a => a.rule == rule)
       if (!add) {
@@ -235,7 +235,7 @@ function addTo<T>(value: T, array: T[]) {
   if (!array.includes(value)) array.push(value)
 }
 
-function computeFirst(rules: ReadonlyArray<Rule>, nonTerminals: Term[]) {
+function computeFirst(rules: readonly Rule[], nonTerminals: Term[]) {
   let table: {[term: string]: Term[]} = {}
   for (let t of nonTerminals) table[t.name] = []
   for (;;) {
@@ -263,7 +263,7 @@ function computeFirst(rules: ReadonlyArray<Rule>, nonTerminals: Term[]) {
 }
 
 // Builds a full LR(1) automaton
-export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, first: {[name: string]: Term[]}) {
+export function buildFullAutomaton(rules: readonly Rule[], terms: TermSet, first: {[name: string]: Term[]}) {
   let states: State[] = [], filled = 0
   function getState(set: readonly Pos[]) {
     if (set.length == 0) return null
@@ -366,9 +366,9 @@ function collapseAutomaton(states: State[]): State[] {
   }
 }
 
-const none: ReadonlyArray<any> = []
+const none: readonly any[] = []
 
-function addRecoveryRules(table: State[], rules: ReadonlyArray<Rule>, first: {[name: string]: Term[]}) {
+function addRecoveryRules(table: State[], rules: readonly Rule[], first: {[name: string]: Term[]}) {
   for (let state of table) {
     for (let pos of state.set) if (pos.pos > 0) {
       for (let i = pos.pos + 1; i < pos.rule.parts.length; i++) {
@@ -384,7 +384,7 @@ function addRecoveryRules(table: State[], rules: ReadonlyArray<Rule>, first: {[n
   }
 }
 
-export function buildAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet) {
+export function buildAutomaton(rules: readonly Rule[], terms: TermSet) {
   let first = computeFirst(rules, terms.nonTerminals)
   let table = collapseAutomaton(buildFullAutomaton(rules, terms, first))
   addRecoveryRules(table, rules, first)

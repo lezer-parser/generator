@@ -71,7 +71,7 @@ export class TermSet {
   }
 }
 
-export function cmpSet<T>(a: ReadonlyArray<T>, b: ReadonlyArray<T>, cmp: (a: T, b: T) => number) {
+export function cmpSet<T>(a: readonly T[], b: readonly T[], cmp: (a: T, b: T) => number) {
   if (a.length != b.length) return a.length - b.length
   for (let i = 0; i < a.length; i++) {
     let diff = cmp(a[i], b[i])

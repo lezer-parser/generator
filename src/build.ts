@@ -8,7 +8,7 @@ import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {Parser, ParseState, REDUCE_DEPTH_SIZE, noToken, Tokenizer, TERM_TAGGED} from "lezer"
 
-const none: ReadonlyArray<any> = []
+const none: readonly any[] = []
 
 const verbose = (typeof process != "undefined" && process.env.LOG) || ""
 
@@ -152,7 +152,7 @@ class Context {
     return this.b.input.raise(message, pos)
   }
 
-  buildRule(rule: RuleDeclaration, args: ReadonlyArray<Expression>): Term {
+  buildRule(rule: RuleDeclaration, args: readonly Expression[]): Term {
     let cx = new Context(this.b, rule)
     let expr = this.b.substituteArgs(rule.expr, args, rule.params)
     this.b.used[rule.id.name] = true
@@ -214,7 +214,7 @@ function isTag(name: string) {
 
 class BuiltRule {
   constructor(readonly id: string,
-              readonly args: ReadonlyArray<Expression>,
+              readonly args: readonly Expression[],
               readonly term: Term) {}
 
   matches(expr: NamedExpression) {
@@ -455,7 +455,7 @@ class Builder {
     return {skip, tokenizers: found}
   }
 
-  substituteArgs(expr: Expression, args: ReadonlyArray<Expression>, params: ReadonlyArray<Identifier>) {
+  substituteArgs(expr: Expression, args: readonly Expression[], params: readonly Identifier[]) {
     if (args.length == 0) return expr
     return expr.walk(expr => {
       let found
@@ -535,7 +535,7 @@ class TagNamespace implements Namespace {
 }
 
 class TokenArg {
-  constructor(readonly name: string, readonly expr: Expression, readonly scope: ReadonlyArray<TokenArg>) {}
+  constructor(readonly name: string, readonly expr: Expression, readonly scope: readonly TokenArg[]) {}
 }
 
 class TokenGroup {
@@ -546,7 +546,7 @@ class TokenGroup {
   building: string[] = [] // Used for recursion check
 
   constructor(readonly b: Builder,
-              readonly rules: ReadonlyArray<RuleDeclaration>,
+              readonly rules: readonly RuleDeclaration[],
               readonly parent: TokenGroup | null) {
     for (let rule of rules) if (rule.id.name != "skip") this.b.unique(rule.id)
     let skip = rules.find(r => r.id.name == "skip")
@@ -597,7 +597,7 @@ class TokenGroup {
     return this.b.input.raise(msg, pos)
   }
 
-  buildRule(rule: RuleDeclaration, expr: NamedExpression, from: State, args: ReadonlyArray<TokenArg> = none): Edge[] {
+  buildRule(rule: RuleDeclaration, expr: NamedExpression, from: State, args: readonly TokenArg[] = none): Edge[] {
     let name = expr.id.name
     if (rule.params.length != expr.args.length)
       this.raise(`Incorrect number of arguments for token '${name}'`, expr.start)
@@ -611,7 +611,7 @@ class TokenGroup {
     return result
   }
 
-  build(expr: Expression, from: State, args: ReadonlyArray<TokenArg>): Edge[] {
+  build(expr: Expression, from: State, args: readonly TokenArg[]): Edge[] {
     if (expr instanceof NamedExpression) {
       if (expr.namespace) {
         if (expr.namespace.name == "std") return this.buildStd(expr, from)
@@ -742,7 +742,7 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
 // use is in a tagged single-term rule, move the tag to the token and
 // collapse the rule.
 
-function inlineRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
+function inlineRules(rules: readonly Rule[]): readonly Rule[] {
   for (;;) {
     let inlinable: {[name: string]: Rule} = Object.create(null), found
     for (let i = 0; i < rules.length; i++) {
@@ -780,7 +780,7 @@ function inlineRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
   }
 }
 
-function mergeRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
+function mergeRules(rules: readonly Rule[]): readonly Rule[] {
   let merged: {[name: string]: Term} = Object.create(null), found
   for (let i = 0; i < rules.length;) {
     let groupStart = i
@@ -810,7 +810,7 @@ function mergeRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
   return newRules
 }
 
-function simplifyRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
+function simplifyRules(rules: readonly Rule[]): readonly Rule[] {
   return mergeRules(inlineRules(rules))
 }
 
