@@ -5,7 +5,8 @@ export class Pos {
 
   constructor(readonly rule: Rule,
               readonly pos: number,
-              readonly ahead: ReadonlyArray<Term>) {
+              readonly ahead: ReadonlyArray<Term>,
+              readonly prev: Pos | null) {
     let h = hash(rule.id, pos)
     for (let a of this.ahead) h = hash(h, a.hash)
     this.hash = h
@@ -16,7 +17,7 @@ export class Pos {
   }
 
   advance() {
-    return new Pos(this.rule, this.pos + 1, this.ahead)
+    return new Pos(this.rule, this.pos + 1, this.ahead, this)
   }
 
   cmp(pos: Pos) {
@@ -37,6 +38,12 @@ export class Pos {
     return this == other ||
       this.hash == other.hash && this.rule == other.rule && this.pos == other.pos &&
       sameSet(this.ahead, other.ahead)
+  }
+
+  trail() {
+    let result = []
+    for (let cur = this.prev; cur; cur = cur.prev) result.push(cur.next)
+    return result.join(" ")
   }
 }
 
@@ -155,11 +162,16 @@ export class State {
   addAction(value: Shift | Reduce, positions: readonly Pos[]) {
     let conflict = this.addActionInner(value, positions)
     if (conflict) {
+      let conflictPos = this.actionPositions[this.actions.indexOf(conflict)][0]
+      let error
       if (conflict instanceof Shift)
-        throw new Error(`shift/reduce conflict at ${positions[0]} for ${value.term}`)
+        error = `shift/reduce conflict between ${conflictPos} and ${positions[0].rule}`
       else
-        throw new Error(`reduce/reduce conflict between ${positions[0].rule} and ${
-          this.actionPositions[this.actions.indexOf(conflict)][0].rule} for ${value.term}`)
+        error = `reduce/reduce conflict between ${positions[0].rule} and ${conflictPos.rule}`
+      let trail = positions[0].trail()
+      if (trail.length > 50) trail = trail.slice(trail.length - 50).replace(/.*? /, "… ")
+      error += `\nAfter input:\n  ${trail} · ${value.term} …`
+      throw new Error(error)
     }
   }
 
@@ -173,17 +185,17 @@ export class State {
 }
 
 class AddedPos {
-  constructor(readonly rule: Rule, readonly ahead: Term[], readonly origIndex: number) {}
+  constructor(readonly rule: Rule, readonly ahead: Term[], readonly origIndex: number, readonly prev: Pos | null) {}
 }
 
 function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[name: string]: Term[]}) {
   let added: AddedPos[] = [], redo: AddedPos[] = []
-  function addFor(name: Term, ahead: ReadonlyArray<Term>) {
+  function addFor(name: Term, ahead: ReadonlyArray<Term>, prev: Pos | null) {
     for (let rule of rules) if (rule.name == name) {
       let add = added.find(a => a.rule == rule)
       if (!add) {
         let existing = set.findIndex(p => p.pos == 0 && p.rule == rule)
-        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing)
+        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing, prev)
         added.push(add)
       }
       for (let term of ahead) if (!add.ahead.includes(term)) {
@@ -195,16 +207,16 @@ function closure(set: ReadonlyArray<Pos>, rules: ReadonlyArray<Rule>, first: {[n
   
   for (let pos of set) {
     let next = pos.next
-    if (next && !next.terminal) addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first))
+    if (next && !next.terminal) addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first), pos.prev)
   }
   while (redo.length) {
     let add = redo.pop()!
-    addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first))
+    addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first), add.prev)
   }
 
   let result = set.slice()
   for (let add of added) {
-    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash))
+    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.prev)
     if (add.origIndex > -1) result[add.origIndex] = pos
     else result.push(pos)
   }
@@ -280,7 +292,7 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, f
     return state
   }
 
-  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, [terms.eof])))
+  explore(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, [terms.eof], null)))
   return states
 }
 

@@ -106,9 +106,9 @@ class Context {
     let known = this.b.built.find(b => b.matchesRepeat(expr))
     if (known) return known.term
 
-    let inner = this.newNameFor(expr.expr, expr.kind)
+    let inner = this.newNameFor(expr.expr, expr.kind + "-inner")
     inner.repeated = true
-    let outer = this.newNameFor(expr.expr, expr.kind + "-wrap", inner)
+    let outer = this.newNameFor(expr.expr, expr.kind, inner)
     this.b.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
     let top = this.normalizeExpr(expr.expr)
@@ -180,7 +180,7 @@ class Context {
     let table = this.b.specialized[term.name] || (this.b.specialized[term.name] = [])
     let known = table.find(sp => sp.value == value), token
     if (known == null) {
-      token = this.b.makeTerminal(term + "-" + JSON.stringify(value), tag, this.b.tokens[term.name])
+      token = this.b.makeTerminal(JSON.stringify(value), tag, this.b.tokens[term.name])
       table.push({value, term: token})
     } else {
       token = known.term
