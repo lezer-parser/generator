@@ -86,8 +86,9 @@ export class Rule {
 
   constructor(readonly name: Term,
               readonly parts: readonly Term[],
-              public rulePrecedence: number,
-              readonly posPrecedence: number[]) {}
+              readonly rulePrecedence: number,
+              readonly posPrecedence: number[],
+              readonly conflictGroups: string[]) {}
 
   cmp(rule: Rule) {
     return this.id - rule.id

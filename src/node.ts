@@ -19,11 +19,14 @@ export class RuleDeclaration extends Node {
               readonly id: Identifier,
               readonly tag: Identifier | null,
               readonly params: A<Identifier>,
+              readonly conflictGroups: A<Identifier>,
               readonly expr: Expression) {
     super(start)
   }
   toString() {
-    return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") + " -> " + this.expr
+    return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") +
+      (this.conflictGroups.length ? " " + this.conflictGroups.map(g => "!" + g.name).join(" ") : "") +
+      " -> " + this.expr
   }
 }
 

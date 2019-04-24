@@ -56,21 +56,6 @@ function termsAhead(rule: Rule, pos: number, after: ReadonlyArray<Term>, first: 
   return found
 }
 
-function advance(set: readonly Pos[], expr: Term): Pos[] {
-  let result = []
-  for (let pos of set) if (pos.next == expr) result.push(pos.advance())
-  return result
-}
-
-function advanceWithPrec(set: readonly Pos[], expr: Term): {set: Pos[], prec: number} {
-  let result = [], prec = 0
-  for (let pos of set) if (pos.next == expr) {
-    prec = Math.max(pos.rule.posPrecedence[pos.pos], prec)
-    result.push(pos.advance())
-  }
-  return {set: result, prec}
-}
-
 function cmpSet<T>(a: ReadonlyArray<T>, b: ReadonlyArray<T>, cmp: (a: T, b: T) => number) {
   if (a.length != b.length) return a.length - b.length
   for (let i = 0; i < a.length; i++) {
@@ -122,7 +107,7 @@ function hashPositions(set: ReadonlyArray<Pos>) {
 
 export class State {
   actions: (Shift | Reduce)[] = []
-  actionPrec: number[] = []
+  actionPositions: (readonly Pos[])[] = []
   goto: Shift[] = []
   recover: Shift[] = []
   hash: number
@@ -140,36 +125,51 @@ export class State {
     return this.id + ": " + this.set.filter(p => p.pos > 0).join() + (actions.length ? "\n  " + actions : "")
   }
 
-  addAction(value: Shift | Reduce, prec: number, pos?: Pos): boolean {
+  addActionInner(value: Shift | Reduce, positions: readonly Pos[]): Shift | Reduce | null {
+    function precFor(action: Shift | Reduce, positions: readonly Pos[]): number {
+      return action instanceof Reduce ? positions[0].rule.rulePrecedence
+        : positions.reduce((prec, pos) => Math.max(prec, pos.rule.posPrecedence[pos.pos]), 0)
+    }
+
     check: for (let i = 0; i < this.actions.length; i++) {
       let action = this.actions[i]
       if (action.term == value.term) {
-        if (action.eq(value)) return true
+        if (action.eq(value)) return null
+        let prec = precFor(value, positions)
         if (precedenceValue(prec) != PREC_REPEAT) this.flags |= AMBIGUOUS
-        let prev = this.actionPrec[i]
-        let diff = precedenceValue(prec) - precedenceValue(prev)
+        let prevPositions = this.actionPositions[i]
+        if (positions[0].rule.conflictGroups.some(group => prevPositions.every(pos => pos.rule.conflictGroups.includes(group))))
+          continue check
+        let prevPrec = precFor(action, prevPositions)
+        let diff = precedenceValue(prec) - precedenceValue(prevPrec)
         if (diff == 0 && precedenceAssoc(prec))
           diff = precedenceAssoc(prec) == ASSOC_LEFT ? 1 : -1
         if (diff > 0) { // Drop the existing action
           this.actions.splice(i, 1)
-          this.actionPrec.splice(i, 1)
+          this.actionPositions.splice(i, 1)
           i--
           continue check
         } else if (diff < 0) { // Drop this one
-          return true
+          return null
         } else { // Not resolved
-          // FIXME check for ambiguity
-          if (!pos) return false
-          if (action instanceof Shift)
-            throw new Error(`shift/reduce conflict at ${pos} for ${action.term}`)
-          else
-            throw new Error(`reduce/reduce conflict between ${pos.rule} and ${action.rule} for ${action.term}`)
+          return action
         }
       }
     }
     this.actions.push(value)
-    this.actionPrec.push(prec)
-    return true
+    this.actionPositions.push(positions)
+    return null
+  }
+
+  addAction(value: Shift | Reduce, positions: readonly Pos[]) {
+    let conflict = this.addActionInner(value, positions)
+    if (conflict) {
+      if (conflict instanceof Shift)
+        throw new Error(`shift/reduce conflict at ${positions[0]} for ${value.term}`)
+      else
+        throw new Error(`reduce/reduce conflict between ${positions[0].rule} and ${
+          this.actionPositions[this.actions.indexOf(conflict)][0].rule} for ${value.term}`)
+    }
   }
 
   getGoto(term: Term) {
@@ -267,12 +267,14 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, f
     if (!state) {
       states.push(state = new State(states.length, set))
       for (let term of terms.terminals) if (!term.eof && !term.error) {
-        let {set: newSet, prec} = advanceWithPrec(set, term)
-        let next = explore(newSet)
-        if (next) state.addAction(new Shift(term, next), prec)
+        let relevant = set.filter(pos => pos.next == term)
+        if (relevant.length) {
+          let next = explore(relevant.map(pos => pos.advance()))
+          if (next) state.addAction(new Shift(term, next), relevant)
+        }
       }
       for (let nt of terms.nonTerminals) {
-        let goto = explore(advance(set, nt))
+        let goto = explore(set.filter(pos => pos.next == nt).map(pos => pos.advance()))
         if (goto) state.goto.push(new Shift(nt, goto))
       }
       let program = state.set.findIndex(pos => pos.pos == 0 && pos.rule.name.program)
@@ -282,7 +284,7 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, f
         state.goto.push(new Shift(state.set[program].rule.name, accepting))
       }
       for (let pos of set) if (pos.next == null) for (let ahead of pos.ahead)
-        state.addAction(new Reduce(ahead, pos.rule), pos.rule.rulePrecedence, pos)
+        state.addAction(new Reduce(ahead, pos.rule), [pos])
     }
     return state
   }
@@ -293,7 +295,7 @@ export function buildFullAutomaton(rules: ReadonlyArray<Rule>, terms: TermSet, f
 
 function mergeState(mapping: number[], newStates: State[], state: State, target: State): boolean {
   for (let j = 0; j < state.actions.length; j++)
-    if (!target.addAction(state.actions[j].map(mapping, newStates), state.actionPrec[j]))
+    if (target.addActionInner(state.actions[j].map(mapping, newStates), state.actionPositions[j]))
       return false
   for (let goto of state.goto) {
     if (!target.goto.find(a => a.term == goto.term))

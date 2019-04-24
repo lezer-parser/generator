@@ -115,13 +115,13 @@ function parseTop(input: Input) {
       if (prec) input.raise(`Multiple prec declarations`, input.start)
       else prec = parsePrec(input)
     } else {
-      rules.push(parseRule(input))
+      rules.push(parseRule(input, false))
     }
   }
   return new GrammarDeclaration(start, rules, tokens, prec)
 }
 
-function parseRule(input: Input) {
+function parseRule(input: Input, isToken: boolean) {
   let id = parseIdent(input), params: Identifier[] = [], tag: Identifier | null = null
   let start = input.start
 
@@ -130,10 +130,12 @@ function parseRule(input: Input) {
     params.push(parseIdent(input))
   }
   if (input.eat("=")) tag = parseIdent(input)
+  let conflictGroups = []
+  if (!isToken) while (input.eat("?")) conflictGroups.push(parseIdent(input))
   input.expect("{")
   let expr = parseExprChoice(input)
   input.expect("}")
-  return new RuleDeclaration(start, id, tag, params, expr)
+  return new RuleDeclaration(start, id, tag, params, conflictGroups, expr)
 }
 
 const SET_MARKER = "\ufdda" // (Invalid unicode character)
@@ -266,7 +268,7 @@ function parseTokenGroup(input: Input) {
   let tokenRules: RuleDeclaration[] = [], subGroups: TokenGroupDeclaration[] = []
   while (!input.eat("}")) {
     if (input.type == "id" && input.value == "group") subGroups.push(parseTokenGroup(input))
-    else tokenRules.push(parseRule(input))
+    else tokenRules.push(parseRule(input, true))
   }
   return new TokenGroupDeclaration(start, tokenRules, subGroups)
 }

@@ -31,7 +31,8 @@ type Term$ = Term | PrecTerm
 
 class Context {
   constructor(readonly b: Builder,
-              readonly rule: RuleDeclaration) {}
+              readonly rule: RuleDeclaration,
+              readonly conflictGroups: string[] = rule.conflictGroups.map(i => i.name)) {}
 
   newName(deco?: string, repeats?: Term) {
     return this.b.newName(this.rule.id.name + (deco ? "-" + deco : ""), deco ? true : null, repeats)
@@ -53,7 +54,7 @@ class Context {
         precedences[i] = rulePrec = term.prec
         return term.term
       })
-      this.b.rules.push(new Rule(name, terms, rulePrec, precedences))
+      this.b.rules.push(new Rule(name, terms, rulePrec, precedences, this.conflictGroups))
     }
     return name
   }
@@ -745,7 +746,7 @@ function inlineRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
           prec.push(rule.posPrecedence[i + 1])
         }
       }
-      newRules.push(new Rule(rule.name, parts, rule.rulePrecedence, prec))
+      newRules.push(new Rule(rule.name, parts, rule.rulePrecedence, prec, rule.conflictGroups))
     }
     rules = newRules
   }
@@ -775,7 +776,8 @@ function mergeRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
   let newRules = []
   for (let rule of rules) if (!merged[rule.name.name]) {
     newRules.push(rule.parts.every(p => !merged[p.name]) ? rule :
-                  new Rule(rule.name, rule.parts.map(p => merged[p.name] || p), rule.rulePrecedence, rule.posPrecedence))
+                  new Rule(rule.name, rule.parts.map(p => merged[p.name] || p),
+                           rule.rulePrecedence, rule.posPrecedence, rule.conflictGroups))
   }
   return newRules
 }
