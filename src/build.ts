@@ -2,7 +2,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, MarkedExpression,
         exprsEq, exprEq} from "./node"
-import {Term, TermSet, precedence, ASSOC_LEFT, ASSOC_RIGHT, PREC_REPEAT, Rule} from "./grammar"
+import {Term, TermSet, precedence, precedenceValue, ASSOC_LEFT, ASSOC_RIGHT, PREC_REPEAT, Rule} from "./grammar"
 import {Edge, State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
@@ -13,14 +13,14 @@ const none: ReadonlyArray<any> = []
 const verbose = (typeof process != "undefined" && process.env.LOG) || ""
 
 class PrecTerm {
-  constructor(readonly term: Term, readonly prec: number, readonly conflicGroups: readonly string[]) {}
+  constructor(readonly term: Term, readonly prec: number, readonly conflictGroups: readonly string[]) {}
 
   get terminal() { return this.term.terminal }
   get name() { return this.term.name }
 
   static from(term: Term$, prec: number, conflictGroups: readonly string[]): Term$ {
     if (term instanceof PrecTerm)
-      return new PrecTerm(term.term, prec || term.prec, setJoin(term.conflicGroups, conflictGroups))
+      return new PrecTerm(term.term, prec || term.prec, setJoin(term.conflictGroups, conflictGroups))
     else
       return new PrecTerm(term, prec, conflictGroups)
   }
@@ -55,10 +55,12 @@ class Context {
       for (let i = 0; i < choice.length; i++) precedences.push(0)
       let terms = choice.map((term, i) => {
         if (!(term instanceof PrecTerm)) return term
-        if (rulePrec && rulePrec != term.prec)
-          this.b.input.raise(`Conflicting precedences for rule ${name.name}`)
-        conflictGroups = setJoin(conflictGroups, term.conflicGroups)
-        precedences[i] = rulePrec = term.prec
+        if (term.prec) {
+          if (rulePrec && rulePrec != term.prec)
+            this.b.input.raise(`Conflicting precedences for rule ${name.name} ${rulePrec} ${term.prec}`)
+          precedences[i] = rulePrec = term.prec
+        }
+        conflictGroups = setJoin(conflictGroups, term.conflictGroups)
         return term.term
       })
       this.b.rules.push(new Rule(name, terms, rulePrec, precedences, conflictGroups))
@@ -113,7 +115,17 @@ class Context {
     top.push([inner, PrecTerm.from(inner, precedence(ASSOC_LEFT, PREC_REPEAT), none)])
     this.defineRule(inner, top)
     this.defineRule(outer, expr.kind == "+" ? [[inner]] : [[], [inner]])
-    return outer
+
+    // Propagate precedence markers from inside the loop body to the outer rule
+    let prec = 0, conflictGroups: readonly string[] = none
+    for (let choice of top) for (let part of choice) if (part instanceof PrecTerm) {
+      if (precedenceValue(part.prec) != PREC_REPEAT) prec = Math.max(prec, part.prec)
+      conflictGroups = setJoin(conflictGroups, part.conflictGroups)
+    }
+    // FIXME this'll apply prec as if it occurs at this position, but
+    // it should only be applied to the rule as a whole (maybe add
+    // another field to PrecTerm?)
+    return prec || conflictGroups.length ? new PrecTerm(outer, prec, conflictGroups) : outer
   }
 
   normalizeExpr(expr: Expression): Term$[][] {
@@ -737,7 +749,7 @@ function inlineRules(rules: ReadonlyArray<Rule>): ReadonlyArray<Rule> {
       let rule = rules[i]
       if (!rule.name.interesting && !rule.parts.includes(rule.name) && rule.parts.length < 3 &&
           !rule.parts.some(p => !!inlinable[p.name]) &&
-          !rule.rulePrecedence &&
+          !rule.rulePrecedence && rule.conflictGroups.length == 0 &&
           !rules.some((r, j) => j != i && r.name == rule.name))
         found = inlinable[rule.name.name] = rule
     }

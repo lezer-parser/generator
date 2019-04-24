@@ -1,4 +1,4 @@
-import {Term, TermSet, Rule, precedenceValue, precedenceAssoc, PREC_REPEAT, ASSOC_LEFT} from "./grammar"
+import {Term, TermSet, Rule, precedenceValue, precedenceAssoc, PREC_REPEAT, ASSOC_LEFT, cmpSet} from "./grammar"
 
 export class Pos {
   hash: number
@@ -54,15 +54,6 @@ function termsAhead(rule: Rule, pos: number, after: ReadonlyArray<Term>, first: 
   }
   for (let a of after) addTo(a, found)
   return found
-}
-
-function cmpSet<T>(a: ReadonlyArray<T>, b: ReadonlyArray<T>, cmp: (a: T, b: T) => number) {
-  if (a.length != b.length) return a.length - b.length
-  for (let i = 0; i < a.length; i++) {
-    let diff = cmp(a[i], b[i])
-    if (diff) return diff
-  }
-  return 0
 }
 
 function eqSet<T extends {eq(other: T): boolean}>(a: ReadonlyArray<T>, b: ReadonlyArray<T>): boolean {

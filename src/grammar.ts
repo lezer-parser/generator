@@ -71,6 +71,15 @@ export class TermSet {
   }
 }
 
+export function cmpSet<T>(a: ReadonlyArray<T>, b: ReadonlyArray<T>, cmp: (a: T, b: T) => number) {
+  if (a.length != b.length) return a.length - b.length
+  for (let i = 0; i < a.length; i++) {
+    let diff = cmp(a[i], b[i])
+    if (diff) return diff
+  }
+  return 0
+}
+
 export const ASSOC_LEFT = 1, ASSOC_RIGHT = 2, PREC_REPEAT = 2e8
 
 export function precedence(assoc: number, value: number) { return assoc | (value << 2) }
@@ -87,7 +96,7 @@ export class Rule {
   constructor(readonly name: Term,
               readonly parts: readonly Term[],
               readonly rulePrecedence: number,
-              readonly posPrecedence: number[],
+              readonly posPrecedence: readonly number[],
               readonly conflictGroups: readonly string[]) {}
 
   cmp(rule: Rule) {
@@ -97,7 +106,8 @@ export class Rule {
   cmpNoName(rule: Rule) {
     return this.parts.length - rule.parts.length ||
       this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0) ||
-      this.posPrecedence.reduce((d, p, i) => d || p - rule.posPrecedence[i], 0)
+      this.posPrecedence.reduce((d, p, i) => d || p - rule.posPrecedence[i], 0) ||
+      cmpSet(this.conflictGroups, rule.conflictGroups, (a, b) => a < b ? -1 : a > b ? 1 : 0)
   }
 
   toString() {
