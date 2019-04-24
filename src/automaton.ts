@@ -52,10 +52,10 @@ function termsAhead(rule: Rule, pos: number, after: ReadonlyArray<Term>, first: 
   for (let i = pos + 1; i < rule.parts.length; i++) {
     let next = rule.parts[i], cont = false
     if (next.terminal) {
-      if (!found.includes(next)) found.push(next)
+      addTo(next, found)
     } else for (let term of first[next.name]) {
       if (term == null) cont = true
-      else if (!found.includes(term)) found.push(term)
+      else addTo(term, found)
     }
     if (!cont) return found
   }
@@ -123,22 +123,30 @@ export class State {
     return this.id + ": " + this.set.filter(p => p.pos > 0).join() + (actions.length ? "\n  " + actions : "")
   }
 
-  addActionInner(value: Shift | Reduce, positions: readonly Pos[]): Shift | Reduce | null {
-    function precFor(action: Shift | Reduce, positions: readonly Pos[]): number {
-      return action instanceof Reduce ? positions[0].rule.rulePrecedence
-        : positions.reduce((prec, pos) => Math.max(prec, pos.rule.posPrecedence[pos.pos]), 0)
+  precFor(action: Shift | Reduce, positions: readonly Pos[]): number {
+    if (action instanceof Reduce) return positions[0].rule.rulePrecedence
+    let prec = 0, scan = [action.term]
+    for (let i = 0; i < scan.length; i++) {
+      let name = scan[i]
+      for (let pos of this.set) if (pos.next == name) {
+        prec = Math.max(prec, pos.rule.posPrecedence[pos.pos])
+        if (pos.pos == 0) addTo(pos.rule.name, scan)
+      }
     }
+    return prec
+  }
 
+  addActionInner(value: Shift | Reduce, positions: readonly Pos[]): Shift | Reduce | null {
     check: for (let i = 0; i < this.actions.length; i++) {
       let action = this.actions[i]
       if (action.term == value.term) {
         if (action.eq(value)) return null
-        let prec = precFor(value, positions)
+        let prec = this.precFor(value, positions)
         if (precedenceValue(prec) != PREC_REPEAT) this.flags |= AMBIGUOUS
         let prevPositions = this.actionPositions[i]
         if (positions[0].rule.conflictGroups.some(group => prevPositions.every(pos => pos.rule.conflictGroups.includes(group))))
           continue check
-        let prevPrec = precFor(action, prevPositions)
+        let prevPrec = this.precFor(action, prevPositions)
         let diff = precedenceValue(prec) - precedenceValue(prevPrec)
         if (diff == 0 && precedenceAssoc(prec))
           diff = precedenceAssoc(prec) == ASSOC_LEFT ? 1 : -1
