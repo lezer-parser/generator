@@ -190,7 +190,7 @@ class Context {
 }
 
 function branch(parts: Term$[][][]): Term$[][] {
-  if (parts.length == 0) return []
+  if (parts.length == 0) return [[]]
   if (parts.length == 1) return parts[0]
   let rest = branch(parts.slice(1))
   let result: Term$[][] = []

@@ -178,7 +178,7 @@ export class State {
         error = `reduce/reduce conflict between\n  ${positions[0].rule}\nand\n  ${conflictPos.rule}`
       let trail = positions[0].trail()
       if (trail.length > 50) trail = trail.slice(trail.length - 50).replace(/.*? /, "… ")
-      error += `\nAfter input:\n  ${trail} · ${value.term} …`
+      error += `\nWith input:\n  ${trail} · ${value.term} …`
       throw new Error(error)
     }
   }
