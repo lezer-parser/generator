@@ -13,26 +13,32 @@ const none: ReadonlyArray<any> = []
 const verbose = (typeof process != "undefined" && process.env.LOG) || ""
 
 class PrecTerm {
-  constructor(readonly term: Term, readonly prec: number) {}
+  constructor(readonly term: Term, readonly prec: number, readonly conflicGroups: readonly string[]) {}
 
   get terminal() { return this.term.terminal }
   get name() { return this.term.name }
 
-  static from(term: Term$, prec: number): Term$ {
-    return new PrecTerm(term instanceof PrecTerm ? term.term : term, prec)
+  static from(term: Term$, prec: number, conflictGroups: readonly string[]): Term$ {
+    if (term instanceof PrecTerm)
+      return new PrecTerm(term.term, prec || term.prec, setJoin(term.conflicGroups, conflictGroups))
+    else
+      return new PrecTerm(term, prec, conflictGroups)
   }
+}
 
-  static onFirst(terms: Term$[], prec: number): Term$[] {
-    return terms.length ? [PrecTerm.from(terms[0], prec)].concat(terms.slice(1)) : terms
-  }
+function setJoin<T>(a: readonly T[], b: readonly T[]): readonly T[] {
+  if (a.length == 0 || a == b) return b
+  if (b.length == 0) return a
+  let result = a.slice()
+  for (let value of b) if (!a.includes(value)) result.push(value)
+  return result
 }
 
 type Term$ = Term | PrecTerm
 
 class Context {
   constructor(readonly b: Builder,
-              readonly rule: RuleDeclaration,
-              readonly conflictGroups: string[] = rule.conflictGroups.map(i => i.name)) {}
+              readonly rule: RuleDeclaration) {}
 
   newName(deco?: string, repeats?: Term) {
     return this.b.newName(this.rule.id.name + (deco ? "-" + deco : ""), deco ? true : null, repeats)
@@ -45,16 +51,17 @@ class Context {
 
   defineRule(name: Term, choices: Term$[][]) {
     for (let choice of choices) {
-      let precedences = [], rulePrec = 0
+      let precedences = [], conflictGroups = none, rulePrec = 0
       for (let i = 0; i < choice.length; i++) precedences.push(0)
       let terms = choice.map((term, i) => {
         if (!(term instanceof PrecTerm)) return term
         if (rulePrec && rulePrec != term.prec)
           this.b.input.raise(`Conflicting precedences for rule ${name.name}`)
+        conflictGroups = setJoin(conflictGroups, term.conflicGroups)
         precedences[i] = rulePrec = term.prec
         return term.term
       })
-      this.b.rules.push(new Rule(name, terms, rulePrec, precedences, this.conflictGroups))
+      this.b.rules.push(new Rule(name, terms, rulePrec, precedences, conflictGroups))
     }
     return name
   }
@@ -103,7 +110,7 @@ class Context {
     this.b.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
     let top = this.normalizeExpr(expr.expr)
-    top.push([inner, PrecTerm.from(inner, precedence(ASSOC_LEFT, PREC_REPEAT))])
+    top.push([inner, PrecTerm.from(inner, precedence(ASSOC_LEFT, PREC_REPEAT), none)])
     this.defineRule(inner, top)
     this.defineRule(outer, expr.kind == "+" ? [[inner]] : [[], [inner]])
     return outer
@@ -117,7 +124,7 @@ class Context {
     } else if (expr instanceof ChoiceExpression) {
       return expr.exprs.reduce((o, e) => o.concat(this.normalizeExpr(e)), [] as Term$[][])
     } else if (expr instanceof MarkedExpression) {
-      return this.normalizeExpr(expr.expr).map(terms => PrecTerm.onFirst(terms, this.b.getPrecedence(expr)))
+      return this.b.applyPrecedence(this.normalizeExpr(expr.expr), expr)
     } else if (expr instanceof SequenceExpression) {
       return branch(expr.exprs.map(e => this.normalizeExpr(e)))
     } else if (expr instanceof LiteralExpression) {
@@ -171,6 +178,7 @@ class Context {
 }
 
 function branch(parts: Term$[][][]): Term$[][] {
+  if (parts.length == 0) return []
   if (parts.length == 1) return parts[0]
   let rest = branch(parts.slice(1))
   let result: Term$[][] = []
@@ -453,12 +461,20 @@ class Builder {
     })
   }
 
-  getPrecedence(expr: MarkedExpression): number {
-    let precs = this.ast.precedences!
-    let pos = precs ? precs.names.findIndex(id => id.name == expr.id.name) : -1
-    if (pos < 0) this.input.raise(`Reference to unknown precedence: '${expr.id.name}'`, expr.start)
-    let assoc = precs.assoc[pos]
-    return precedence(assoc == "left" ? ASSOC_LEFT : assoc == "right" ? ASSOC_RIGHT : 0, precs.names.length - pos)
+  applyPrecedence(terms: Term$[][], expr: MarkedExpression): Term$[][] {
+    let prec = 0, conflictGroups = none
+    if (!expr.namespace) {
+      let precs = this.ast.precedences!
+      let pos = precs ? precs.names.findIndex(id => id.name == expr.id.name) : -1
+      if (pos < 0) this.input.raise(`Reference to unknown precedence: '${expr.id.name}'`, expr.start)
+      let assoc = precs.assoc[pos]
+      prec = precedence(assoc == "left" ? ASSOC_LEFT : assoc == "right" ? ASSOC_RIGHT : 0, precs.names.length - pos)
+    } else if (expr.namespace.name == "ambig") {
+      conflictGroups = [expr.id.name]
+    } else {
+      return this.input.raise(`Unrecognized conflict marker '!${expr.namespace.name}.${expr.id.name}'`, expr.start)
+    }
+    return terms.map(choice => choice.length ? [PrecTerm.from(choice[0], prec, conflictGroups)].concat(choice.slice(1)) : choice)
   }
 }
 

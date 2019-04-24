@@ -19,14 +19,11 @@ export class RuleDeclaration extends Node {
               readonly id: Identifier,
               readonly tag: Identifier | null,
               readonly params: A<Identifier>,
-              readonly conflictGroups: A<Identifier>,
               readonly expr: Expression) {
     super(start)
   }
   toString() {
-    return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") +
-      (this.conflictGroups.length ? " " + this.conflictGroups.map(g => "!" + g.name).join(" ") : "") +
-      " -> " + this.expr
+    return this.id.name + (this.params.length ? `<${this.params.join()}>` : "") + " -> " + this.expr
   }
 }
 
@@ -147,16 +144,17 @@ export class AnyExpression extends Expression {
 }
 
 export class MarkedExpression extends Expression {
-  constructor(start: number, readonly id: Identifier, readonly expr: Expression) {
+  constructor(start: number, readonly namespace: Identifier | null, readonly id: Identifier, readonly expr: Expression) {
     super(start)
   }
-  toString() { return `!${this.id.name} ${this.expr}` }
+  toString() { return `!${this.namespace ? this.namespace.name + "." : ""}${this.id.name} ${this.expr}` }
   eq(other: MarkedExpression): boolean {
-    return other.id.name == this.id.name && exprEq(this.expr, other.expr)
+    return other.id.name == this.id.name && (this.namespace ? this.namespace.name : "") == (other.namespace ? other.namespace.name : "") &&
+      exprEq(this.expr, other.expr)
   }
   walk(f: (expr: Expression) => Expression): Expression {
     let expr: Expression = this.expr.walk(f)
-    return f(expr == this.expr ? this : new MarkedExpression(this.start, this.id, expr))
+    return f(expr == this.expr ? this : new MarkedExpression(this.start, this.namespace, this.id, expr))
   }
 }
 

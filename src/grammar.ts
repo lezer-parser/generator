@@ -88,7 +88,7 @@ export class Rule {
               readonly parts: readonly Term[],
               readonly rulePrecedence: number,
               readonly posPrecedence: number[],
-              readonly conflictGroups: string[]) {}
+              readonly conflictGroups: readonly string[]) {}
 
   cmp(rule: Rule) {
     return this.id - rule.id

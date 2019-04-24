@@ -130,12 +130,10 @@ function parseRule(input: Input, isToken: boolean) {
     params.push(parseIdent(input))
   }
   if (input.eat("=")) tag = parseIdent(input)
-  let conflictGroups = []
-  if (!isToken) while (input.eat("?")) conflictGroups.push(parseIdent(input))
   input.expect("{")
   let expr = parseExprChoice(input)
   input.expect("}")
-  return new RuleDeclaration(start, id, tag, params, conflictGroups, expr)
+  return new RuleDeclaration(start, id, tag, params, expr)
 }
 
 const SET_MARKER = "\ufdda" // (Invalid unicode character)
@@ -227,9 +225,13 @@ function parseExprSequence(input: Input) {
 function parseExprPrec(input: Input) {
   let start = input.start
   if (!input.eat("!")) return parseExprSuffix(input)
-  let id = parseIdent(input)
+  let id = parseIdent(input), namespace = null
+  if (input.eat(".")) {
+    namespace = id
+    id = parseIdent(input)
+  }
   let expr = parseExprSuffix(input)
-  return new MarkedExpression(start, id, expr)
+  return new MarkedExpression(start, namespace, id, expr)
 }
 
 function parseExprChoice(input: Input) {
