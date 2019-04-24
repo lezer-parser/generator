@@ -146,17 +146,17 @@ SequenceExpression {
 expressionInner {
   Number |
   String |
-  !ambig.arrow Variable |
+  Variable |
   boolean |
   null |
   RegExp |
   ArrayExpression |
   NewExpression |
   PrefixExpression |
-  !ambig.arrow "(" expression ")" |
+  "(" expression ")" |
   ClassExpression |
   FunctionExpression |
-  !ambig.arrow ArrowFunction
+  ArrowFunction
 }
 
 expressionNoComma {
@@ -241,9 +241,9 @@ null { specialize<identifier, "null", Null> }
 
 Property { identifier }
 
-Variable { identifier }
+Variable { !ambig.arrow identifier }
 
-Definition { identifier }
+Definition { !ambig.arrow identifier }
 
 PropertyDefinition { identifier }
 
