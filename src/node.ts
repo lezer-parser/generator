@@ -83,17 +83,30 @@ export class ChoiceExpression extends Expression {
 }
 
 export class SequenceExpression extends Expression {
-  constructor(start: number, readonly exprs: readonly Expression[]) {
+  constructor(start: number, readonly exprs: readonly Expression[], readonly markers: readonly (readonly ConflictMarker[])[]) {
     super(start)
   }
   toString() { return this.exprs.join(" ") }
   eq(other: SequenceExpression) {
-    return exprsEq(this.exprs, other.exprs)
+    return exprsEq(this.exprs, other.exprs) && this.markers.every((m, i) => {
+      let om = other.markers[i]
+      return m.length == om.length && m.every((x, i) => x.eq(om[i]))
+    })
   }
   walk(f: (expr: Expression) => Expression): Expression {
     let exprs = walkExprs(this.exprs, f)
-    return f(exprs == this.exprs ? this : new SequenceExpression(this.start, exprs))
+    return f(exprs == this.exprs ? this : new SequenceExpression(this.start, exprs, this.markers))
   }
+}
+
+export class ConflictMarker extends Node {
+  constructor(start: number, readonly id: Identifier, readonly type: "ambig" | "prec") {
+    super(start)
+  }
+
+  toString() { return (this.type == "ambig" ? "~" : "!") + this.id.name }
+
+  eq(other: ConflictMarker) { return this.id.name == other.id.name && this.type == other.type }
 }
 
 export class RepeatExpression extends Expression {
@@ -111,6 +124,7 @@ export class RepeatExpression extends Expression {
 }
 
 export class LiteralExpression extends Expression {
+  // value.length is always > 0
   constructor(start: number, readonly value: string) {
     super(start)
   }
@@ -139,21 +153,6 @@ export class AnyExpression extends Expression {
   }
   toString() { return "_" }
   eq() { return true }
-}
-
-export class MarkedExpression extends Expression {
-  constructor(start: number, readonly namespace: Identifier | null, readonly id: Identifier, readonly expr: Expression) {
-    super(start)
-  }
-  toString() { return `!${this.namespace ? this.namespace.name + "." : ""}${this.id.name} ${this.expr}` }
-  eq(other: MarkedExpression): boolean {
-    return other.id.name == this.id.name && (this.namespace ? this.namespace.name : "") == (other.namespace ? other.namespace.name : "") &&
-      exprEq(this.expr, other.expr)
-  }
-  walk(f: (expr: Expression) => Expression): Expression {
-    let expr: Expression = this.expr.walk(f)
-    return f(expr == this.expr ? this : new MarkedExpression(this.start, this.namespace, this.id, expr))
-  }
 }
 
 function walkExprs(exprs: readonly Expression[], f: (expr: Expression) => Expression): readonly Expression[] {

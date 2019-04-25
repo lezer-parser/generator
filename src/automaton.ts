@@ -1,4 +1,6 @@
-import {Term, TermSet, Rule, precedenceValue, precedenceAssoc, PREC_REPEAT, ASSOC_LEFT, cmpSet} from "./grammar"
+import {Term, TermSet, Rule, precedenceValue, precedenceAssoc, PREC_REPEAT, ASSOC_LEFT,
+        cmpSet, Conflicts} from "./grammar"
+import {hash} from "./hash"
 
 export class Pos {
   hash: number
@@ -6,8 +8,9 @@ export class Pos {
   constructor(readonly rule: Rule,
               readonly pos: number,
               readonly ahead: readonly Term[],
+              readonly conflictsAhead: Conflicts,
               readonly prev: Pos | null) {
-    let h = hash(rule.id, pos)
+    let h = hash(hash(rule.id, pos), conflictsAhead.hash)
     for (let a of this.ahead) h = hash(h, a.hash)
     this.hash = h
   }
@@ -17,11 +20,11 @@ export class Pos {
   }
 
   advance() {
-    return new Pos(this.rule, this.pos + 1, this.ahead, this)
+    return new Pos(this.rule, this.pos + 1, this.ahead, this.conflictsAhead, this)
   }
 
   cmp(pos: Pos) {
-    return this.cmpSimple(pos) || cmpSet(this.ahead, pos.ahead, (a, b) => a.cmp(b))
+    return this.cmpSimple(pos) || cmpSet(this.ahead, pos.ahead, (a, b) => a.cmp(b)) || this.conflictsAhead.cmp(pos.conflictsAhead)
   }
 
   cmpSimple(pos: Pos) {
@@ -37,13 +40,32 @@ export class Pos {
   eq(other: Pos) {
     return this == other ||
       this.hash == other.hash && this.rule == other.rule && this.pos == other.pos &&
-      sameSet(this.ahead, other.ahead)
+      sameSet(this.ahead, other.ahead) &&
+      this.conflictsAhead.eq(other.conflictsAhead)
   }
 
   trail() {
     let result = []
     for (let cur = this.prev; cur; cur = cur.prev) result.push(cur.next)
     return result.reverse().join(" ")
+  }
+
+  static conflictsAt(group: readonly Pos[], context: readonly Pos[]) {
+    let result = Conflicts.none
+    let scan: Term[] = []
+    for (let pos of group) {
+      result = result.join(pos.rule.conflicts[pos.pos])
+      if (pos.pos == pos.rule.parts.length) result = result.join(pos.conflictsAhead)
+      if (pos.pos == 0) addTo(pos.rule.name, scan)
+    }
+    for (let i = 0; i < scan.length; i++) {
+      let name = scan[i]
+      for (let pos of context) if (pos.next == name) {
+        result = result.join(pos.rule.conflicts[pos.pos])
+        if (pos.pos == 0) addTo(pos.rule.name, scan)
+      }
+    }
+    return result
   }
 }
 
@@ -108,11 +130,8 @@ export class State {
   actionPositions: (readonly Pos[])[] = []
   goto: Shift[] = []
   recover: Shift[] = []
-  hash: number
 
-  constructor(readonly id: number, readonly set: readonly Pos[], public flags = 0) {
-    this.hash = hashPositions(set)
-  }
+  constructor(readonly id: number, readonly set: readonly Pos[], public flags = 0, public hash = hashPositions(set)) {}
 
   get ambiguous() { return (this.flags & AMBIGUOUS) > 0 }
   get accepting() { return (this.flags & ACCEPTING) > 0 }
@@ -123,33 +142,17 @@ export class State {
     return this.id + ": " + this.set.filter(p => p.pos > 0).join() + (actions.length ? "\n  " + actions : "")
   }
 
-  precFor(action: Shift | Reduce, positions: readonly Pos[]): number {
-    if (action instanceof Reduce) return positions[0].rule.rulePrecedence
-    let prec = 0, scan = [action.term]
-    for (let i = 0; i < scan.length; i++) {
-      let name = scan[i]
-      for (let pos of this.set) if (pos.next == name) {
-        prec = Math.max(prec, pos.rule.posPrecedence[pos.pos])
-        if (pos.pos == 0) addTo(pos.rule.name, scan)
-      }
-    }
-    return prec
-  }
-
   addActionInner(value: Shift | Reduce, positions: readonly Pos[]): Shift | Reduce | null {
     check: for (let i = 0; i < this.actions.length; i++) {
       let action = this.actions[i]
       if (action.term == value.term) {
         if (action.eq(value)) return null
-        let prec = this.precFor(value, positions)
-        if (precedenceValue(prec) != PREC_REPEAT) this.flags |= AMBIGUOUS
-        let prevPositions = this.actionPositions[i]
-        if (positions[0].rule.conflictGroups.some(group => prevPositions.every(pos => pos.rule.conflictGroups.includes(group))))
-          continue check
-        let prevPrec = this.precFor(action, prevPositions)
-        let diff = precedenceValue(prec) - precedenceValue(prevPrec)
-        if (diff == 0 && precedenceAssoc(prec))
-          diff = precedenceAssoc(prec) == ASSOC_LEFT ? 1 : -1
+        let conflicts = Pos.conflictsAt(positions, this.set)
+        if (precedenceValue(conflicts.precedence) != PREC_REPEAT) this.flags |= AMBIGUOUS
+        let actionConflicts = Pos.conflictsAt(this.actionPositions[i], this.set)
+        let diff = precedenceValue(conflicts.precedence) - precedenceValue(actionConflicts.precedence)
+        if (diff == 0 && action instanceof Shift && precedenceAssoc(conflicts.precedence))
+          diff = precedenceAssoc(conflicts.precedence) == ASSOC_LEFT ? 1 : -1
         if (diff > 0) { // Drop the existing action
           this.actions.splice(i, 1)
           this.actionPositions.splice(i, 1)
@@ -157,7 +160,11 @@ export class State {
           continue check
         } else if (diff < 0) { // Drop this one
           return null
+        } else if (conflicts.ambigGroups.some(g => actionConflicts.ambigGroups.includes(g))) { // Explicitly allowed ambiguity
+          continue check
         } else { // Not resolved
+          console.log("pos itions " + positions, "\n and " + this.actionPositions[i])
+          console.log(conflicts, actionConflicts)
           return action
         }
       }
@@ -193,18 +200,25 @@ export class State {
 }
 
 class AddedPos {
-  constructor(readonly rule: Rule, readonly ahead: Term[], readonly origIndex: number, readonly prev: Pos | null) {}
+  constructor(readonly rule: Rule,
+              readonly ahead: Term[],
+              readonly origIndex: number,
+              public conflictsAhead: Conflicts,
+              readonly prev: Pos | null) {}
 }
 
 function closure(set: readonly Pos[], rules: readonly Rule[], first: {[name: string]: Term[]}) {
   let added: AddedPos[] = [], redo: AddedPos[] = []
-  function addFor(name: Term, ahead: readonly Term[], prev: Pos | null) {
+  function addFor(name: Term, ahead: readonly Term[], conflictsAhead: Conflicts, prev: Pos | null) {
+    if (conflictsAhead.precedence) conflictsAhead = Conflicts.none // FIXME simply don't store this if we keep doing this
     for (let rule of rules) if (rule.name == name) {
       let add = added.find(a => a.rule == rule)
       if (!add) {
         let existing = set.findIndex(p => p.pos == 0 && p.rule == rule)
-        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing, prev)
+        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing, conflictsAhead, prev)
         added.push(add)
+      } else {
+        add.conflictsAhead = add.conflictsAhead.join(conflictsAhead)
       }
       for (let term of ahead) if (!add.ahead.includes(term)) {
         add.ahead.push(term)
@@ -215,16 +229,17 @@ function closure(set: readonly Pos[], rules: readonly Rule[], first: {[name: str
   
   for (let pos of set) {
     let next = pos.next
-    if (next && !next.terminal) addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first), pos.prev)
+    if (next && !next.terminal) addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first),
+                                       pos.rule.conflicts[pos.pos + 1], pos.prev)
   }
   while (redo.length) {
     let add = redo.pop()!
-    addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first), add.prev)
+    addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first), add.rule.conflicts[1], add.prev)
   }
 
   let result = set.slice()
   for (let add of added) {
-    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.prev)
+    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.conflictsAhead, add.prev)
     if (add.origIndex > -1) result[add.origIndex] = pos
     else result.push(pos)
   }
@@ -270,11 +285,12 @@ export function buildFullAutomaton(rules: readonly Rule[], terms: TermSet, first
     set = closure(set, rules, first)
     let hash = hashPositions(set)
     for (let state of states) if (state.hash == hash && state.hasSet(set)) return state
-    let state = new State(states.length, set)
+    let state = new State(states.length, set, 0, hash)
     states.push(state)
     return state
   }
-  getState(rules.filter(rule => rule.name.name == "program").map(rule => new Pos(rule, 0, [terms.eof], null)))
+  getState(rules.filter(rule => rule.name.name == "program")
+           .map(rule => new Pos(rule, 0, [terms.eof], Conflicts.none, null)))
 
   while (filled < states.length) {
     let state = states[filled++]
@@ -347,7 +363,7 @@ function collapseAutomaton(states: State[]): State[] {
       })
       if (newID < 0) {
         newID = newStates.length
-        newStates.push(new State(newID, set, state.flags))
+        newStates.push(new State(newID, set, state.flags, 0))
       } else {
         newStates[newID].flags |= state.flags
       }
@@ -390,5 +406,3 @@ export function buildAutomaton(rules: readonly Rule[], terms: TermSet) {
   addRecoveryRules(table, rules, first)
   return table
 }
-
-function hash(a: number, b: number): number { return (a << 5) + a + b }

@@ -1,11 +1,13 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclaration,
         Identifier, Expression,
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
-        RepeatExpression, SetExpression, AnyExpression, MarkedExpression} from "./node"
+        RepeatExpression, SetExpression, AnyExpression, ConflictMarker} from "./node"
 
 // Note that this is the parser for grammar files, not the generated parser
 
 const wordChar = /[\w_$]/ // FIXME international
+
+const none: readonly any[] = []
 
 export class Input {
   type = "sof"
@@ -61,7 +63,7 @@ export class Input {
       let end = this.match(start + 1, /^(?:\\.|[^\]])*\]/)
       if (end == -1) this.raise("Unterminated character set", start)
       return this.set("set", this.string.slice(start + 1, end - 1), start, end)
-    } else if (/[()!+*?{}<>\.,|=]/.test(next)) {
+    } else if (/[()!~+*?{}<>\.,|=]/.test(next)) {
       return this.set(next, null, start, start + 1)
     } else if (wordChar.test(next)) {
       let end = start + 1
@@ -149,7 +151,7 @@ function parseExprInner(input: Input): Expression {
   if (input.type == "string") {
     let value = input.value
     input.next()
-    if (value.length == 0) return new SequenceExpression(start, [])
+    if (value.length == 0) return new SequenceExpression(start, none, [none, none])
     return new LiteralExpression(start, value)
   } else if (input.eat("id", "_")) {
     return new AnyExpression(start)
@@ -214,24 +216,23 @@ function endOfSequence(input: Input) {
 }
 
 function parseExprSequence(input: Input) {
-  let start = input.start, first = parseExprPrec(input)
-  if (endOfSequence(input)) return first
-  let exprs: Expression[] = [first]
-  do { exprs.push(parseExprPrec(input)) }
-  while (!endOfSequence(input))
-  return new SequenceExpression(start, exprs)
-}
-
-function parseExprPrec(input: Input) {
-  let start = input.start
-  if (!input.eat("!")) return parseExprSuffix(input)
-  let id = parseIdent(input), namespace = null
-  if (input.eat(".")) {
-    namespace = id
-    id = parseIdent(input)
-  }
-  let expr = parseExprSuffix(input)
-  return new MarkedExpression(start, namespace, id, expr)
+  let start = input.start, exprs: Expression[] = [], markers = [none]
+  do {
+    // Add markers at this position
+    for (;;) {
+      let localStart = input.start, markerType!: "ambig" | "prec"
+      if (input.eat("~")) markerType = "ambig"
+      else if (input.eat("!")) markerType = "prec"
+      else break
+      markers[markers.length - 1] =
+        markers[markers.length - 1].concat(new ConflictMarker(localStart, parseIdent(input), markerType))
+    }
+    if (exprs.length && endOfSequence(input)) break
+    exprs.push(parseExprSuffix(input))
+    markers.push(none)
+  } while (!endOfSequence(input))
+  if (exprs.length == 1 && markers.every(ms => ms.length == 0)) return exprs[0]
+  return new SequenceExpression(start, exprs, markers)
 }
 
 function parseExprChoice(input: Input) {

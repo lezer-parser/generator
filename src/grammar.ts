@@ -1,4 +1,5 @@
 import {TERM_EOF} from "lezer"
+import {hashString} from "./hash"
 
 const TERMINAL = 1, REPEATED = 2, PROGRAM = 4, ERROR = 8, EOF = 16
 
@@ -80,6 +81,10 @@ export function cmpSet<T>(a: readonly T[], b: readonly T[], cmp: (a: T, b: T) =>
   return 0
 }
 
+function cmpStr(a: string, b: string) {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
 export const ASSOC_LEFT = 1, ASSOC_RIGHT = 2, PREC_REPEAT = 2e8
 
 export function precedence(assoc: number, value: number) { return assoc | (value << 2) }
@@ -88,6 +93,43 @@ export function precedenceValue(prec: number) { return prec >> 2 }
 
 export function precedenceAssoc(prec: number) { return prec & 3 }
 
+const none: readonly any[] = []
+
+export class Conflicts {
+  hash: number
+
+  constructor(readonly precedence: number, readonly ambigGroups: readonly string[]) {
+    let h = precedence
+    for (let group of ambigGroups) h = hashString(h, group)
+    this.hash = h
+  }
+
+  join(other: Conflicts) {
+    if (this == Conflicts.none || this == other) return other
+    if (other == Conflicts.none) return this
+    return new Conflicts(Math.max(this.precedence, other.precedence), union(this.ambigGroups, other.ambigGroups))
+  }
+
+  eq(other: Conflicts) {
+    return this.precedence == other.precedence && this.ambigGroups.length == other.ambigGroups.length &&
+      this.ambigGroups.every((g, i) => other.ambigGroups[i] == g)
+  }
+
+  cmp(other: Conflicts) {
+    return this.precedence - other.precedence || cmpSet(this.ambigGroups, other.ambigGroups, cmpStr)
+  }
+
+  static none = new Conflicts(0, none)
+}
+
+function union(a: readonly string[], b: readonly string[]): readonly string[] {
+  if (a.length == 0 || a == b) return b
+  if (b.length == 0) return a
+  let result = a.slice()
+  for (let value of b) if (!a.includes(value)) result.push(value)
+  return result.sort()
+}
+
 let ruleID = 0
 
 export class Rule {
@@ -95,9 +137,7 @@ export class Rule {
 
   constructor(readonly name: Term,
               readonly parts: readonly Term[],
-              readonly rulePrecedence: number,
-              readonly posPrecedence: readonly number[],
-              readonly conflictGroups: readonly string[]) {}
+              readonly conflicts: readonly Conflicts[]) {}
 
   cmp(rule: Rule) {
     return this.id - rule.id
@@ -106,8 +146,7 @@ export class Rule {
   cmpNoName(rule: Rule) {
     return this.parts.length - rule.parts.length ||
       this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0) ||
-      this.posPrecedence.reduce((d, p, i) => d || p - rule.posPrecedence[i], 0) ||
-      cmpSet(this.conflictGroups, rule.conflictGroups, (a, b) => a < b ? -1 : a > b ? 1 : 0)
+      cmpSet(this.conflicts, rule.conflicts, (a, b) => a.cmp(b))
   }
 
   toString() {

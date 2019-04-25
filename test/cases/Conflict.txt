@@ -6,9 +6,9 @@ ParenExpr { "(" expr ")" }
 
 ArrowExpr { "(" ParamName ")" "=>" expr }
 
-Identifier { !ambig.arrow word }
+Identifier { word ~arrow }
 
-ParamName { !ambig.arrow word }
+ParamName { word ~arrow }
 
 tokens {
   skip { std.whitespace* }
