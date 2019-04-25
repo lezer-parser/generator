@@ -1,4 +1,4 @@
-prec { div left }
+precedence { div left }
 
 program { expr }
 

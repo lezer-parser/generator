@@ -2,7 +2,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
         exprsEq, exprEq} from "./node"
-import {Term, TermSet, precedence, ASSOC_LEFT, ASSOC_RIGHT, PREC_REPEAT, Rule, Conflicts} from "./grammar"
+import {Term, TermSet, precedence, ASSOC_LEFT, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {Edge, State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
@@ -29,7 +29,8 @@ class Parts {
     return new Parts(this.terms.concat(other.terms), conflicts)
   }
 
-  addConflicts(pos: number, conflicts: Conflicts) {
+  withConflicts(pos: number, conflicts: Conflicts) {
+    if (conflicts.precedence == 0 && conflicts.ambigGroups.length == 0) return this
     let array = this.conflicts ? this.conflicts.slice() : this.ensureConflicts() as Conflicts[]
     array[pos] = array[pos].join(conflicts)
     return new Parts(this.terms, array)
@@ -117,6 +118,24 @@ class Context {
     return p(outer)
   }
 
+  normalizeSequence(expr: SequenceExpression) {
+    let result: Parts[][] = expr.exprs.map(e => this.normalizeExpr(e))
+    let builder = this.b
+    function complete(start: Parts, from: number, endConflicts: Conflicts): Parts[] {
+      let {here, atEnd} = builder.conflictsFor(expr.markers[from])
+      if (from == result.length)
+        return [start.withConflicts(start.terms.length, here.join(endConflicts))]
+      let choices = []
+      for (let choice of result[from]) {
+        for (let full of complete(start.concat(choice).withConflicts(start.terms.length, here),
+                                  from + 1, endConflicts.join(atEnd)))
+          choices.push(full)
+      }
+      return choices
+    }
+    return complete(Parts.none, 0, Conflicts.none)
+  }
+
   normalizeExpr(expr: Expression): Parts[] {
     if (expr instanceof RepeatExpression && expr.kind == "?") {
       return [Parts.none, ...this.normalizeExpr(expr.expr)]
@@ -125,14 +144,7 @@ class Context {
     } else if (expr instanceof ChoiceExpression) {
       return expr.exprs.reduce((o, e) => o.concat(this.normalizeExpr(e)), [] as Parts[])
     } else if (expr instanceof SequenceExpression) {
-      return branch(expr.exprs.map((e, i) => {
-        let inner = this.normalizeExpr(e)
-        if (i == 0 && expr.markers[0].length)
-          inner = inner.map(ps => ps.addConflicts(0, this.b.conflictsFor(expr.markers[0])))
-        if (expr.markers[i + 1].length)
-          inner = inner.map(ps => ps.addConflicts(ps.terms.length, this.b.conflictsFor(expr.markers[i + 1])))
-        return inner
-      }))
+      return this.normalizeSequence(expr)
     } else if (expr instanceof LiteralExpression) {
       return [p(this.b.tokenGroups[0].getLiteral(expr))]
     } else if (expr instanceof NamedExpression) {
@@ -181,17 +193,6 @@ class Context {
     }
     return token
   }
-}
-
-function branch(parts: Parts[][]): Parts[] {
-  if (parts.length == 0) return [Parts.none]
-  if (parts.length == 1) return parts[0]
-  let rest = branch(parts.slice(1))
-  let result: Parts[] = []
-  for (let choice of parts[0]) {
-    for (let after of rest) result.push(choice.concat(after))
-  }
-  return result
 }
 
 function findNameFor(expr: Expression): string | null {
@@ -467,21 +468,21 @@ class Builder {
     })
   }
 
-  conflictsFor(markers: readonly ConflictMarker[]): Conflicts {
-    let result = Conflicts.none
+  conflictsFor(markers: readonly ConflictMarker[]) {
+    let here = Conflicts.none, atEnd = Conflicts.none
     for (let marker of markers) {
       if (marker.type == "ambig") {
-        result = result.join(new Conflicts(0, [marker.id.name]))
+        here = here.join(new Conflicts(0, [marker.id.name]))
       } else {
         let precs = this.ast.precedences!
         let pos = precs ? precs.names.findIndex(id => id.name == marker.id.name) : -1
         if (pos < 0) this.input.raise(`Reference to unknown precedence: '${marker.id.name}'`, marker.id.start)
-        let assoc = precs.assoc[pos]
-        result = result.join(new Conflicts(precedence(assoc == "left" ? ASSOC_LEFT : assoc == "right" ? ASSOC_RIGHT : 0,
-                                                      precs.names.length - pos), none))
+        let assoc = precs.assoc[pos], value = (precs.names.length - pos) << 1
+        here = here.join(new Conflicts(precedence(0, value), none))
+        atEnd = atEnd.join(new Conflicts(precedence(0, value + (assoc == "left" ? 1 : assoc == "right" ? -1 : 0)), none))
       }
     }
-    return result
+    return {here, atEnd}
   }
 }
 

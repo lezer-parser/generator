@@ -26,7 +26,7 @@ function change(tree: SyntaxTree, ...changes: ([number, number] | [number, numbe
 
 describe("parsing", () => {
   let p1 = p(`
-    prec { call }
+    precedence { call }
 
     program { statement* }
     statement { Conditional | Loop | Block | expression ";" }

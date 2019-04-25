@@ -1,4 +1,4 @@
-prec { mult left, plus left }
+precedence { mult left, plus left }
 
 program { expr }
 

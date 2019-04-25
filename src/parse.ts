@@ -113,7 +113,7 @@ function parseTop(input: Input) {
     if (input.type == "id" && input.value == "tokens") {
       if (tokens) input.raise(`Multiple tokens declaractions`, input.start)
       else tokens = parseTokenGroup(input)
-    } else if (input.type == "id" && input.value == "prec") {
+    } else if (input.type == "id" && input.value == "precedence") {
       if (prec) input.raise(`Multiple prec declarations`, input.start)
       else prec = parsePrec(input)
     } else {

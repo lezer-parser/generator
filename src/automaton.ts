@@ -50,18 +50,23 @@ export class Pos {
     return result.reverse().join(" ")
   }
 
+  conflicts(pos = this.pos) {
+    let result = this.rule.conflicts[pos]
+    if (pos == this.rule.parts.length) result = result.join(this.conflictsAhead)
+    return result
+  }
+
   static conflictsAt(group: readonly Pos[], context: readonly Pos[]) {
     let result = Conflicts.none
     let scan: Term[] = []
     for (let pos of group) {
-      result = result.join(pos.rule.conflicts[pos.pos])
-      if (pos.pos == pos.rule.parts.length) result = result.join(pos.conflictsAhead)
+      result = result.join(pos.conflicts())
       if (pos.pos == 0) addTo(pos.rule.name, scan)
     }
     for (let i = 0; i < scan.length; i++) {
       let name = scan[i]
       for (let pos of context) if (pos.next == name) {
-        result = result.join(pos.rule.conflicts[pos.pos])
+        result = result.join(pos.conflicts())
         if (pos.pos == 0) addTo(pos.rule.name, scan)
       }
     }
@@ -163,8 +168,6 @@ export class State {
         } else if (conflicts.ambigGroups.some(g => actionConflicts.ambigGroups.includes(g))) { // Explicitly allowed ambiguity
           continue check
         } else { // Not resolved
-          console.log("pos itions " + positions, "\n and " + this.actionPositions[i])
-          console.log(conflicts, actionConflicts)
           return action
         }
       }
@@ -229,12 +232,14 @@ function closure(set: readonly Pos[], rules: readonly Rule[], first: {[name: str
   
   for (let pos of set) {
     let next = pos.next
-    if (next && !next.terminal) addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first),
-                                       pos.rule.conflicts[pos.pos + 1], pos.prev)
+    if (next && !next.terminal)
+      addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first),
+             pos.conflicts(pos.pos + 1), pos.prev)
   }
   while (redo.length) {
     let add = redo.pop()!
-    addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first), add.rule.conflicts[1], add.prev)
+    addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first),
+           add.rule.conflicts[1].join(add.rule.parts.length == 1 ? add.conflictsAhead : Conflicts.none), add.prev)
   }
 
   let result = set.slice()

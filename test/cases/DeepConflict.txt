@@ -1,0 +1,13 @@
+program { A* }
+
+A { B ~ambig "." | C ~ambig "." }
+
+B { C }
+
+C { "x" }
+
+---
+
+x.
+
+==> A(C)
