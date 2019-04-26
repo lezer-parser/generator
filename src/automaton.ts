@@ -1,5 +1,5 @@
-import {Term, TermSet, Rule, PREC_REPEAT, cmpSet, Conflicts} from "./grammar"
-import {hash} from "./hash"
+import {Term, TermSet, Rule, PREC_REPEAT, cmpSet, Conflicts, union} from "./grammar"
+import {hash, hashString} from "./hash"
 
 export class Pos {
   hash: number
@@ -7,10 +7,11 @@ export class Pos {
   constructor(readonly rule: Rule,
               readonly pos: number,
               readonly ahead: readonly Term[],
-              readonly conflictsAhead: Conflicts,
+              readonly ambigAhead: readonly string[],
               readonly prev: Pos | null) {
-    let h = hash(hash(rule.id, pos), conflictsAhead.hash)
+    let h = hash(rule.id, pos)
     for (let a of this.ahead) h = hash(h, a.hash)
+    for (let group of ambigAhead) h = hashString(h, group)
     this.hash = h
   }
 
@@ -19,11 +20,11 @@ export class Pos {
   }
 
   advance() {
-    return new Pos(this.rule, this.pos + 1, this.ahead, this.conflictsAhead, this)
+    return new Pos(this.rule, this.pos + 1, this.ahead, this.ambigAhead, this)
   }
 
   cmp(pos: Pos) {
-    return this.cmpSimple(pos) || cmpSet(this.ahead, pos.ahead, (a, b) => a.cmp(b)) || this.conflictsAhead.cmp(pos.conflictsAhead)
+    return this.cmpSimple(pos) || cmpSet(this.ahead, pos.ahead, (a, b) => a.cmp(b)) || cmpSet(this.ambigAhead, pos.ambigAhead, cmpStr)
   }
 
   cmpSimple(pos: Pos) {
@@ -40,7 +41,7 @@ export class Pos {
     return this == other ||
       this.hash == other.hash && this.rule == other.rule && this.pos == other.pos &&
       sameSet(this.ahead, other.ahead) &&
-      this.conflictsAhead.eq(other.conflictsAhead)
+      sameSet(this.ambigAhead, other.ambigAhead)
   }
 
   trail() {
@@ -51,7 +52,7 @@ export class Pos {
 
   conflicts(pos = this.pos) {
     let result = this.rule.conflicts[pos]
-    if (pos == this.rule.parts.length) result = result.join(this.conflictsAhead)
+    if (pos == this.rule.parts.length && this.ambigAhead.length) result = result.join(new Conflicts(0, this.ambigAhead))
     return result
   }
 
@@ -71,6 +72,10 @@ export class Pos {
     }
     return result
   }
+}
+
+function cmpStr(a: string, b: string) {
+  return a < b ? -1 : a > b ? 1 : 0
 }
 
 function termsAhead(rule: Rule, pos: number, after: readonly Term[], first: {[name: string]: Term[]}): Term[] {
@@ -203,22 +208,21 @@ class AddedPos {
   constructor(readonly rule: Rule,
               readonly ahead: Term[],
               readonly origIndex: number,
-              public conflictsAhead: Conflicts,
+              public ambigAhead: readonly string[],
               readonly prev: Pos | null) {}
 }
 
 function closure(set: readonly Pos[], rules: readonly Rule[], first: {[name: string]: Term[]}) {
   let added: AddedPos[] = [], redo: AddedPos[] = []
-  function addFor(name: Term, ahead: readonly Term[], conflictsAhead: Conflicts, prev: Pos | null) {
-    if (conflictsAhead.precedence) conflictsAhead = Conflicts.none // FIXME simply don't store this if we keep doing this
+  function addFor(name: Term, ahead: readonly Term[], ambigAhead: readonly string[], prev: Pos | null) {
     for (let rule of rules) if (rule.name == name) {
       let add = added.find(a => a.rule == rule)
       if (!add) {
         let existing = set.findIndex(p => p.pos == 0 && p.rule == rule)
-        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing, conflictsAhead, prev)
+        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing, ambigAhead, prev)
         added.push(add)
       } else {
-        add.conflictsAhead = add.conflictsAhead.join(conflictsAhead)
+        add.ambigAhead = union(add.ambigAhead, ambigAhead)
       }
       for (let term of ahead) if (!add.ahead.includes(term)) {
         add.ahead.push(term)
@@ -231,17 +235,18 @@ function closure(set: readonly Pos[], rules: readonly Rule[], first: {[name: str
     let next = pos.next
     if (next && !next.terminal)
       addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first),
-             pos.conflicts(pos.pos + 1), pos.prev)
+             pos.conflicts(pos.pos + 1).ambigGroups, pos.prev)
   }
   while (redo.length) {
     let add = redo.pop()!
     addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first),
-           add.rule.conflicts[1].join(add.rule.parts.length == 1 ? add.conflictsAhead : Conflicts.none), add.prev)
+           union(add.rule.conflicts[1].ambigGroups, add.rule.parts.length == 1 ? add.ambigAhead : none),
+           add.prev)
   }
 
   let result = set.slice()
   for (let add of added) {
-    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.conflictsAhead, add.prev)
+    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.ambigAhead, add.prev)
     if (add.origIndex > -1) result[add.origIndex] = pos
     else result.push(pos)
   }
@@ -292,7 +297,7 @@ export function buildFullAutomaton(rules: readonly Rule[], terms: TermSet, first
     return state
   }
   getState(rules.filter(rule => rule.name.name == "program")
-           .map(rule => new Pos(rule, 0, [terms.eof], Conflicts.none, null)))
+           .map(rule => new Pos(rule, 0, [terms.eof], none, null)))
 
   while (filled < states.length) {
     let state = states[filled++]

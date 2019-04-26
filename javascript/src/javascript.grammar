@@ -1,4 +1,4 @@
-prec {
+precedence {
   statement,
   else left,
   member,
@@ -76,12 +76,12 @@ declaration {
 }
 
 FunctionDeclaration {
-  !statement kw<"function"> Definition plainStar? ParamList Block |
+  kw<"function"> Definition plainStar? ParamList Block !statement |
   kw<"async"> kw<"function"> Definition plainStar? ParamList Block
 }
 
 ClassDeclaration {
-  !statement kw<"class"> Definition (kw<"extends"> expression)? ClassBody
+  kw<"class"> Definition (kw<"extends"> expression)? ClassBody !statement
 }
 
 ClassBody {
@@ -114,7 +114,7 @@ ObjectPattern {
 }
 
 ArrayPattern {
-  "[" commaSep<"..." patternAssign | patternAssign> "]"
+  "[" commaSep<"..." patternAssign | patternAssign> ~arrow "]"
 }
 
 ParamList {
@@ -169,17 +169,15 @@ expressionNoComma {
 }
 
 ArrayExpression {
-  "[" commaSep<expressionNoComma> "]"
+  "[" commaSep1<expressionNoComma | ""> ~arrow "]"
 }
 
 ClassExpression {
-  kw<"class"> (kw<"extends"> expression)? ClassBody |
-  kw<"class"> Definition (kw<"extends"> expression)? ClassBody
+  kw<"class"> Definition? (kw<"extends"> expression)? ClassBody
 }
 
 FunctionExpression {
-  kw<"function"> plainStar? ParamList Block |
-  kw<"function"> Definition plainStar? ParamList Block
+  kw<"function"> Definition? plainStar? ParamList Block
 }
 
 NewExpression {
@@ -230,7 +228,7 @@ commaSep<content> {
 }
 
 commaSep1<content> {
-  content? ("," content)*
+  content ("," content)*
 }
 
 kw<word> { specialize<identifier, word, Keyword> }
@@ -241,9 +239,9 @@ null { specialize<identifier, "null", Null> }
 
 Property { identifier }
 
-Variable { !ambig.arrow identifier }
+Variable { identifier ~arrow }
 
-Definition { !ambig.arrow identifier }
+Definition { identifier ~arrow }
 
 PropertyDefinition { identifier }
 

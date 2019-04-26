@@ -1,5 +1,4 @@
 import {TERM_EOF} from "lezer"
-import {hashString} from "./hash"
 
 const TERMINAL = 1, REPEATED = 2, PROGRAM = 4, ERROR = 8, EOF = 16
 
@@ -81,22 +80,12 @@ export function cmpSet<T>(a: readonly T[], b: readonly T[], cmp: (a: T, b: T) =>
   return 0
 }
 
-function cmpStr(a: string, b: string) {
-  return a < b ? -1 : a > b ? 1 : 0
-}
-
 export const PREC_REPEAT = 2e8
 
 const none: readonly any[] = []
 
 export class Conflicts {
-  hash: number
-
-  constructor(readonly precedence: number, readonly ambigGroups: readonly string[]) {
-    let h = precedence
-    for (let group of ambigGroups) h = hashString(h, group)
-    this.hash = h
-  }
+  constructor(readonly precedence: number, readonly ambigGroups: readonly string[]) {}
 
   join(other: Conflicts) {
     if (this == Conflicts.none || this == other) return other
@@ -104,19 +93,14 @@ export class Conflicts {
     return new Conflicts(Math.max(this.precedence, other.precedence), union(this.ambigGroups, other.ambigGroups))
   }
 
-  eq(other: Conflicts) {
-    return this.precedence == other.precedence && this.ambigGroups.length == other.ambigGroups.length &&
-      this.ambigGroups.every((g, i) => other.ambigGroups[i] == g)
-  }
-
   cmp(other: Conflicts) {
-    return this.precedence - other.precedence || cmpSet(this.ambigGroups, other.ambigGroups, cmpStr)
+    return this.precedence - other.precedence || cmpSet(this.ambigGroups, other.ambigGroups, (a, b) => a < b ? -1 : a > b ? 1 : 0)
   }
 
   static none = new Conflicts(0, none)
 }
 
-function union(a: readonly string[], b: readonly string[]): readonly string[] {
+export function union(a: readonly string[], b: readonly string[]): readonly string[] {
   if (a.length == 0 || a == b) return b
   if (b.length == 0) return a
   let result = a.slice()
