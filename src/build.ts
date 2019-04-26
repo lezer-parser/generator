@@ -2,7 +2,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
         exprsEq, exprEq} from "./node"
-import {Term, TermSet, precedence, ASSOC_LEFT, PREC_REPEAT, Rule, Conflicts} from "./grammar"
+import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {Edge, State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
@@ -111,7 +111,7 @@ class Context {
     this.b.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
     let top = this.normalizeExpr(expr.expr)
-    top.push(new Parts([inner, inner], [Conflicts.none, new Conflicts(precedence(ASSOC_LEFT, PREC_REPEAT), none), Conflicts.none]))
+    top.push(new Parts([inner, inner], [Conflicts.none, new Conflicts(PREC_REPEAT, none), Conflicts.none]))
     this.defineRule(inner, top)
     this.defineRule(outer, expr.kind == "+" ? [p(inner)] : [Parts.none, p(inner)])
 
@@ -478,8 +478,8 @@ class Builder {
         let pos = precs ? precs.names.findIndex(id => id.name == marker.id.name) : -1
         if (pos < 0) this.input.raise(`Reference to unknown precedence: '${marker.id.name}'`, marker.id.start)
         let assoc = precs.assoc[pos], value = (precs.names.length - pos) << 1
-        here = here.join(new Conflicts(precedence(0, value), none))
-        atEnd = atEnd.join(new Conflicts(precedence(0, value + (assoc == "left" ? 1 : assoc == "right" ? -1 : 0)), none))
+        here = here.join(new Conflicts(value, none))
+        atEnd = atEnd.join(new Conflicts(value + (assoc == "left" ? 1 : assoc == "right" ? -1 : 0), none))
       }
     }
     return {here, atEnd}

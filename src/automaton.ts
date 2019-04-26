@@ -1,5 +1,4 @@
-import {Term, TermSet, Rule, precedenceValue, precedenceAssoc, PREC_REPEAT, ASSOC_LEFT,
-        cmpSet, Conflicts} from "./grammar"
+import {Term, TermSet, Rule, PREC_REPEAT, cmpSet, Conflicts} from "./grammar"
 import {hash} from "./hash"
 
 export class Pos {
@@ -153,11 +152,9 @@ export class State {
       if (action.term == value.term) {
         if (action.eq(value)) return null
         let conflicts = Pos.conflictsAt(positions, this.set)
-        if (precedenceValue(conflicts.precedence) != PREC_REPEAT) this.flags |= AMBIGUOUS
+        if (conflicts.precedence != PREC_REPEAT) this.flags |= AMBIGUOUS
         let actionConflicts = Pos.conflictsAt(this.actionPositions[i], this.set)
-        let diff = precedenceValue(conflicts.precedence) - precedenceValue(actionConflicts.precedence)
-        if (diff == 0 && action instanceof Shift && precedenceAssoc(conflicts.precedence))
-          diff = precedenceAssoc(conflicts.precedence) == ASSOC_LEFT ? 1 : -1
+        let diff = conflicts.precedence - actionConflicts.precedence
         if (diff > 0) { // Drop the existing action
           this.actions.splice(i, 1)
           this.actionPositions.splice(i, 1)

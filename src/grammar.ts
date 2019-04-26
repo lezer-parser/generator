@@ -85,13 +85,7 @@ function cmpStr(a: string, b: string) {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
-export const ASSOC_LEFT = 1, ASSOC_RIGHT = 2, PREC_REPEAT = 2e8
-
-export function precedence(assoc: number, value: number) { return assoc | (value << 2) }
-
-export function precedenceValue(prec: number) { return prec >> 2 }
-
-export function precedenceAssoc(prec: number) { return prec & 3 }
+export const PREC_REPEAT = 2e8
 
 const none: readonly any[] = []
 
