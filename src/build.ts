@@ -687,15 +687,19 @@ function invertRanges(ranges: [number, number][]) {
     if (a > pos) result.push([pos, a])
     pos = b
   }
-  if (pos <= MAX_CHAR) result.push([pos, MAX_CHAR + 1])
+  if (pos <= MAX_CODE) result.push([pos, MAX_CODE + 1])
   return result
 }
 
-const ASTRAL = 0x10000, GAP_START = 0xd800, GAP_END = 0xe000
+const ASTRAL = 0x10000, GAP_START = 0xd800, GAP_END = 0xe000, MAX_CODE = 0x10ffff
+const LOW_SURR_B = 0xdc00, HIGH_SURR_B = 0xdfff
 
 // Create intermediate states for astral characters in a range, if
 // necessary, since the tokenizer acts on UTF16 characters
 function rangeEdges(from: State, low: number, hi: number): Edge[] {
+  if (low < GAP_START && hi == MAX_CODE + 1)
+    return [from.edge(low, MAX_CHAR + 1)]
+
   let edges: Edge[] = []
   if (low < ASTRAL) {
     if (low < GAP_START) edges.push(from.edge(low, Math.min(hi, GAP_START)))
@@ -707,21 +711,28 @@ function rangeEdges(from: State, low: number, hi: number): Edge[] {
   let lowA = lowStr.charCodeAt(0), lowB = lowStr.charCodeAt(1)
   let hiA = hiStr.charCodeAt(0), hiB = hiStr.charCodeAt(1)
   if (lowA == hiA) { // Share the first char code
-    let mid = new State
-    from.edge(lowA, lowA + 1, mid)
-    edges.push(mid.edge(lowB, hiB + 1))
+    let hop = new State
+    from.edge(lowA, lowA + 1, hop)
+    edges.push(hop.edge(lowB, hiB + 1))
   } else {
-    let top = new State
-    from.edge(lowA, lowA + 1, top)
-    edges.push(top.edge(lowB, MAX_CHAR + 1))
-    if (lowA + 1 < hiA - 1) {
-      let mid = new State
-      from.edge(lowA + 1, hiA, mid)
-      edges.push(mid.edge(0, MAX_CHAR + 1))
+    let midStart = lowA, midEnd = hiA
+    if (lowB > LOW_SURR_B) {
+      midStart++
+      let hop = new State
+      from.edge(lowA, lowA + 1, hop)
+      edges.push(hop.edge(lowB, HIGH_SURR_B + 1))
     }
-    let bot = new State
-    from.edge(hiA, hiA + 1, bot)
-    edges.push(bot.edge(0, hiB + 1))
+    if (hiB < HIGH_SURR_B) {
+      midEnd--
+      let hop = new State
+      from.edge(hiA, hiA + 1, hop)
+      edges.push(hop.edge(LOW_SURR_B, hiB + 1))
+    }
+    if (midStart <= midEnd) {
+      let hop = new State
+      from.edge(midStart, midEnd + 1)
+      edges.push(hop.edge(LOW_SURR_B, HIGH_SURR_B + 1))
+    }
   }
   return edges
 }
