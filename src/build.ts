@@ -287,7 +287,8 @@ class Builder {
     let rules = simplifyRules(this.rules)
     let {tags, names, repeatInfo} = this.terms.finish(rules)
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
-    let table = buildAutomaton(rules, this.terms)
+    for (let rule of rules) rule.name.rules.push(rule)
+    let table = buildAutomaton(this.terms)
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
     let tokenizers: string[] = []
     let skipped: (string | null)[] = []

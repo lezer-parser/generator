@@ -7,6 +7,8 @@ let termHash = 0
 export class Term {
   hash = ++termHash // Used for sorting and hashing during parser generation
   id = -1 // Assigned in a later stage, used in actual output
+  // Filled in only after the rules are simplified, used in automaton.ts
+  rules: Rule[] = []
 
   constructor(readonly name: string,
               private flags: number,

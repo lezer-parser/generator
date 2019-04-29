@@ -212,10 +212,10 @@ class AddedPos {
               readonly prev: Pos | null) {}
 }
 
-function closure(set: readonly Pos[], rules: readonly Rule[], first: {[name: string]: Term[]}) {
+function closure(set: readonly Pos[], first: {[name: string]: Term[]}) {
   let added: AddedPos[] = [], redo: AddedPos[] = []
   function addFor(name: Term, ahead: readonly Term[], ambigAhead: readonly string[], prev: Pos | null) {
-    for (let rule of rules) if (rule.name == name) {
+    for (let rule of name.rules) {
       let add = added.find(a => a.rule == rule)
       if (!add) {
         let existing = set.findIndex(p => p.pos == 0 && p.rule == rule)
@@ -257,13 +257,13 @@ function addTo<T>(value: T, array: T[]) {
   if (!array.includes(value)) array.push(value)
 }
 
-function computeFirst(rules: readonly Rule[], nonTerminals: Term[]) {
+function computeFirst(terms: TermSet) {
   let table: {[term: string]: Term[]} = {}
-  for (let t of nonTerminals) table[t.name] = []
+  for (let t of terms.nonTerminals) table[t.name] = []
   for (;;) {
     let change = false
-    for (let rule of rules) {
-      let set = table[rule.name.name]
+    for (let nt of terms.nonTerminals) for (let rule of nt.rules) {
+      let set = table[nt.name]
       let found = false, startLen = set.length
       for (let part of rule.parts) {
         found = true
@@ -289,7 +289,7 @@ class Core {
 }
 
 // Builds a full LR(1) automaton
-export function buildFullAutomaton(rules: readonly Rule[], terms: TermSet, first: {[name: string]: Term[]}) {
+export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[]}) {
   let states: State[] = []
   let cores: {[hash: number]: Core[]} = {}
   function getState(core: readonly Pos[]) {
@@ -298,7 +298,7 @@ export function buildFullAutomaton(rules: readonly Rule[], terms: TermSet, first
     if (byHash) for (let known of byHash) if (eqSet(core, known.set))
       return known.state
 
-    let set = closure(core, rules, first)
+    let set = closure(core, first)
     let hash = hashPositions(set), found
     for (let state of states) if (state.hash == hash && state.hasSet(set)) found = state
     if (!found) {
@@ -308,7 +308,7 @@ export function buildFullAutomaton(rules: readonly Rule[], terms: TermSet, first
     ;(cores[coreHash] || (cores[coreHash] = [])).push(new Core(core, found))
     return found
   }
-  getState(rules.filter(rule => rule.name.name == "program")
+  getState(terms.nonTerminals.find(nt => nt.name == "program")!.rules
            .map(rule => new Pos(rule, 0, [terms.eof], none, null)))
 
   for (let filled = 0; filled < states.length; filled++) {
@@ -403,7 +403,7 @@ function collapseAutomaton(states: State[]): State[] {
 
 const none: readonly any[] = []
 
-function addRecoveryRules(table: State[], rules: readonly Rule[], first: {[name: string]: Term[]}) {
+function addRecoveryRules(table: State[], first: {[name: string]: Term[]}) {
   for (let state of table) {
     for (let pos of state.set) if (pos.pos > 0) {
       for (let i = pos.pos + 1; i < pos.rule.parts.length; i++) {
@@ -419,9 +419,9 @@ function addRecoveryRules(table: State[], rules: readonly Rule[], first: {[name:
   }
 }
 
-export function buildAutomaton(rules: readonly Rule[], terms: TermSet) {
-  let first = computeFirst(rules, terms.nonTerminals)
-  let table = collapseAutomaton(buildFullAutomaton(rules, terms, first))
-  addRecoveryRules(table, rules, first)
+export function buildAutomaton(terms: TermSet) {
+  let first = computeFirst(terms)
+  let table = collapseAutomaton(buildFullAutomaton(terms, first))
+  addRecoveryRules(table, first)
   return table
 }
