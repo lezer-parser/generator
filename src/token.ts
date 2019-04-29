@@ -59,13 +59,12 @@ export class State {
     let result: State[] = []
     function explore(state: State): void {
       if (result.includes(state)) return
-      // States with only one outgoing epsilon edge and no accepting
-      // term that isn't also in the next state are left out to help
-      // reduce the number of unique state combinations
-      if (state.edges.length == 1 && state.edges[0].from < 0 &&
-          !(state.accepting && state.edges[0].target.accepting != state.accepting))
-        return explore(state.edges[0].target)
-      result.push(state)
+      // States with only epsilon edges and no accepting term that
+      // isn't also in the next states are left out to help reduce the
+      // number of unique state combinations
+      if (state.edges.some(e => e.from >= 0) ||
+          (state.accepting && !state.edges.some(e => state.accepting == e.target.accepting)))
+        result.push(state)
       for (let edge of state.edges) if (edge.from < 0) explore(edge.target)
     }
     explore(this)
