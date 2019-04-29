@@ -154,6 +154,7 @@ expressionInner {
   String |
   Variable |
   boolean |
+  this |
   null |
   RegExp |
   ArrayExpression |
@@ -193,7 +194,7 @@ NewExpression {
 }
 
 PrefixExpression {
-  !prefix (kw<"void"> | kw<"typeof"> | kw<"delete"> | op<"!"> | op<"~"> | op<"++" | "--"> | op<"+" | "-">) expressionNoComma
+  !prefix (kw<"yield"> | kw<"void"> | kw<"typeof"> | kw<"delete"> | op<"!"> | op<"~"> | op<"++" | "--"> | op<"+" | "-">) expressionNoComma
 }
 
 BinaryExpression {
@@ -245,6 +246,8 @@ commaSep1<content> {
 kw<word> { specialize<identifier, word, Keyword> }
 
 boolean { specialize<identifier, "true", Boolean> | specialize<identifier, "false", Boolean> }
+
+this { specialize<identifier, "this", This> }
 
 null { specialize<identifier, "null", Null> }
 

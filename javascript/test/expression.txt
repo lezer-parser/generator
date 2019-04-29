@@ -149,3 +149,73 @@ ConditionalExpression(Boolean, Operator, PrefixExpression(Keyword, MemberExpress
 a = void b();
 
 ==> AssignmentExpression(Variable, Operator, PrefixExpression(Keyword, CallExpression(Variable, ArgList)))
+
+# Augmented assignment
+
+s |= 1;
+t %= 2;
+w ^= 3;
+x += 4;
+y.z *= 5;
+z += 1;
+a >>= 1;
+b >>>= 1;
+c <<= 1;
+
+==>
+
+AssignmentExpression(Variable, Operator, Number),
+AssignmentExpression(Variable, Operator, Number),
+AssignmentExpression(Variable, Operator, Number),
+AssignmentExpression(Variable, Operator, Number),
+AssignmentExpression(MemberExpression(Variable, Property), Operator, Number),
+AssignmentExpression(Variable, Operator, Number),
+AssignmentExpression(Variable, Operator, Number),
+AssignmentExpression(Variable, Operator, Number),
+AssignmentExpression(Variable, Operator, Number)
+
+# Operator precedence
+
+a <= b && c >= d;
+a.b = c ? d : e;
+a && b(c) && d;
+a && new b(c) && d;
+typeof a == b && c instanceof d;
+
+==>
+
+BinaryExpression(BinaryExpression(Variable, Operator, Variable), Operator, BinaryExpression(Variable, Operator, Variable)),
+AssignmentExpression(MemberExpression(Variable, Property), Operator, ConditionalExpression(Variable, Operator, Variable, Operator, Variable)),
+BinaryExpression(BinaryExpression(Variable, Operator, CallExpression(Variable, ArgList(Variable))), Operator, Variable),
+BinaryExpression(BinaryExpression(Variable, Operator, NewExpression(Keyword, Variable, ArgList(Variable))), Operator, Variable),
+BinaryExpression(BinaryExpression(PrefixExpression(Keyword, Variable), Operator, Variable), Operator, BinaryExpression(Variable, Keyword, Variable))
+
+# Rest args
+
+foo(...rest);
+
+==>
+
+CallExpression(Variable, ArgList(Variable))
+
+# Forward slashes after parenthesized expressions
+
+(foo - bar) / baz;
+if (foo - bar) /baz/;
+(this.a() / this.b() - 1) / 2;
+
+==>
+
+BinaryExpression(BinaryExpression(Variable, Operator, Variable), Operator, Variable),
+IfStatement(Keyword, BinaryExpression(Variable, Operator, Variable), RegExp),
+BinaryExpression(
+  BinaryExpression(BinaryExpression(CallExpression(MemberExpression(This, Property), ArgList), Operator,
+                                    CallExpression(MemberExpression(This, Property), ArgList)),
+                   Operator, Number),
+  Operator, Number)
+
+# Yield expressions
+
+yield db.users.where('[endpoint+email]');
+
+==> PrefixExpression(Keyword, CallExpression(MemberExpression(MemberExpression(Variable, Property), Property), ArgList(String)))
