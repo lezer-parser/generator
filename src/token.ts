@@ -3,10 +3,7 @@ import {Term} from "./grammar"
 export const MAX_CHAR = 0xffff
 
 export class Edge {
-  public target!: State
-  constructor(readonly from: number, readonly to: number = from + 1, target?: State) {
-    if (target) this.target = target
-  }
+  constructor(readonly from: number, readonly to: number = from + 1, readonly target: State) {}
 
   toString() {
     return `-> ${this.target.id}[label=${JSON.stringify(
@@ -28,20 +25,11 @@ export class State {
 
   constructor(readonly accepting: Term | null = null, readonly id = stateID++) {}
 
-  connect(edges: Edge[]) {
-    for (let e of edges) {
-      if (e.target) throw new Error("Trying to connect edge twice")
-      e.target = this
-    }
+  edge(from: number, to: number = from + 1, target: State) {
+    this.edges.push(new Edge(from, to, target))
   }
 
-  edge(from: number, to: number = from + 1, target?: State) {
-    let e = new Edge(from, to, target)
-    this.edges.push(e)
-    return e
-  }
-
-  nullEdge(target?: State) { return this.edge(-1, -1, target) }
+  nullEdge(target: State) { this.edge(-1, -1, target) }
 
   compile() {
     let labeled: {[id: string]: State} = Object.create(null), localID = 0

@@ -3,7 +3,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
         exprsEq, exprEq} from "./node"
 import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
-import {Edge, State, MAX_CHAR} from "./token"
+import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {Parser, ParseState, REDUCE_DEPTH_SIZE, noToken, Tokenizer, TERM_TAGGED} from "lezer"
@@ -296,7 +296,8 @@ class Builder {
       skipped.push(group.skipState ? group.skipState.compile().toSource() :
                    group.parent ? skipped[this.tokenGroups.indexOf(group.parent)] : null)
       let startState = group.startState.compile()
-      tokenizers.push(startState.toSource())
+      let source = startState.toSource()
+      if (source) tokenizers.push(source)
       if (startState.accepting)
         this.input.raise(`Grammar contains zero-length tokens (in '${startState.accepting.name}')`,
                          group.rules.find(r => r.id.name == startState.accepting!.name)!.start)
@@ -558,8 +559,7 @@ class TokenGroup {
           let rule = this.rules.find(r => r.id.name == (choice as NamedExpression).id.name)
           if (rule) tag = rule.tag ? rule.tag.name : isTag(rule.id.name)
         }
-        let dest = tag ? new State(this.b.makeTerminal(tag, tag, this)) : nameless
-        dest.connect(this.build(choice, this.skipState, none))
+        this.build(choice, this.skipState, tag ? new State(this.b.makeTerminal(tag, tag, this)) : nameless, none)
       }
     }
   }
@@ -570,8 +570,7 @@ class TokenGroup {
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
     let term = this.b.makeTerminal(expr.toString(), rule.tag ? rule.tag.name : isTag(name), this)
-    let end = new State(term)
-    end.connect(this.buildRule(rule, expr, this.startState))
+    this.buildRule(rule, expr, this.startState, new State(term))
     this.built.push(new BuiltRule(name, expr.args, term))
     return term
   }
@@ -580,8 +579,7 @@ class TokenGroup {
     let id = JSON.stringify(expr.value)
     for (let built of this.built) if (built.id == id) return built.term
     let term = this.b.makeTerminal(id, null, this)
-    let end = new State(term)
-    end.connect(this.build(expr, this.startState, none))
+    this.build(expr, this.startState, new State(term), none)
     this.built.push(new BuiltRule(id, none, term))
     return term
   }
@@ -594,7 +592,7 @@ class TokenGroup {
     return this.b.input.raise(msg, pos)
   }
 
-  buildRule(rule: RuleDeclaration, expr: NamedExpression, from: State, args: readonly TokenArg[] = none): Edge[] {
+  buildRule(rule: RuleDeclaration, expr: NamedExpression, from: State, to: State, args: readonly TokenArg[] = none) {
     let name = expr.id.name
     if (rule.params.length != expr.args.length)
       this.raise(`Incorrect number of arguments for token '${name}'`, expr.start)
@@ -602,78 +600,72 @@ class TokenGroup {
     if (this.building.includes(name))
       this.raise(`Recursive token rules: ${this.building.slice(this.building.lastIndexOf(name)).join(" -> ")}`, expr.start)
     this.building.push(name)
-    let result = this.build(this.b.substituteArgs(rule.expr, expr.args, rule.params), from,
-                            expr.args.map((e, i) => new TokenArg(rule!.params[i].name, e, args)))
+    this.build(this.b.substituteArgs(rule.expr, expr.args, rule.params), from, to,
+               expr.args.map((e, i) => new TokenArg(rule!.params[i].name, e, args)))
     this.building.pop()
-    return result
   }
 
-  build(expr: Expression, from: State, args: readonly TokenArg[]): Edge[] {
+  build(expr: Expression, from: State, to: State, args: readonly TokenArg[]): void {
     if (expr instanceof NamedExpression) {
       if (expr.namespace) {
-        if (expr.namespace.name == "std") return this.buildStd(expr, from)
+        if (expr.namespace.name == "std") return this.buildStd(expr, from, to)
         this.b.input.raise(`Unknown namespace '${expr.namespace.name}'`, expr.start)
       }
       let name = expr.id.name, arg = args.find(a => a.name == name)
-      if (arg) return this.build(arg.expr, from, arg.scope)
+      if (arg) return this.build(arg.expr, from, to, arg.scope)
       let rule: RuleDeclaration | undefined = undefined
       for (let scope: TokenGroup | null = this; scope && !rule; scope = scope.parent)
         rule = scope.rules.find(r => r.id.name == name)
       if (!rule) return this.raise(`Reference to rule '${expr.id.name}', which isn't found in this token group`, expr.start)
-      return this.buildRule(rule, expr, from, args)
+      this.buildRule(rule, expr, from, to, args)
     } else if (expr instanceof ChoiceExpression) {
-      return expr.exprs.reduce((out, expr) => out.concat(this.build(expr, from, args)), [] as Edge[])
+      for (let choice of expr.exprs) this.build(choice, from, to, args)
+    } else if (expr instanceof SequenceExpression && !expr.exprs.length) {
+      from.nullEdge(to)
     } else if (expr instanceof SequenceExpression) {
-      if (!expr.exprs.length) return [from.nullEdge()]
       let conflict = expr.markers.find(c => c.length > 0)
       if (conflict) this.raise("Conflict marker in token expression", conflict[0].start)
-      for (let i = 0;; i++) {
-        let next = this.build(expr.exprs[i], from, args)
-        if (i == expr.exprs.length - 1) return next
-        from = new State
-        from.connect(next)
+      for (let i = 0; i < expr.exprs.length; i++) {
+        let next = i == expr.exprs.length - 1 ? to : new State
+        this.build(expr.exprs[i], from, next, args)
+        from = next
       }
     } else if (expr instanceof RepeatExpression) {
       if (expr.kind == "*") {
         let loop = new State
         from.nullEdge(loop)
-        loop.connect(this.build(expr.expr, loop, args))
-        return [loop.nullEdge()]
+        this.build(expr.expr, loop, loop, args)
+        loop.nullEdge(to)
       } else if (expr.kind == "+") {
         let loop = new State
-        loop.connect(this.build(expr.expr, from, args))
-        loop.connect(this.build(expr.expr, loop, args))
-        return [loop.nullEdge()]
+        this.build(expr.expr, from, loop, args)
+        this.build(expr.expr, loop, loop, args)
+        loop.nullEdge(to)
       } else { // expr.kind == "?"
-        return [from.nullEdge()].concat(this.build(expr.expr, from, args))
+        from.nullEdge(to)
+        this.build(expr.expr, from, to, args)
       }
     } else if (expr instanceof SetExpression) {
-      let edges: Edge[] = []
       for (let [a, b] of expr.inverted ? invertRanges(expr.ranges) : expr.ranges)
-        edges = edges.concat(rangeEdges(from, a, b))
-      return edges
+        rangeEdges(from, to, a, b)
     } else if (expr instanceof LiteralExpression) {
-      for (let i = 0;;) {
-        let ch = expr.value.charCodeAt(i++)
-        if (i < expr.value.length) {
-          let next = new State
-          from.edge(ch, ch + 1, next)
-          from = next
-        } else {
-          return [from.edge(ch, ch + 1)]
-        }
+      for (let i = 0; i < expr.value.length; i++) {
+        let ch = expr.value.charCodeAt(i)
+        let next = i == expr.value.length - 1 ? to : new State
+        from.edge(ch, ch + 1, next)
+        from = next
       }
     } else if (expr instanceof AnyExpression) {
-      return [from.edge(0, MAX_CHAR + 1)]
+      from.edge(0, MAX_CHAR + 1, to)
     } else {
       return this.raise(`Unrecognized expression type in token`, (expr as any).start)
     }
   }
 
-  buildStd(expr: NamedExpression, from: State) {
+  buildStd(expr: NamedExpression, from: State, to: State) {
     if (expr.args.length) this.raise(`'std.${expr.id.name}' does not take arguments`, expr.args[0].start)
     if (!STD_RANGES.hasOwnProperty(expr.id.name)) this.raise(`There is no builtin rule 'std.${expr.id.name}'`, expr.start)
-    return STD_RANGES[expr.id.name].map(([a, b]) => from.edge(a, b)) 
+    for (let [a, b] of STD_RANGES[expr.id.name]) from.edge(a, b, to)
   }
 
   checkUnused() {
@@ -698,45 +690,46 @@ const LOW_SURR_B = 0xdc00, HIGH_SURR_B = 0xdfff
 
 // Create intermediate states for astral characters in a range, if
 // necessary, since the tokenizer acts on UTF16 characters
-function rangeEdges(from: State, low: number, hi: number): Edge[] {
-  if (low < GAP_START && hi == MAX_CODE + 1)
-    return [from.edge(low, MAX_CHAR + 1)]
+function rangeEdges(from: State, to: State, low: number, hi: number) {
+  if (low < GAP_START && hi == MAX_CODE + 1) {
+    from.edge(low, MAX_CHAR + 1, to)
+    return
+  }
 
-  let edges: Edge[] = []
   if (low < ASTRAL) {
-    if (low < GAP_START) edges.push(from.edge(low, Math.min(hi, GAP_START)))
-    if (hi > GAP_END) edges.push(from.edge(Math.max(low, GAP_END), Math.min(hi, MAX_CHAR + 1)))
+    if (low < GAP_START) from.edge(low, Math.min(hi, GAP_START), to)
+    if (hi > GAP_END) from.edge(Math.max(low, GAP_END), Math.min(hi, MAX_CHAR + 1), to)
     low = ASTRAL
   }
-  if (hi < ASTRAL) return edges
+  if (hi < ASTRAL) return
+
   let lowStr = String.fromCodePoint(low), hiStr = String.fromCodePoint(hi - 1)
   let lowA = lowStr.charCodeAt(0), lowB = lowStr.charCodeAt(1)
   let hiA = hiStr.charCodeAt(0), hiB = hiStr.charCodeAt(1)
   if (lowA == hiA) { // Share the first char code
     let hop = new State
     from.edge(lowA, lowA + 1, hop)
-    edges.push(hop.edge(lowB, hiB + 1))
+    hop.edge(lowB, hiB + 1, to)
   } else {
     let midStart = lowA, midEnd = hiA
     if (lowB > LOW_SURR_B) {
       midStart++
       let hop = new State
       from.edge(lowA, lowA + 1, hop)
-      edges.push(hop.edge(lowB, HIGH_SURR_B + 1))
+      hop.edge(lowB, HIGH_SURR_B + 1, to)
     }
     if (hiB < HIGH_SURR_B) {
       midEnd--
       let hop = new State
       from.edge(hiA, hiA + 1, hop)
-      edges.push(hop.edge(LOW_SURR_B, hiB + 1))
+      hop.edge(LOW_SURR_B, hiB + 1, to)
     }
     if (midStart <= midEnd) {
       let hop = new State
-      from.edge(midStart, midEnd + 1)
-      edges.push(hop.edge(LOW_SURR_B, HIGH_SURR_B + 1))
+      from.edge(midStart, midEnd + 1, hop)
+      hop.edge(LOW_SURR_B, HIGH_SURR_B + 1, to)
     }
   }
-  return edges
 }
 
 const STD_RANGES: {[name: string]: [number, number][]} = {
