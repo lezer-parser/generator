@@ -10,7 +10,12 @@ precedence {
   exp left,
   times left,
   plus left,
+  shift left,
   compare left,
+  equal left,
+  bitOr left,
+  bitXor left,
+  bitAnd left,
   and left,
   or left,
   ternary,
@@ -186,16 +191,21 @@ NewExpression {
 }
 
 PrefixExpression {
-  !prefix (kw<"void"> | kw<"typeof"> | op<"!"> | op<"++" | "--"> | op<"+" | "-">) expressionNoComma
+  !prefix (kw<"void"> | kw<"typeof"> | op<"!"> | op<"~"> | op<"++" | "--"> | op<"+" | "-">) expressionNoComma
 }
 
 BinaryExpression {
-  expressionNoComma !compare op<"<" "="? | ">" "=" | "==" "="? | "!=" "="?> expressionNoComma |
+  expressionNoComma !exp op<"**"> expressionNoComma |
+  expressionNoComma !times op<"*" | "/" | "%"> expressionNoComma |
   expressionNoComma !plus op<"+" | "-"> expressionNoComma |
-  expressionNoComma !times op<"*" | "/"> expressionNoComma |
+  expressionNoComma !shift op<">>" ">"? | "<<"> expressionNoComma |
+  expressionNoComma !compare op<"<" "="? | ">" "="> expressionNoComma |
+  expressionNoComma !equal op<"==" "="? | "!=" "="?> expressionNoComma |
+  expressionNoComma !bitOr op<"|"> expressionNoComma |
+  expressionNoComma !bitXor op<"^"> expressionNoComma |
+  expressionNoComma !bitAnd op<"&"> expressionNoComma |
   expressionNoComma !and op<"&&"> expressionNoComma |
   expressionNoComma !or op<"||"> expressionNoComma
-  // FIXME
 }
 
 AssignmentExpression {
@@ -219,8 +229,7 @@ ArgList {
 }
 
 ArrowFunction {
-  Definition "=>" (Block | expression) |
-  ParamList "=>" (Block | expression)
+  kw<"async">? (tag.ParamList<Definition> | ParamList) "=>" (Block | expression)
 }
 
 commaSep<content> {
@@ -275,7 +284,7 @@ tokens {
   op<expr>=Operator { expr }
 
   group {
-    RegExp { "/" ([^/\\\n[] | "\\" [^\n] | "[" ([^\n\]] | "\\" [^\n])* "]")+ ("/" [gimsuy]*)? }
+    RegExp { "/" ([^/\\\n[] | "\\" [^\n] | "[" ([^\n\\\]] | "\\" [^\n])* "]")+ ("/" [gimsuy]*)? }
   }
 
   group {

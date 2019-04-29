@@ -104,6 +104,6 @@ async () => 4;
 
 ArrowFunction(ParamList(Definition), Number),
 ArrowFunction(ParamList, Number),
-ArrowFunction(ParamList(Definition, Definition), Number,
-ArrowFunction(ParamList(Definition, Definition), Block(ReturnStatement(Variable)),
+ArrowFunction(ParamList(Definition, Definition), Number),
+ArrowFunction(ParamList(Definition, Definition), Block(ReturnStatement(Keyword, Variable))),
 ArrowFunction(Keyword, ParamList, Number)
