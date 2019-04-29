@@ -4,6 +4,7 @@ precedence {
   member,
   newArgs,
   call,
+  taggedTemplate,
   prefix,
   suffix,
   typeof,
@@ -152,6 +153,7 @@ SequenceExpression {
 expressionInner {
   Number |
   String |
+  TemplateString |
   Variable |
   boolean |
   this |
@@ -173,7 +175,8 @@ expressionNoComma {
   tag.ConditionalExpression<expressionNoComma !ternary op<"?"> expressionNoComma tag.Operator<":"> expressionNoComma> |
   AssignmentExpression |
   SuffixExpression |
-  CallExpression 
+  tag.CallExpression<expressionNoComma !call ArgList> |
+  tag.TaggedTemplateExpression<expressionNoComma !taggedTemplate TemplateString>
 }
 
 ArrayExpression {
@@ -215,10 +218,6 @@ AssignmentExpression {
   expressionNoComma !assign (op<([+\-/|&%^] | "*" "*"? | "<<" | ">>" ">"?) "="> | op<"=">) expressionNoComma
 }
 
-CallExpression {
-  expressionNoComma !call ArgList
-}
-
 MemberExpression<inner> {
   inner !member ("." Property | "[" expression "]")
 }
@@ -233,6 +232,10 @@ ArgList {
 
 ArrowFunction {
   kw<"async">? (tag.ParamList<Definition> | ParamList) "=>" (Block | expression)
+}
+
+TemplateString {
+  Template | TemplateStart expression (TemplateContinue expression)* TemplateEnd
 }
 
 commaSep<content> {
@@ -285,6 +288,34 @@ tokens {
     '"' ([^\\\n"] | "\\" _)* '"'? |
     "'" ([^\\\n'] | "\\" _)* "'"?
   }
+
+  // This is a rather cryptic kludge using recursion to be able to
+  // match ${ as the end of TemplateStart (and not a valid subsequence in
+  // Template) without getting confused by something like $${. It uses
+  // recursion to switch between two matching modes, depending on
+  // whether the last character was a $. Both modes are expressed by
+  // `templateRest` (or `templateStartRest`) with different arguments.
+
+  Template { "`" templateRest<[^$\\`]> }
+
+  templateRest<exclude> {
+    "`" |
+    "$" templateRest<[^$\\`{]> |
+    "\\" _ templateRest<[^$\\`]> |
+    exclude templateRest<[^$\\`]>
+  }
+
+  TemplateStart=Template { "`" templateStartRest<[^$\\`]> }
+
+  templateStartRest<exclude> {
+    "$" ("{" | templateStartRest<[^`${\\]>) |
+    "\\" _ templateStartRest<[^$\\`]> |
+    exclude templateStartRest<[^$\\`]>
+  }
+
+  TemplateContinue=Template { "}" templateStartRest<[^$\\`]> }
+
+  TemplateEnd=Template { "}" templateRest<[^$\\`]> }
 
   op<expr>=Operator { expr }
 

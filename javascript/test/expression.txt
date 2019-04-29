@@ -219,3 +219,34 @@ BinaryExpression(
 yield db.users.where('[endpoint+email]');
 
 ==> PrefixExpression(Keyword, CallExpression(MemberExpression(MemberExpression(Variable, Property), Property), ArgList(String)))
+
+# Template strings
+
+`one line`;
+`multi
+  line`;
+
+`multi
+  ${2 + 2}
+  hello
+  ${1, 2}
+  line`;
+
+`$$$$`;
+`$`;
+`$$$$${ 1 }`;
+
+`\\`;
+
+`one${`two${`three`}`}`
+
+==>
+
+TemplateString(Template),
+TemplateString(Template),
+TemplateString(Template, BinaryExpression(Number, Operator, Number), Template, SequenceExpression(Number, Number), Template),
+TemplateString(Template),
+TemplateString(Template),
+TemplateString(Template, Number, Template),
+TemplateString(Template),
+TemplateString(Template, TemplateString(Template, TemplateString(Template), Template), Template)
