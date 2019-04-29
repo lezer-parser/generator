@@ -69,6 +69,8 @@ export class TermSet {
       names[term.id] = term.name
     }
 
+    this.nonTerminals = this.nonTerminals.filter(t => t.id > -1)
+
     return {tags, names, repeatInfo}
   }
 }

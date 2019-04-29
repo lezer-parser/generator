@@ -23,6 +23,10 @@ export class Pos {
     return new Pos(this.rule, this.pos + 1, this.ahead, this.ambigAhead, this)
   }
 
+  reverse() {
+    return new Pos(this.rule, this.pos - 1, this.ahead, this.ambigAhead, this.prev!.prev)
+  }
+
   cmp(pos: Pos) {
     return this.cmpSimple(pos) || cmpSet(this.ahead, pos.ahead, (a, b) => a.cmp(b)) || cmpSet(this.ambigAhead, pos.ambigAhead, cmpStr)
   }
@@ -313,16 +317,30 @@ export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[
 
   for (let filled = 0; filled < states.length; filled++) {
     let state = states[filled]
-    for (let term of terms.terminals) if (!term.eof && !term.error) {
-      let relevant = state.set.filter(pos => pos.next == term)
-      if (relevant.length) {
-        let next = getState(relevant.map(pos => pos.advance()))
-        if (next) state.addAction(new Shift(term, next), relevant)
+    let byTerm: Term[] = [], byTermPos: Pos[][] = [], atEnd: Pos[] = []
+    for (let pos of state.set) {
+      if (pos.pos == pos.rule.parts.length) {
+        atEnd.push(pos)
+      } else {
+        let next = pos.rule.parts[pos.pos]
+        let index = byTerm.indexOf(next)
+        if (index < 0) {
+          byTerm.push(next)
+          byTermPos.push([pos.advance()])
+        } else {
+          byTermPos[index].push(pos.advance())
+        }
       }
     }
-    for (let nt of terms.nonTerminals) {
-      let goto = getState(state.set.filter(pos => pos.next == nt).map(pos => pos.advance()))
-      if (goto) state.goto.push(new Shift(nt, goto))
+    for (let i = 0; i < byTerm.length; i++) {
+      let term = byTerm[i]
+      if (term.terminal) {
+        let next = getState(byTermPos[i])
+        if (next) state.addAction(new Shift(term, next), byTermPos[i].map(p => p.reverse()))
+      } else {
+        let goto = getState(byTermPos[i])
+        if (goto) state.goto.push(new Shift(term, goto))
+      }
     }
     let program = state.set.findIndex(pos => pos.pos == 0 && pos.rule.name.program)
     if (program > -1) {
@@ -330,7 +348,7 @@ export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[
       states.push(accepting)
       state.goto.push(new Shift(state.set[program].rule.name, accepting))
     }
-    for (let pos of state.set) if (pos.next == null) for (let ahead of pos.ahead)
+    for (let pos of atEnd) for (let ahead of pos.ahead)
       state.addAction(new Reduce(ahead, pos.rule), [pos])
   }
 
