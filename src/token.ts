@@ -103,21 +103,23 @@ export class State {
     return out
   }
 
+  // FIXME I think interpreting data would be preferable after all
   toSource() {
     let enter = Object.create(null)
-    let head = `function (input) {\n  let result = -2, state = 0, next\n  for (;;) {\n   next = input.next()\n    `
-    let tail = `if (result > -2) return result\n    input.adv()\n  }\n}`
+    let head = `function (input) {\n  let done = false, state = 0, next, start\n  while (!done) {\n    start = input.pos\n    next = input.next();\n    `
+    let tail = `\n  }\n}`
     let states: string[] = [], nextID = 0
     function explore(state: State): string {
       let known = enter[state.id]
       if (known != null) return known
-      if (state.edges.length == 0 && state.accepting) return `input.adv(result = ${state.accepting.id})`
+      if (state.edges.length == 0 && state.accepting) return `(input.accept(${state.accepting.id}), done = true)`
       let id = nextID++
       let here = enter[state.id] = `state = ${id}`
       states[id] = state.toLocalSource(explore, here)
       return here
     }
     explore(this)
+    if (!states.length) return null
     // FIXME profile whether this is worthwhile and whether another technique (switch, functions) is faster
     function flattenStates(from: number, to: number): string {
       if (to - from > MAX_SOURCE_BRANCH) {
@@ -152,7 +154,6 @@ export class State {
         else tests.push(`next > ${edge.from - 1} && next < ${edge.to}`)
         actions.push(explore(edge.target))
       }
-      let fallThrough = `result = ${this.accepting ? this.accepting.id : -1}`
       let text = ""
       for (let i = 0; i < tests.length; i++) {
         let test = tests[i], action = actions[i]
@@ -161,10 +162,11 @@ export class State {
         if (action == here) action = "0"
         text += `${test} ? ${action} : `
       }
-      text += fallThrough
+      text += `done = true`
       return text
     }
-    return edgesToSource(0, this.edges.length, -1, MAX_CHAR)
+    let source = edgesToSource(0, this.edges.length, -1, MAX_CHAR)
+    return this.accepting ? `(input.accept(${this.accepting.id}, start), ${source})` : source
   }
 
   toFunction() {

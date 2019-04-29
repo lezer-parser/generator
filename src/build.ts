@@ -624,6 +624,7 @@ class TokenGroup {
     } else if (expr instanceof ChoiceExpression) {
       return expr.exprs.reduce((out, expr) => out.concat(this.build(expr, from, args)), [] as Edge[])
     } else if (expr instanceof SequenceExpression) {
+      if (!expr.exprs.length) return [from.nullEdge()]
       let conflict = expr.markers.find(c => c.length > 0)
       if (conflict) this.raise("Conflict marker in token expression", conflict[0].start)
       for (let i = 0;; i++) {

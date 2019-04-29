@@ -1,0 +1,13 @@
+program { (A | B | C)+ }
+
+tokens {
+  A { "foo" }
+  B { "foobar" }
+  C { "baz" }
+}
+
+---
+
+foobaz
+
+==> A, C
