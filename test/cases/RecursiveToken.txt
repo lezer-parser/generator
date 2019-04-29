@@ -5,4 +5,4 @@ tokens {
   bar { Foo }
 }
 
-//! Recursive token
+//! recursion in token rules

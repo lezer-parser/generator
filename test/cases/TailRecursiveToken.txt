@@ -1,0 +1,37 @@
+program { (Single | Open "." Close)+ }
+
+tokens {
+  skip { " "+ }
+
+  Single { "`" toEnd }
+
+  toEnd { "`" | [^`$] toEnd | "$" afterDollarToEnd }
+
+  afterDollarToEnd { "`" | [^`{$] toEnd | "$" afterDollarToEnd }
+
+  Open { "`" toBrace }
+
+  toBrace { [^`$] toBrace | "$" afterDollarToBrace }
+
+  afterDollarToBrace { "{" | [^`\{$] toBrace | "$" afterDollarToBrace }
+
+  Close { "}" toEnd }
+}
+
+---
+
+`foo`
+
+==> Single
+
+---
+
+`foo${.}bar`
+
+==> Open, Close
+
+---
+
+`$$` `$` `$${.}`
+
+==> Single, Single, Open, Close

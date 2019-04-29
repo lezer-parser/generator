@@ -536,12 +536,16 @@ class TokenArg {
   constructor(readonly name: string, readonly expr: Expression, readonly scope: readonly TokenArg[]) {}
 }
 
+class BuildingRule {
+  constructor(readonly name: string, readonly start: State, readonly to: State, readonly args: readonly Expression[]) {}
+}
+
 class TokenGroup {
   startState: State = new State
   skipState: State | null = null
   built: BuiltRule[] = []
   used: {[name: string]: boolean} = Object.create(null)
-  building: string[] = [] // Used for recursion check
+  building: BuildingRule[] = [] // Used for recursion check
 
   constructor(readonly b: Builder,
               readonly rules: readonly RuleDeclaration[],
@@ -596,11 +600,22 @@ class TokenGroup {
     let name = expr.id.name
     if (rule.params.length != expr.args.length)
       this.raise(`Incorrect number of arguments for token '${name}'`, expr.start)
+    let building = this.building.find(b => b.name == name && exprsEq(expr.args, b.args))
+    if (building) {
+      if (building.to == to) {
+        from.nullEdge(building.start)
+        return
+      }
+      let lastIndex = this.building.length - 1
+      while (this.building[lastIndex].name != name) lastIndex--
+      this.raise(`Invalid (non-tail) recursion in token rules: ${
+        this.building.slice(lastIndex).map(b => b.name).join(" -> ")}`, expr.start)
+    }
     this.used[name] = true
-    if (this.building.includes(name))
-      this.raise(`Recursive token rules: ${this.building.slice(this.building.lastIndexOf(name)).join(" -> ")}`, expr.start)
-    this.building.push(name)
-    this.build(this.b.substituteArgs(rule.expr, expr.args, rule.params), from, to,
+    let start = new State
+    from.nullEdge(start)
+    this.building.push(new BuildingRule(name, start, to, expr.args))
+    this.build(this.b.substituteArgs(rule.expr, expr.args, rule.params), start, to,
                expr.args.map((e, i) => new TokenArg(rule!.params[i].name, e, args)))
     this.building.pop()
   }
