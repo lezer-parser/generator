@@ -284,23 +284,35 @@ function computeFirst(rules: readonly Rule[], nonTerminals: Term[]) {
   }
 }
 
+class Core {
+  constructor(readonly set: readonly Pos[], readonly state: State) {}
+}
+
 // Builds a full LR(1) automaton
 export function buildFullAutomaton(rules: readonly Rule[], terms: TermSet, first: {[name: string]: Term[]}) {
-  let states: State[] = [], filled = 0
-  function getState(set: readonly Pos[]) {
-    if (set.length == 0) return null
-    set = closure(set, rules, first)
-    let hash = hashPositions(set)
-    for (let state of states) if (state.hash == hash && state.hasSet(set)) return state
-    let state = new State(states.length, set, 0, hash)
-    states.push(state)
-    return state
+  let states: State[] = []
+  let cores: {[hash: number]: Core[]} = {}
+  function getState(core: readonly Pos[]) {
+    if (core.length == 0) return null
+    let coreHash = hashPositions(core), byHash = cores[coreHash]
+    if (byHash) for (let known of byHash) if (eqSet(core, known.set))
+      return known.state
+
+    let set = closure(core, rules, first)
+    let hash = hashPositions(set), found
+    for (let state of states) if (state.hash == hash && state.hasSet(set)) found = state
+    if (!found) {
+      found = new State(states.length, set, 0, hash)
+      states.push(found)
+    }
+    ;(cores[coreHash] || (cores[coreHash] = [])).push(new Core(core, found))
+    return found
   }
   getState(rules.filter(rule => rule.name.name == "program")
            .map(rule => new Pos(rule, 0, [terms.eof], none, null)))
 
-  while (filled < states.length) {
-    let state = states[filled++]
+  for (let filled = 0; filled < states.length; filled++) {
+    let state = states[filled]
     for (let term of terms.terminals) if (!term.eof && !term.error) {
       let relevant = state.set.filter(pos => pos.next == term)
       if (relevant.length) {
