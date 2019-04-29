@@ -107,3 +107,45 @@ ArrowFunction(ParamList, Number),
 ArrowFunction(ParamList(Definition, Definition), Number),
 ArrowFunction(ParamList(Definition, Definition), Block(ReturnStatement(Keyword, Variable))),
 ArrowFunction(Keyword, ParamList, Number)
+
+# Ternary operator
+
+condition ? case1 : case2;
+
+x.y = some.condition ? 2**x : 1 - 2;
+
+==>
+
+ConditionalExpression(Variable, Operator, Variable, Operator, Variable),
+
+AssignmentExpression(
+  MemberExpression(Variable, Property), Operator,
+  ConditionalExpression(MemberExpression(Variable, Property),
+    Operator, BinaryExpression(Number, Operator, Variable),
+    Operator, BinaryExpression(Number, Operator, Number)))
+
+# Type operators
+
+typeof x;
+x instanceof String;
+
+==>
+
+PrefixExpression(Keyword, Variable),
+BinaryExpression(Variable, Keyword, Variable)
+
+# Delete
+
+delete thing['prop'];
+true ? delete thing.prop : null;
+
+==>
+
+PrefixExpression(Keyword, MemberExpression(Variable, String)),
+ConditionalExpression(Boolean, Operator, PrefixExpression(Keyword, MemberExpression(Variable, Property)), Operator, Null)
+
+# Void
+
+a = void b();
+
+==> AssignmentExpression(Variable, Operator, PrefixExpression(Keyword, CallExpression(Variable, ArgList)))
