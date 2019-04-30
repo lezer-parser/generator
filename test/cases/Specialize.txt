@@ -3,10 +3,16 @@ program { (statement ";")+ }
 statement {
   tag.Decl<kw<"let"> Identifier "=" Number> |
   tag.Print<kw<"print"> Number> |
-  tag.Exit<kw<"exit">>
+  tag.Exit<kwSpec<"exit">> |
+  tag.Async<kwExt<"async"> Number> |
+  Identifier
 }
 
-kw<word> { specialize<Identifier, word> }
+kw<word> { replace<Identifier, word> }
+
+kwSpec<word> { specialize<Identifier, word> }
+
+kwExt<word> { extend<Identifier, word> }
 
 tokens {
   skip { std.whitespace* }
@@ -16,7 +22,7 @@ tokens {
 
 ---
 
-let let = 10;
+let exit = 10;
 exit;
 
 ==> Decl(Identifier, Number),Exit
@@ -24,6 +30,13 @@ exit;
 ---
 
 print 10;
-let print = 2;
+let print 2;
 
-==> Print(Number),Decl(Identifier,Number)
+==> Print(Number),Decl(⚠),⚠,Print(Number)
+
+---
+
+async 1;
+async;
+
+==> Async(Number), Identifier

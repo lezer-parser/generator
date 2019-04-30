@@ -6,7 +6,7 @@ import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
-import {Parser, ParseState, REDUCE_DEPTH_SIZE, noToken, Tokenizer, TERM_TAGGED} from "lezer"
+import {Parser, ParseState, REDUCE_DEPTH_SIZE, noToken, Tokenizer, TERM_TAGGED, SPECIALIZE, REPLACE, EXTEND} from "lezer"
 
 const none: readonly any[] = []
 
@@ -48,6 +48,8 @@ class Parts {
 
 function p(...terms: Term[]) { return new Parts(terms, null) }
 
+const reserved = ["specialize", "replace", "extend"]
+
 class Context {
   constructor(readonly b: Builder,
               readonly rule: RuleDeclaration) {}
@@ -73,8 +75,8 @@ class Context {
       if (!ns)
         this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
       return ns.resolve(expr, this)
-    } else if (expr.id.name == "specialize") {
-      return [p(this.resolveSpecialization(expr))]
+    } else if (expr.id.name == "specialize" || expr.id.name == "replace" || expr.id.name == "extend") {
+      return [p(this.resolveSpecialization(expr, expr.id.name))]
     } else {
       for (let built of this.b.built) if (built.matches(expr)) return [p(built.term)]
 
@@ -168,27 +170,29 @@ class Context {
     return cx.defineRule(name, cx.normalizeExpr(expr))
   }
 
-  resolveSpecialization(expr: NamedExpression) {
-    if (expr.args.length < 2 || expr.args.length > 3) this.raise(`'specialize' takes two or three arguments`, expr.start)
+  resolveSpecialization(expr: NamedExpression, type: string) {
+    if (expr.args.length < 2 || expr.args.length > 3) this.raise(`'${type}' takes two or three arguments`, expr.start)
     if (!(expr.args[1] instanceof LiteralExpression))
-      this.raise(`The second argument to 'specialize' must be a literal`, expr.args[1].start)
+      this.raise(`The second argument to '${type}' must be a literal`, expr.args[1].start)
     let tag = null
     if (expr.args.length == 3) {
       let tagArg = expr.args[2]
       if (!(tagArg instanceof NamedExpression) || tagArg.args.length)
-        return this.raise(`The third argument to 'specialize' must be a name (without arguments)`)
+        return this.raise(`The third argument to '${type}' must be a name (without arguments)`)
       tag = tagArg.id.name
     }
     let terminal = this.normalizeExpr(expr.args[0])
     if (terminal.length != 1 || terminal[0].terms.length != 1 || !terminal[0].terms[0].terminal)
-      this.raise(`The first argument to 'specialize' must resolve to a token`, expr.args[0].start)
+      this.raise(`The first argument to '${type}' must resolve to a token`, expr.args[0].start)
     let term = terminal[0].terms[0], value = (expr.args[1] as LiteralExpression).value
     let table = this.b.specialized[term.name] || (this.b.specialized[term.name] = [])
     let known = table.find(sp => sp.value == value), token
     if (known == null) {
       token = this.b.makeTerminal(JSON.stringify(value), tag, this.b.tokens[term.name])
-      table.push({value, term: token})
+      table.push({value, term: token, type})
     } else {
+      if (known.type != type)
+        this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`, expr.start)
       token = known.term
     }
     return token
@@ -226,7 +230,7 @@ class Builder {
   input: Input
   terms = new TermSet
   tokenGroups: TokenGroup[] = []
-  specialized: {[name: string]: {value: string, term: Term}[]} = Object.create(null)
+  specialized: {[name: string]: {value: string, term: Term, type: string}[]} = Object.create(null)
   rules: Rule[] = []
   built: BuiltRule[] = []
   ruleNames: {[name: string]: boolean} = Object.create(null)
@@ -266,7 +270,7 @@ class Builder {
   unique(id: Identifier) {
     if (this.ruleNames[id.name])
       this.input.raise(`Duplicate definition of rule '${id.name}'`, id.start)
-    if (id.name == "specialize") this.input.raise("The name 'specialize' is reserved for a built-in operator", id.start)
+    if (reserved.includes(id.name)) this.input.raise(`The name '${id.name}' is reserved for a built-in operator`, id.start)
     this.ruleNames[id.name] = true
   }
 
@@ -308,7 +312,10 @@ class Builder {
     for (let name in this.specialized) {
       specialized.push(this.terms.terminals.find(t => t.name == name)!.id)
       let table: {[value: string]: number} = {}
-      for (let {value, term} of this.specialized[name]) table[value] = term.id
+      for (let {value, term, type} of this.specialized[name]) {
+        let code = type == "specialize" ? SPECIALIZE : type == "replace" ? REPLACE : EXTEND
+        table[value] = (term.id << 2) | code
+      }
       specializations.push(table)
     }
     let states = table.map(s => this.stateData(s, skipped, tokenizers))

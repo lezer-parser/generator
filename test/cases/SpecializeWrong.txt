@@ -1,0 +1,7 @@
+program { specialize<name, "foo"> | replace<name, "foo"> }
+
+tokens {
+  name { std.asciiLetter+ }
+}
+
+//! Conflicting specialization
