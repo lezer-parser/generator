@@ -49,7 +49,7 @@ $_;
 
 f(new foo.bar(1), 2);
 
-==> CallExpression(Variable, ArgList(NewExpression(Keyword, MemberExpression(Variable, Property), ArgList(Number)), Number))
+==> CallExpression(Variable, ArgList(NewExpression(Keyword, MemberExpression(Variable, PropertyName), ArgList(Number)), Number))
 
 # Arrays
 
@@ -119,8 +119,8 @@ x.y = some.condition ? 2**x : 1 - 2;
 ConditionalExpression(Variable, Operator, Variable, Operator, Variable),
 
 AssignmentExpression(
-  MemberExpression(Variable, Property), Operator,
-  ConditionalExpression(MemberExpression(Variable, Property),
+  MemberExpression(Variable, PropertyName), Operator,
+  ConditionalExpression(MemberExpression(Variable, PropertyName),
     Operator, BinaryExpression(Number, Operator, Variable),
     Operator, BinaryExpression(Number, Operator, Number)))
 
@@ -142,7 +142,7 @@ true ? delete thing.prop : null;
 ==>
 
 PrefixExpression(Keyword, MemberExpression(Variable, String)),
-ConditionalExpression(Boolean, Operator, PrefixExpression(Keyword, MemberExpression(Variable, Property)), Operator, Null)
+ConditionalExpression(Boolean, Operator, PrefixExpression(Keyword, MemberExpression(Variable, PropertyName)), Operator, Null)
 
 # Void
 
@@ -168,7 +168,7 @@ AssignmentExpression(Variable, Operator, Number),
 AssignmentExpression(Variable, Operator, Number),
 AssignmentExpression(Variable, Operator, Number),
 AssignmentExpression(Variable, Operator, Number),
-AssignmentExpression(MemberExpression(Variable, Property), Operator, Number),
+AssignmentExpression(MemberExpression(Variable, PropertyName), Operator, Number),
 AssignmentExpression(Variable, Operator, Number),
 AssignmentExpression(Variable, Operator, Number),
 AssignmentExpression(Variable, Operator, Number),
@@ -185,7 +185,7 @@ typeof a == b && c instanceof d;
 ==>
 
 BinaryExpression(BinaryExpression(Variable, Operator, Variable), Operator, BinaryExpression(Variable, Operator, Variable)),
-AssignmentExpression(MemberExpression(Variable, Property), Operator, ConditionalExpression(Variable, Operator, Variable, Operator, Variable)),
+AssignmentExpression(MemberExpression(Variable, PropertyName), Operator, ConditionalExpression(Variable, Operator, Variable, Operator, Variable)),
 BinaryExpression(BinaryExpression(Variable, Operator, CallExpression(Variable, ArgList(Variable))), Operator, Variable),
 BinaryExpression(BinaryExpression(Variable, Operator, NewExpression(Keyword, Variable, ArgList(Variable))), Operator, Variable),
 BinaryExpression(BinaryExpression(PrefixExpression(Keyword, Variable), Operator, Variable), Operator, BinaryExpression(Variable, Keyword, Variable))
@@ -209,8 +209,8 @@ if (foo - bar) /baz/;
 BinaryExpression(BinaryExpression(Variable, Operator, Variable), Operator, Variable),
 IfStatement(Keyword, BinaryExpression(Variable, Operator, Variable), RegExp),
 BinaryExpression(
-  BinaryExpression(BinaryExpression(CallExpression(MemberExpression(This, Property), ArgList), Operator,
-                                    CallExpression(MemberExpression(This, Property), ArgList)),
+  BinaryExpression(BinaryExpression(CallExpression(MemberExpression(This, PropertyName), ArgList), Operator,
+                                    CallExpression(MemberExpression(This, PropertyName), ArgList)),
                    Operator, Number),
   Operator, Number)
 
@@ -218,7 +218,7 @@ BinaryExpression(
 
 yield db.users.where('[endpoint+email]');
 
-==> PrefixExpression(Keyword, CallExpression(MemberExpression(MemberExpression(Variable, Property), Property), ArgList(String)))
+==> PrefixExpression(Keyword, CallExpression(MemberExpression(MemberExpression(Variable, PropertyName), PropertyName), ArgList(String)))
 
 # Template strings
 
@@ -253,3 +253,84 @@ TemplateString(Template, Variable, Template),
 TemplateString(Template),
 TemplateString(Template, TemplateString(Template, TemplateString(Template), Template), Template),
 TaggedTemplateExpression(Variable, TemplateString(Template, Variable, Template))
+
+# Atoms
+
+this;
+null;
+undefined;
+true;
+false;
+
+==> This, Null, Variable, Boolean, Boolean
+
+# Objects
+
+foo({},
+    { a: "b" },
+    { c: "d", "e": f, 1: 2 },
+    {
+      g,
+      [methodName]() {}
+    },
+    {b, get},
+    {a,});
+
+==>
+
+CallExpression(Variable, ArgList(
+  ObjectExpression,
+  ObjectExpression(Property(PropertyName, String)),
+  ObjectExpression(Property(PropertyName, String), Property(String, Variable), Property(Number, Number)),
+  ObjectExpression(Property(PropertyName), Property(Variable, ParamList, Block)),
+  ObjectExpression(Property(PropertyName), Property(PropertyName)),
+  ObjectExpression(Property(PropertyName))))
+
+# Method definitions
+
+({
+  foo: true,
+
+  add(a, b) {
+    return a + b;
+  },
+
+  get bar() { return c; },
+
+  set bar(a) { c = a; },
+
+  *barGenerator() { yield c; },
+
+  get() { return 1; }
+});
+
+==>
+
+ObjectExpression(
+  Property(PropertyName, Boolean),
+  Property(PropertyName, ParamList(Definition, Definition), Block(ReturnStatement(Keyword, BinaryExpression(Variable, Operator, Variable)))),
+  Property(Keyword, PropertyName, ParamList, Block(ReturnStatement(Keyword, Variable))),
+  Property(Keyword, PropertyName, ParamList(Definition), Block(AssignmentExpression(Variable, Operator, Variable))),
+  Property(PropertyName, ParamList, Block(PrefixExpression(Keyword, Variable))),
+  Property(PropertyName, ParamList, Block(ReturnStatement(Keyword, Number))))
+
+# Keyword property names
+
+({
+  finally() {},
+  catch() {},
+  get: function () {},
+  set() {},
+  static: true,
+  async: true,
+});
+
+==>
+
+ObjectExpression(
+  Property(PropertyName, ParamList, Block),
+  Property(PropertyName, ParamList, Block),
+  Property(PropertyName, FunctionExpression(Keyword, ParamList, Block)),
+  Property(PropertyName, ParamList, Block),
+  Property(PropertyName, Boolean),
+  Property(PropertyName, Boolean))

@@ -60,7 +60,7 @@ SwitchStatement(
     ReturnStatement(Keyword, Boolean),
     SwitchCase(Keyword, Number),
     SwitchCase(Keyword, BinaryExpression(Number, Operator, Number)),
-    CallExpression(MemberExpression(Variable, Property), ArgList(String)),
+    CallExpression(MemberExpression(Variable, PropertyName), ArgList(String)),
     SwitchDefault(Keyword),
     ReturnStatement(Keyword, Boolean)))
 

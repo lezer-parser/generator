@@ -1,5 +1,4 @@
 precedence {
-  statement,
   else left,
   member,
   newArgs,
@@ -83,12 +82,12 @@ declaration {
 }
 
 FunctionDeclaration {
-  kw<"function"> Definition plainStar? ParamList Block !statement |
-  async kw<"function"> Definition plainStar? ParamList Block
+  !only kw<"function"> Definition plainStar? ParamList Block |
+  async !only kw<"function"> Definition plainStar? ParamList Block
 }
 
 ClassDeclaration {
-  kw<"class"> Definition (kw<"extends"> expression)? ClassBody !statement
+  !only kw<"class"> Definition (kw<"extends"> expression)? ClassBody
 }
 
 ClassBody {
@@ -98,8 +97,8 @@ ClassBody {
 MethodDefinition {
   kw<"static">?
   async?
-  (kw<"get"> | kw<"set"> | plainStar)?
-  PropertyDefinition
+  (get | set | plainStar)?
+  PropertyName
   ParamList
   Block
 }
@@ -109,19 +108,13 @@ VariableDeclaration {
 }
 
 pattern {
-  Definition | ArrayPattern | ObjectPattern
+  Definition |
+  tag.ArrayPattern<"[" commaSep<"..." patternAssign | patternAssign> ~arrow "]"> |
+  tag.ObjectPattern<"{" commaSep<patternProperty> ~destructure "}">
 }
 
 patternAssign {
   pattern (op<"="> expressionNoComma)?
-}
-
-ObjectPattern {
-  "{" commaSep<"..."? Property (":" pattern)? (op<"="> expressionNoComma)?> "}"
-}
-
-ArrayPattern {
-  "[" commaSep<"..." patternAssign | patternAssign> ~arrow "]"
 }
 
 ParamList {
@@ -133,7 +126,7 @@ parenExpression {
 }
 
 Block {
-  !statement "{" statement* "}"
+  !only "{" statement* "}"
 }
 
 switchItem {
@@ -160,6 +153,7 @@ expressionInner {
   null |
   RegExp |
   ArrayExpression |
+  tag.ObjectExpression<"{" commaSep<Property> ~destructure "}"> |
   NewExpression |
   PrefixExpression |
   "(" expression ")" |
@@ -181,6 +175,19 @@ expressionNoComma {
 
 ArrayExpression {
   "[" commaSep1<expressionNoComma | ""> ~arrow "]"
+}
+
+propName { PropertyName | "[" expression "]" | Number | String }
+
+Property {
+  async? (get | set | plainStar)? propName ParamList Block |
+  propName ~destructure (":" expressionNoComma)? |
+  "..." expressionNoComma
+}
+
+patternProperty=Property {
+  "..." patternAssign |
+  (PropertyName | Number | String) ~destructure (":" pattern)? (op<"="> expressionNoComma)?
 }
 
 ClassExpression {
@@ -219,7 +226,7 @@ AssignmentExpression {
 }
 
 MemberExpression<inner> {
-  inner !member ("." Property | "[" expression "]")
+  inner !member ("." PropertyName | "[" expression "]")
 }
 
 SuffixExpression {
@@ -254,19 +261,21 @@ this { specialize<identifier, "this", This> }
 
 null { specialize<identifier, "null", Null> }
 
-Property { identifier }
+PropertyName { identifier }
 
 Variable { identifier ~arrow }
 
 Definition { identifier ~arrow }
-
-PropertyDefinition { identifier }
 
 Label { identifier }
 
 semi { ";" }
 
 async { extend<identifier, "async", Keyword> }
+
+get { extend<identifier, "get", Keyword> }
+
+set { extend<identifier, "set", Keyword> }
 
 tokens {
   skip { std.whitespace+ | LineComment | BlockComment }
