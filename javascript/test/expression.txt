@@ -350,3 +350,178 @@ ObjectExpression(
 ArrayExpression(
   FunctionExpression(Keyword, ParamList, Block),
   FunctionExpression(Keyword, Definition, ParamList(Definition, Definition), Block(Variable, PrefixExpression(Keyword, Variable))))
+
+# Member expressions
+
+x.someProperty;
+x[someVariable];
+f()["some-string"];
+return returned.promise().done(a).fail(b);
+
+==>
+
+MemberExpression(Variable, PropertyName),
+MemberExpression(Variable, Variable),
+MemberExpression(CallExpression(Variable, ArgList), String),
+
+ReturnStatement(Keyword, CallExpression(
+  MemberExpression(CallExpression(
+    MemberExpression(CallExpression(
+      MemberExpression(Variable, PropertyName), ArgList), PropertyName), ArgList(Variable)), PropertyName), ArgList(Variable)))
+
+# Callback chain
+
+return this.map(function (a) {
+  return a.b;
+})
+
+// a comment
+
+.filter(function (c) {
+  return 2;
+});
+
+==>
+
+ReturnStatement(Keyword, CallExpression(
+  MemberExpression(CallExpression(
+    MemberExpression(This, PropertyName), ArgList(FunctionExpression(Keyword, ParamList(Definition), Block(
+      ReturnStatement(Keyword, MemberExpression(Variable, PropertyName)))))),
+    LineComment,
+    PropertyName),
+  ArgList(FunctionExpression(Keyword, ParamList(Definition), Block(ReturnStatement(Keyword, Number))))))
+
+# Function calls
+
+x.someMethod(arg1, "arg2");
+(function(x, y) {
+
+}(a, b));
+
+==>
+
+CallExpression(MemberExpression(Variable, PropertyName), ArgList(Variable, String)),
+CallExpression(FunctionExpression(Keyword, ParamList(Definition, Definition), Block), ArgList(Variable, Variable))
+
+# Constructor calls
+
+new module.Klass(1, "two");
+new Thing;
+
+==>
+
+NewExpression(Keyword, MemberExpression(Variable, PropertyName), ArgList(Number, String)),
+NewExpression(Keyword, Variable)
+
+# Await Expressions
+
+await asyncFunction();
+await asyncPromise;
+
+==>
+
+PrefixExpression(Keyword, CallExpression(Variable, ArgList)),
+PrefixExpression(Keyword, Variable)
+
+# Numeric operators
+
+i++;
+i--;
+i + j * 3 - j % 5;
+2 ** i * 3;
+2 * i ** 3;
++x;
+-x;
+
+==>
+
+SuffixExpression(Variable, Operator),
+SuffixExpression(Variable, Operator),
+BinaryExpression(
+  BinaryExpression(Variable, Operator, BinaryExpression(Variable, Operator, Number)),
+  Operator,
+  BinaryExpression(Variable, Operator, Number)),
+BinaryExpression(BinaryExpression(Number, Operator, Variable), Operator, Number),
+BinaryExpression(Number, Operator, BinaryExpression(Variable, Operator, Number)),
+PrefixExpression(Operator, Variable),
+PrefixExpression(Operator, Variable)
+
+# Boolean operators
+
+i || j;
+i && j;
+!a && !b || !c && !d;
+
+==>
+
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(
+  BinaryExpression(PrefixExpression(Operator, Variable), Operator, PrefixExpression(Operator, Variable)),
+  Operator,
+  BinaryExpression(PrefixExpression(Operator, Variable), Operator, PrefixExpression(Operator, Variable)))
+
+# Bitwise operators
+
+i >> j;
+i >>> j;
+i << j;
+i & j;
+i | j;
+~i ^ ~j;
+
+==>
+
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(PrefixExpression(Operator, Variable), Operator, PrefixExpression(Operator, Variable))
+
+# Relational operators
+
+x < y;
+x <= y;
+x == y;
+x === y;
+x != y;
+x !== y;
+x > y;
+x >= y;
+
+==>
+
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable),
+BinaryExpression(Variable, Operator, Variable)
+
+# Assignments
+
+x = 0;
+x.y = 0;
+x["y"] = 0;
+async = 0;
+
+==>
+
+AssignmentExpression(Variable, Operator, Number),
+AssignmentExpression(MemberExpression(Variable, PropertyName), Operator, Number),
+AssignmentExpression(MemberExpression(Variable, String), Operator, Number),
+AssignmentExpression(Variable, Operator, Number)
+
+# Comma operator
+
+a = 1, b = 2;
+c = {d: (3, 4 + 5)};
+
+==>
+
+SequenceExpression(AssignmentExpression(Variable, Operator, Number), AssignmentExpression(Variable, Operator, Number)),
+AssignmentExpression(Variable, Operator, ObjectExpression(
+  Property(PropertyName, SequenceExpression(Number, BinaryExpression(Number, Operator, Number)))))

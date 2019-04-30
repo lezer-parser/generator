@@ -108,7 +108,7 @@ VariableDeclaration {
 
 pattern {
   Definition |
-  tag.ArrayPattern<"[" commaSep<"..." patternAssign | patternAssign> ~arrow "]"> |
+  tag.ArrayPattern<"[" commaSep<"..." patternAssign | patternAssign> ~destructure "]"> |
   tag.ObjectPattern<"{" commaSep<patternProperty> ~destructure "}">
 }
 
@@ -173,7 +173,7 @@ expressionNoComma {
 }
 
 ArrayExpression {
-  "[" commaSep1<expressionNoComma | ""> ~arrow "]"
+  "[" commaSep1<expressionNoComma | ""> ~destructure "]"
 }
 
 propName { PropertyName | "[" expression "]" | Number | String }
@@ -203,7 +203,8 @@ NewExpression {
 }
 
 PrefixExpression {
-  !prefix (ckw<"yield"> | kw<"void"> | kw<"typeof"> | kw<"delete"> | op<"!"> | op<"~"> | op<"++" | "--"> | op<"+" | "-">) expressionNoComma
+  !prefix (ckw<"await"> | ckw<"yield"> | kw<"void"> | kw<"typeof"> | kw<"delete"> | op<"!"> | op<"~"> | op<"++" | "--"> | op<"+" | "-">)
+  expressionNoComma
 }
 
 BinaryExpression {
@@ -211,7 +212,7 @@ BinaryExpression {
   expressionNoComma !times (op<"/" | "%"> | tag.Operator<"*">) expressionNoComma |
   expressionNoComma !plus op<"+" | "-"> expressionNoComma |
   expressionNoComma !shift op<">>" ">"? | "<<"> expressionNoComma |
-  expressionNoComma !rel (op<"<" "="? | ">" "="> | kw<"in"> | kw<"instanceof">) expressionNoComma |
+  expressionNoComma !rel (op<"<" "="? | ">" "="?> | kw<"in"> | kw<"instanceof">) expressionNoComma |
   expressionNoComma !equal op<"==" "="? | "!=" "="?> expressionNoComma |
   expressionNoComma !bitOr op<"|"> expressionNoComma |
   expressionNoComma !bitXor op<"^"> expressionNoComma |
