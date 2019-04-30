@@ -234,11 +234,13 @@ yield db.users.where('[endpoint+email]');
 
 `$$$$`;
 `$`;
-`$$$$${ 1 }`;
+`$$$$${ async }`;
 
 `\\`;
 
-`one${`two${`three`}`}`
+`one${`two${`three`}`}`;
+
+f`hi${there}`;
 
 ==>
 
@@ -247,6 +249,7 @@ TemplateString(Template),
 TemplateString(Template, BinaryExpression(Number, Operator, Number), Template, SequenceExpression(Number, Number), Template),
 TemplateString(Template),
 TemplateString(Template),
-TemplateString(Template, Number, Template),
+TemplateString(Template, Variable, Template),
 TemplateString(Template),
-TemplateString(Template, TemplateString(Template, TemplateString(Template), Template), Template)
+TemplateString(Template, TemplateString(Template, TemplateString(Template), Template), Template),
+TaggedTemplateExpression(Variable, TemplateString(Template, Variable, Template))

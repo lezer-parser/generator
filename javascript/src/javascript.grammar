@@ -84,7 +84,7 @@ declaration {
 
 FunctionDeclaration {
   kw<"function"> Definition plainStar? ParamList Block !statement |
-  kw<"async"> kw<"function"> Definition plainStar? ParamList Block
+  async kw<"function"> Definition plainStar? ParamList Block
 }
 
 ClassDeclaration {
@@ -97,7 +97,7 @@ ClassBody {
 
 MethodDefinition {
   kw<"static">?
-  kw<"async">?
+  async?
   (kw<"get"> | kw<"set"> | plainStar)?
   PropertyDefinition
   ParamList
@@ -231,7 +231,7 @@ ArgList {
 }
 
 ArrowFunction {
-  kw<"async">? (tag.ParamList<Definition> | ParamList) "=>" (Block | expression)
+  async? (tag.ParamList<Definition> | ParamList) "=>" (Block | expression)
 }
 
 TemplateString {
@@ -265,6 +265,8 @@ PropertyDefinition { identifier }
 Label { identifier }
 
 semi { ";" }
+
+async { extend<identifier, "async", Keyword> }
 
 tokens {
   skip { std.whitespace+ | LineComment | BlockComment }
