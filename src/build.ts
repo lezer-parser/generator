@@ -401,9 +401,10 @@ class Builder {
     let known = this.built.find(b => b.matchesRepeat(expr))
     if (known) return p(known.term)
 
-    let inner = this.newName(expr + "-inner", true)
+    let name = expr.expr instanceof SequenceExpression || expr.expr instanceof ChoiceExpression ? `(${expr.expr})${expr.kind}` : expr.toString()
+    let inner = this.newName(name + "-inner", true)
     inner.repeated = true
-    let outer = this.newName(expr + "", true, inner)
+    let outer = this.newName(name, true, inner)
     this.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
     let top = this.normalizeExpr(expr.expr)
@@ -454,7 +455,7 @@ class Builder {
     let expr = this.substituteArgs(rule.expr, args, rule.params)
     this.used[rule.id.name] = true
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
-                              rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
+                            rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
     this.built.push(new BuiltRule(rule.id.name, args, name))
     return this.defineRule(name, this.normalizeExpr(expr))
   }
