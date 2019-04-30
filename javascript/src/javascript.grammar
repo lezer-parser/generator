@@ -106,11 +106,11 @@ VariableDeclaration {
   (kw<"let"> | kw<"var"> | kw<"const">) commaSep1<patternAssign> semi
 }
 
-pattern {
-  Definition |
-  tag.ArrayPattern<"[" commaSep<"..." patternAssign | patternAssign> ~destructure "]"> |
-  tag.ObjectPattern<"{" commaSep<patternProperty> ~destructure "}">
-}
+pattern { Definition | ArrayPattern | ObjectPattern }
+
+ArrayPattern { "[" commaSep<"..." patternAssign | patternAssign> ~destructure "]" }
+
+ObjectPattern { "{" commaSep<patternProperty> ~destructure "}" }
 
 patternAssign {
   pattern (op<"="> expressionNoComma)?
@@ -159,7 +159,7 @@ expressionNoComma {
   ClassExpression |
   FunctionExpression |
   ArrowFunction |
-  MemberExpression<expressionNoComma> |
+  MemberExpression |
   BinaryExpression |
   tag.ConditionalExpression<expressionNoComma !ternary op<"?"> expressionNoComma tag.Operator<":"> expressionNoComma> |
   AssignmentExpression |
@@ -217,11 +217,12 @@ BinaryExpression {
 }
 
 AssignmentExpression {
-  expressionNoComma !assign (op<([+\-/|&%^] | "*" "*"? | "<<" | ">>" ">"?) "="> | op<"=">) expressionNoComma
+  (Variable | MemberExpression) !assign (op<([+\-/|&%^] | "*" "*"? | "<<" | ">>" ">"?) "=">) expressionNoComma |
+  (Variable | MemberExpression | ArrayPattern | ObjectPattern) !assign op<"="> expressionNoComma
 }
 
-MemberExpression<inner> {
-  inner !member ("." PropertyName | "[" expression "]")
+MemberExpression {
+  expressionNoComma !member ("." PropertyName | "[" expression "]")
 }
 
 SuffixExpression {

@@ -505,13 +505,17 @@ x = 0;
 x.y = 0;
 x["y"] = 0;
 async = 0;
+[a, b = 2] = foo;
+({a, b, ...d} = c);
 
 ==>
 
 AssignmentExpression(Variable, Operator, Number),
 AssignmentExpression(MemberExpression(Variable, PropertyName), Operator, Number),
 AssignmentExpression(MemberExpression(Variable, String), Operator, Number),
-AssignmentExpression(Variable, Operator, Number)
+AssignmentExpression(Variable, Operator, Number),
+AssignmentExpression(ArrayPattern(Definition, Definition, Operator, Number), Operator, Variable),
+AssignmentExpression(ObjectPattern(Property(PropertyName), Property(PropertyName), Property(Definition)), Operator, Variable)
 
 # Comma operator
 
