@@ -50,162 +50,6 @@ function p(...terms: Term[]) { return new Parts(terms, null) }
 
 const reserved = ["specialize", "replace", "extend"]
 
-class Context {
-  constructor(readonly b: Builder,
-              readonly rule: RuleDeclaration) {}
-
-  newName(deco?: string, repeats?: Term) {
-    return this.b.newName(this.rule.id.name + (deco ? "-" + deco : ""), deco ? true : null, repeats)
-  }
-
-  newNameFor(expr: Expression, add: string, repeats?: Term): Term {
-    let name = findNameFor(expr)
-    return name ? this.b.newName(name + add, true, repeats) : this.newName(add, repeats)
-  }
-
-  defineRule(name: Term, choices: Parts[]) {
-    for (let choice of choices)
-      this.b.rules.push(new Rule(name, choice.terms, choice.ensureConflicts()))
-    return name
-  }
-
-  resolve(expr: NamedExpression): Parts[] {
-    if (expr.namespace) {
-      let ns = this.b.namespaces[expr.namespace.name]
-      if (!ns)
-        this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
-      return ns.resolve(expr, this)
-    } else if (expr.id.name == "specialize" || expr.id.name == "replace" || expr.id.name == "extend") {
-      return [p(this.resolveSpecialization(expr, expr.id.name))]
-    } else {
-      for (let built of this.b.built) if (built.matches(expr)) return [p(built.term)]
-
-      for (let tokens of this.b.tokenGroups) {
-        let found = tokens.getToken(expr, this)
-        if (found) return [p(found)]
-      }
-
-      let known = this.b.ast.rules.find(r => r.id.name == expr.id.name)
-      if (!known)
-        return this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
-      if (known.params.length != expr.args.length)
-        this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
-      return [p(this.buildRule(known, expr.args))]
-    }
-  }
-
-  // For tree-balancing reasons, repeat expressions X* have to be
-  // normalized to something like
-  //
-  //     Outer -> ε | Inner
-  //     Inner -> X | Inner Inner
-  //
-  // (With the ε part gone for + expressions.)
-  //
-  // Returns the terms that make up the outer rule.
-  normalizeRepeat(expr: RepeatExpression) {
-    let known = this.b.built.find(b => b.matchesRepeat(expr))
-    if (known) return p(known.term)
-
-    let inner = this.newNameFor(expr.expr, expr.kind + "-inner")
-    inner.repeated = true
-    let outer = this.newNameFor(expr.expr, expr.kind, inner)
-    this.b.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
-
-    let top = this.normalizeExpr(expr.expr)
-    top.push(new Parts([inner, inner], [Conflicts.none, new Conflicts(PREC_REPEAT, none), Conflicts.none]))
-    this.defineRule(inner, top)
-    this.defineRule(outer, expr.kind == "+" ? [p(inner)] : [Parts.none, p(inner)])
-
-    return p(outer)
-  }
-
-  normalizeSequence(expr: SequenceExpression) {
-    let result: Parts[][] = expr.exprs.map(e => this.normalizeExpr(e))
-    let builder = this.b
-    function complete(start: Parts, from: number, endConflicts: Conflicts): Parts[] {
-      let {here, atEnd} = builder.conflictsFor(expr.markers[from])
-      if (from == result.length)
-        return [start.withConflicts(start.terms.length, here.join(endConflicts))]
-      let choices = []
-      for (let choice of result[from]) {
-        for (let full of complete(start.concat(choice).withConflicts(start.terms.length, here),
-                                  from + 1, endConflicts.join(atEnd)))
-          choices.push(full)
-      }
-      return choices
-    }
-    return complete(Parts.none, 0, Conflicts.none)
-  }
-
-  normalizeExpr(expr: Expression): Parts[] {
-    if (expr instanceof RepeatExpression && expr.kind == "?") {
-      return [Parts.none, ...this.normalizeExpr(expr.expr)]
-    } else if (expr instanceof RepeatExpression) {
-      return [this.normalizeRepeat(expr)]
-    } else if (expr instanceof ChoiceExpression) {
-      return expr.exprs.reduce((o, e) => o.concat(this.normalizeExpr(e)), [] as Parts[])
-    } else if (expr instanceof SequenceExpression) {
-      return this.normalizeSequence(expr)
-    } else if (expr instanceof LiteralExpression) {
-      return [p(this.b.tokenGroups[0].getLiteral(expr))]
-    } else if (expr instanceof NamedExpression) {
-      return this.resolve(expr)
-    } else {
-      return this.raise("This type of expression may not occur in non-token rules", expr.start)
-    }
-  }
-
-  raise(message: string, pos: number = -1): never {
-    return this.b.input.raise(message, pos)
-  }
-
-  buildRule(rule: RuleDeclaration, args: readonly Expression[]): Term {
-    let cx = new Context(this.b, rule)
-    let expr = this.b.substituteArgs(rule.expr, args, rule.params)
-    this.b.used[rule.id.name] = true
-    let name = this.b.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
-                              rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
-    this.b.built.push(new BuiltRule(rule.id.name, args, name))
-    return cx.defineRule(name, cx.normalizeExpr(expr))
-  }
-
-  resolveSpecialization(expr: NamedExpression, type: string) {
-    if (expr.args.length < 2 || expr.args.length > 3) this.raise(`'${type}' takes two or three arguments`, expr.start)
-    if (!(expr.args[1] instanceof LiteralExpression))
-      this.raise(`The second argument to '${type}' must be a literal`, expr.args[1].start)
-    let tag = null
-    if (expr.args.length == 3) {
-      let tagArg = expr.args[2]
-      if (!(tagArg instanceof NamedExpression) || tagArg.args.length)
-        return this.raise(`The third argument to '${type}' must be a name (without arguments)`)
-      tag = tagArg.id.name
-    }
-    let terminal = this.normalizeExpr(expr.args[0])
-    if (terminal.length != 1 || terminal[0].terms.length != 1 || !terminal[0].terms[0].terminal)
-      this.raise(`The first argument to '${type}' must resolve to a token`, expr.args[0].start)
-    let term = terminal[0].terms[0], value = (expr.args[1] as LiteralExpression).value
-    let table = this.b.specialized[term.name] || (this.b.specialized[term.name] = [])
-    let known = table.find(sp => sp.value == value), token
-    if (known == null) {
-      token = this.b.makeTerminal(JSON.stringify(value), tag, this.b.tokens[term.name])
-      table.push({value, term: token, type})
-    } else {
-      if (known.type != type)
-        this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`, expr.start)
-      token = known.term
-    }
-    return token
-  }
-}
-
-function findNameFor(expr: Expression): string | null {
-  if (expr instanceof NamedExpression) return `${expr.namespace ? expr.namespace.name + "." : ""}${expr.id.name}`
-  if (expr instanceof RepeatExpression) return findNameFor(expr.expr)
-  if (expr instanceof LiteralExpression) return JSON.stringify(expr.value)
-  return null
-}
-
 function isTag(name: string) {
   let ch0 = name[0]
   return ch0.toUpperCase() == ch0 && ch0 != "_" ? name : null
@@ -257,31 +101,31 @@ class Builder {
     for (let rule of this.ast.rules) {
       this.unique(rule.id)
       if (this.namespaces[rule.id.name])
-        this.input.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
+        this.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
       if (rule.id.name == "program") {
-        if (rule.params.length) this.input.raise(`'program' rules should not take parameters`, rule.id.start)
-        new Context(this, rule).buildRule(rule, [])
+        if (rule.params.length) this.raise(`'program' rules should not take parameters`, rule.id.start)
+        this.buildRule(rule, [])
       }
     }
 
     if (!this.rules.length)
-      this.input.raise(`Missing 'program' rule declaration`)
+      this.raise(`Missing 'program' rule declaration`)
     for (let rule of this.ast.rules) if (!this.used[rule.id.name])
       this.warn(`Unused rule '${rule.id.name}'`, rule.start)
     for (let rule of this.rules) if (rule.parts.length >= 64)
-      this.input.raise(`Overlong rule (${rule.parts.length} > 63) in grammar`)
+      this.raise(`Overlong rule (${rule.parts.length} > 63) in grammar`)
     for (let tokens of this.tokenGroups) tokens.checkUnused()
   }
 
   unique(id: Identifier) {
     if (this.ruleNames[id.name])
-      this.input.raise(`Duplicate definition of rule '${id.name}'`, id.start)
-    if (reserved.includes(id.name)) this.input.raise(`The name '${id.name}' is reserved for a built-in operator`, id.start)
+      this.raise(`Duplicate definition of rule '${id.name}'`, id.start)
+    if (reserved.includes(id.name)) this.raise(`The name '${id.name}' is reserved for a built-in operator`, id.start)
     this.ruleNames[id.name] = true
   }
 
   defineNamespace(name: string, value: Namespace, pos: number = 0) {
-    if (this.namespaces[name]) this.input.raise(`Duplicate definition of namespace '${name}'`, pos)
+    if (this.namespaces[name]) this.raise(`Duplicate definition of namespace '${name}'`, pos)
     this.namespaces[name] = value
   }
 
@@ -309,7 +153,7 @@ class Builder {
       let source = startState.toSource()
       if (source) tokenizers.push(source)
       if (startState.accepting)
-        this.input.raise(`Grammar contains zero-length tokens (in '${startState.accepting.name}')`,
+        this.raise(`Grammar contains zero-length tokens (in '${startState.accepting.name}')`,
                          group.rules.find(r => r.id.name == startState.accepting!.name)!.start)
       if (group.skipState && /\bskip\b/.test(verbose)) console.log(group.skipState.compile().toString())
       if (/\btokens\b/.test(verbose)) console.log(startState.toString())
@@ -455,7 +299,7 @@ class Builder {
       let curSkip = skipped[index < 0 ? 0 : index]
       if (skip != curSkip) {
         if (skip != null)
-          this.input.raise(`Inconsistent skip rules for state ${state.set.filter(p => p.pos > 0).join() || "start"}`)
+          this.raise(`Inconsistent skip rules for state ${state.set.filter(p => p.pos > 0).join() || "start"}`)
         skip = curSkip
       }
       if (index < 0) continue
@@ -476,7 +320,7 @@ class Builder {
         if (expr.args.length) {
           if (arg instanceof NamedExpression && !arg.args.length)
             return new NamedExpression(expr.start, arg.namespace, arg.id, expr.args)
-          this.input.raise(`Passing arguments to a parameter that already has arguments`, expr.start)
+          this.raise(`Passing arguments to a parameter that already has arguments`, expr.start)
         }
         return arg
       }
@@ -492,7 +336,7 @@ class Builder {
       } else {
         let precs = this.ast.precedences!
         let pos = precs ? precs.names.findIndex(id => id.name == marker.id.name) : -1
-        if (pos < 0) this.input.raise(`Reference to unknown precedence: '${marker.id.name}'`, marker.id.start)
+        if (pos < 0) this.raise(`Reference to unknown precedence: '${marker.id.name}'`, marker.id.start)
         let assoc = precs.assoc[pos], value = (precs.names.length - pos) << 1
         here = here.join(new Conflicts(value, none))
         atEnd = atEnd.join(new Conflicts(value + (assoc == "left" ? 1 : assoc == "right" ? -1 : 0), none))
@@ -501,10 +345,144 @@ class Builder {
     return {here, atEnd}
   }
 
+  raise(message: string, pos = 1): never {
+    return this.input.raise(message, pos)
+  }
+
   warn(message: string, pos = -1) {
     let msg = this.input.message(message, pos)
     if (this.options.warn) this.options.warn(msg)
     else console.warn(msg)
+  }
+
+  defineRule(name: Term, choices: Parts[]) {
+    for (let choice of choices)
+      this.rules.push(new Rule(name, choice.terms, choice.ensureConflicts()))
+    return name
+  }
+
+  resolve(expr: NamedExpression): Parts[] {
+    if (expr.namespace) {
+      let ns = this.namespaces[expr.namespace.name]
+      if (!ns)
+        this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
+      return ns.resolve(expr, this)
+    } else if (expr.id.name == "specialize" || expr.id.name == "replace" || expr.id.name == "extend") {
+      return [p(this.resolveSpecialization(expr, expr.id.name))]
+    } else {
+      for (let built of this.built) if (built.matches(expr)) return [p(built.term)]
+
+      for (let tokens of this.tokenGroups) {
+        let found = tokens.getToken(expr)
+        if (found) return [p(found)]
+      }
+
+      let known = this.ast.rules.find(r => r.id.name == expr.id.name)
+      if (!known)
+        return this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
+      if (known.params.length != expr.args.length)
+        this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
+      return [p(this.buildRule(known, expr.args))]
+    }
+  }
+
+  // For tree-balancing reasons, repeat expressions X* have to be
+  // normalized to something like
+  //
+  //     Outer -> ε | Inner
+  //     Inner -> X | Inner Inner
+  //
+  // (With the ε part gone for + expressions.)
+  //
+  // Returns the terms that make up the outer rule.
+  normalizeRepeat(expr: RepeatExpression) {
+    let known = this.built.find(b => b.matchesRepeat(expr))
+    if (known) return p(known.term)
+
+    let inner = this.newName(expr + "-inner", true)
+    inner.repeated = true
+    let outer = this.newName(expr + "", true, inner)
+    this.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
+
+    let top = this.normalizeExpr(expr.expr)
+    top.push(new Parts([inner, inner], [Conflicts.none, new Conflicts(PREC_REPEAT, none), Conflicts.none]))
+    this.defineRule(inner, top)
+    this.defineRule(outer, expr.kind == "+" ? [p(inner)] : [Parts.none, p(inner)])
+
+    return p(outer)
+  }
+
+  normalizeSequence(expr: SequenceExpression) {
+    let result: Parts[][] = expr.exprs.map(e => this.normalizeExpr(e))
+    let builder = this
+    function complete(start: Parts, from: number, endConflicts: Conflicts): Parts[] {
+      let {here, atEnd} = builder.conflictsFor(expr.markers[from])
+      if (from == result.length)
+        return [start.withConflicts(start.terms.length, here.join(endConflicts))]
+      let choices = []
+      for (let choice of result[from]) {
+        for (let full of complete(start.concat(choice).withConflicts(start.terms.length, here),
+                                  from + 1, endConflicts.join(atEnd)))
+          choices.push(full)
+      }
+      return choices
+    }
+    return complete(Parts.none, 0, Conflicts.none)
+  }
+
+  normalizeExpr(expr: Expression): Parts[] {
+    if (expr instanceof RepeatExpression && expr.kind == "?") {
+      return [Parts.none, ...this.normalizeExpr(expr.expr)]
+    } else if (expr instanceof RepeatExpression) {
+      return [this.normalizeRepeat(expr)]
+    } else if (expr instanceof ChoiceExpression) {
+      return expr.exprs.reduce((o, e) => o.concat(this.normalizeExpr(e)), [] as Parts[])
+    } else if (expr instanceof SequenceExpression) {
+      return this.normalizeSequence(expr)
+    } else if (expr instanceof LiteralExpression) {
+      return [p(this.tokenGroups[0].getLiteral(expr))]
+    } else if (expr instanceof NamedExpression) {
+      return this.resolve(expr)
+    } else {
+      return this.raise("This type of expression may not occur in non-token rules", expr.start)
+    }
+  }
+
+  buildRule(rule: RuleDeclaration, args: readonly Expression[]): Term {
+    let expr = this.substituteArgs(rule.expr, args, rule.params)
+    this.used[rule.id.name] = true
+    let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
+                              rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
+    this.built.push(new BuiltRule(rule.id.name, args, name))
+    return this.defineRule(name, this.normalizeExpr(expr))
+  }
+
+  resolveSpecialization(expr: NamedExpression, type: string) {
+    if (expr.args.length < 2 || expr.args.length > 3) this.raise(`'${type}' takes two or three arguments`, expr.start)
+    if (!(expr.args[1] instanceof LiteralExpression))
+      this.raise(`The second argument to '${type}' must be a literal`, expr.args[1].start)
+    let tag = null
+    if (expr.args.length == 3) {
+      let tagArg = expr.args[2]
+      if (!(tagArg instanceof NamedExpression) || tagArg.args.length)
+        return this.raise(`The third argument to '${type}' must be a name (without arguments)`)
+      tag = tagArg.id.name
+    }
+    let terminal = this.normalizeExpr(expr.args[0])
+    if (terminal.length != 1 || terminal[0].terms.length != 1 || !terminal[0].terms[0].terminal)
+      this.raise(`The first argument to '${type}' must resolve to a token`, expr.args[0].start)
+    let term = terminal[0].terms[0], value = (expr.args[1] as LiteralExpression).value
+    let table = this.specialized[term.name] || (this.specialized[term.name] = [])
+    let known = table.find(sp => sp.value == value), token
+    if (known == null) {
+      token = this.makeTerminal(JSON.stringify(value), tag, this.tokens[term.name])
+      table.push({value, term: token, type})
+    } else {
+      if (known.type != type)
+        this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`, expr.start)
+      token = known.term
+    }
+    return token
   }
 }
 
@@ -539,16 +517,16 @@ function computeGotoTables(states: readonly LRState[]) {
 }
 
 interface Namespace {
-  resolve(expr: NamedExpression, cx: Context): Parts[]
+  resolve(expr: NamedExpression, builder: Builder): Parts[]
 }
 
 class TagNamespace implements Namespace {
-  resolve(expr: NamedExpression, cx: Context): Parts[] {
+  resolve(expr: NamedExpression, builder: Builder): Parts[] {
     if (expr.args.length != 1)
-      cx.raise(`Tag wrappers take a single argument`, expr.start)
+      builder.raise(`Tag wrappers take a single argument`, expr.start)
     let tag = expr.id.name
-    let name = cx.b.newName(`tag.${tag}`, tag)
-    return [p(cx.defineRule(name, cx.normalizeExpr(expr.args[0])))]
+    let name = builder.newName(`tag.${tag}`, tag)
+    return [p(builder.defineRule(name, builder.normalizeExpr(expr.args[0])))]
   }
 }
 
@@ -574,7 +552,7 @@ class TokenGroup {
     let skip = rules.find(r => r.id.name == "skip")
     if (skip) {
       this.used.skip = true
-      if (skip.params.length) return this.raise("Skip rules should not take parameters", skip.params[0].start)
+      if (skip.params.length) return this.b.raise("Skip rules should not take parameters", skip.params[0].start)
       this.skipState = new State
       let nameless = new State(b.terms.eof)
       for (let choice of skip.expr instanceof ChoiceExpression ? skip.expr.exprs : [skip.expr]) {
@@ -588,7 +566,7 @@ class TokenGroup {
     }
   }
 
-  getToken(expr: NamedExpression, cx: Context) {
+  getToken(expr: NamedExpression) {
     for (let built of this.built) if (built.matches(expr)) return built.term
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
@@ -612,14 +590,10 @@ class TokenGroup {
     return this.built.some(b => b.term == term)
   }
 
-  raise(msg: string, pos: number = -1): never {
-    return this.b.input.raise(msg, pos)
-  }
-
   buildRule(rule: RuleDeclaration, expr: NamedExpression, from: State, to: State, args: readonly TokenArg[] = none) {
     let name = expr.id.name
     if (rule.params.length != expr.args.length)
-      this.raise(`Incorrect number of arguments for token '${name}'`, expr.start)
+      this.b.raise(`Incorrect number of arguments for token '${name}'`, expr.start)
     let building = this.building.find(b => b.name == name && exprsEq(expr.args, b.args))
     if (building) {
       if (building.to == to) {
@@ -628,7 +602,7 @@ class TokenGroup {
       }
       let lastIndex = this.building.length - 1
       while (this.building[lastIndex].name != name) lastIndex--
-      this.raise(`Invalid (non-tail) recursion in token rules: ${
+      this.b.raise(`Invalid (non-tail) recursion in token rules: ${
         this.building.slice(lastIndex).map(b => b.name).join(" -> ")}`, expr.start)
     }
     this.used[name] = true
@@ -644,14 +618,14 @@ class TokenGroup {
     if (expr instanceof NamedExpression) {
       if (expr.namespace) {
         if (expr.namespace.name == "std") return this.buildStd(expr, from, to)
-        this.b.input.raise(`Unknown namespace '${expr.namespace.name}'`, expr.start)
+        this.b.raise(`Unknown namespace '${expr.namespace.name}'`, expr.start)
       }
       let name = expr.id.name, arg = args.find(a => a.name == name)
       if (arg) return this.build(arg.expr, from, to, arg.scope)
       let rule: RuleDeclaration | undefined = undefined
       for (let scope: TokenGroup | null = this; scope && !rule; scope = scope.parent)
         rule = scope.rules.find(r => r.id.name == name)
-      if (!rule) return this.raise(`Reference to rule '${expr.id.name}', which isn't found in this token group`, expr.start)
+      if (!rule) return this.b.raise(`Reference to rule '${expr.id.name}', which isn't found in this token group`, expr.start)
       this.buildRule(rule, expr, from, to, args)
     } else if (expr instanceof ChoiceExpression) {
       for (let choice of expr.exprs) this.build(choice, from, to, args)
@@ -659,7 +633,7 @@ class TokenGroup {
       from.nullEdge(to)
     } else if (expr instanceof SequenceExpression) {
       let conflict = expr.markers.find(c => c.length > 0)
-      if (conflict) this.raise("Conflict marker in token expression", conflict[0].start)
+      if (conflict) this.b.raise("Conflict marker in token expression", conflict[0].start)
       for (let i = 0; i < expr.exprs.length; i++) {
         let next = i == expr.exprs.length - 1 ? to : new State
         this.build(expr.exprs[i], from, next, args)
@@ -693,13 +667,13 @@ class TokenGroup {
     } else if (expr instanceof AnyExpression) {
       from.edge(0, MAX_CHAR + 1, to)
     } else {
-      return this.raise(`Unrecognized expression type in token`, (expr as any).start)
+      return this.b.raise(`Unrecognized expression type in token`, (expr as any).start)
     }
   }
 
   buildStd(expr: NamedExpression, from: State, to: State) {
-    if (expr.args.length) this.raise(`'std.${expr.id.name}' does not take arguments`, expr.args[0].start)
-    if (!STD_RANGES.hasOwnProperty(expr.id.name)) this.raise(`There is no builtin rule 'std.${expr.id.name}'`, expr.start)
+    if (expr.args.length) this.b.raise(`'std.${expr.id.name}' does not take arguments`, expr.args[0].start)
+    if (!STD_RANGES.hasOwnProperty(expr.id.name)) this.b.raise(`There is no builtin rule 'std.${expr.id.name}'`, expr.start)
     for (let [a, b] of STD_RANGES[expr.id.name]) from.edge(a, b, to)
   }
 
