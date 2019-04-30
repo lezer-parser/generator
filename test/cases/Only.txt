@@ -1,0 +1,14 @@
+program { statement* }
+
+statement {
+  tag.Block<!only "{" statement* "}"> |
+  expression ";"
+}
+
+expression { "x" | "(" expression ")" | "{" "}" }
+
+---
+
+{}
+
+==> Block

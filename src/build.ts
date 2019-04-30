@@ -30,7 +30,7 @@ class Parts {
   }
 
   withConflicts(pos: number, conflicts: Conflicts) {
-    if (conflicts.precedence == 0 && conflicts.ambigGroups.length == 0) return this
+    if (conflicts.precedence == 0 && conflicts.ambigGroups.length == 0 && !conflicts.only) return this
     let array = this.conflicts ? this.conflicts.slice() : this.ensureConflicts() as Conflicts[]
     array[pos] = array[pos].join(conflicts)
     return new Parts(this.terms, array)
@@ -333,6 +333,8 @@ class Builder {
     for (let marker of markers) {
       if (marker.type == "ambig") {
         here = here.join(new Conflicts(0, [marker.id.name]))
+      } else if (marker.id.name == "only") {
+        here = here.join(new Conflicts(0, none, true))
       } else {
         let precs = this.ast.precedences!
         let pos = precs ? precs.names.findIndex(id => id.name == marker.id.name) : -1

@@ -335,8 +335,9 @@ export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[
     for (let i = 0; i < byTerm.length; i++) {
       let term = byTerm[i]
       if (term.terminal) {
-        let next = getState(byTermPos[i])
-        if (next) state.addAction(new Shift(term, next), byTermPos[i].map(p => p.reverse()))
+        let set = applyOnly(byTermPos[i])
+        let next = getState(set)
+        if (next) state.addAction(new Shift(term, next), set.map(p => p.reverse()))
       } else {
         let goto = getState(byTermPos[i])
         if (goto) state.goto.push(new Shift(term, goto))
@@ -353,6 +354,12 @@ export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[
   }
 
   return states
+}
+
+function applyOnly(set: readonly Pos[]): readonly Pos[] {
+  let found: null | Pos[] = null
+  for (let pos of set) if (pos.rule.conflicts[pos.pos - 1].only) (found || (found = [])).push(pos)
+  return found || set
 }
 
 function mergeState(mapping: number[], newStates: State[], state: State, target: State): boolean {

@@ -262,7 +262,9 @@ function parsePrec(input: Input) {
   let assoc: ("left" | "right" | null)[] = [], names = []
   while (!input.eat("}")) {
     if (names.length) input.expect(",")
-    names.push(parseIdent(input))
+    let name = parseIdent(input)
+    if (name.name == "only") input.raise("The precedence name 'only' is reserved", name.start)
+    names.push(name)
     assoc.push(input.eat("id", "left") ? "left" : input.eat("id", "right") ? "right" : null)
   }
   return new PrecDeclaration(start, assoc, names)
