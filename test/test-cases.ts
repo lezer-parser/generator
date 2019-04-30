@@ -24,7 +24,7 @@ describe("Cases", () => {
     let parts = content.split(/\n---+\n/), grammarText = parts.shift()
     let parser: Parser | null = null
     let force = () => {
-      if (!parser) parser = buildParser(grammarText, file)
+      if (!parser) parser = buildParser(grammarText, {fileName: file})
       return parser
     }
 

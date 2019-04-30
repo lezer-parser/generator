@@ -21,7 +21,7 @@ let parser = null
 let force = () => {
   if (!parser) {
     let text = fs.readFileSync(path.join(__dirname, "../src/javascript.grammar"), "utf8")
-    parser = buildParser(text, "javascript.grammar")
+    parser = buildParser(text, {fileName: "javascript.grammar"})
   }
   return parser
 }

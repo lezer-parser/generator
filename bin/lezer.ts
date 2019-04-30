@@ -27,7 +27,7 @@ function error(msg: string) {
 }
 
 try {
-  console.log(buildParserFile(require("fs").readFileSync(file, "utf8"), file, {moduleStyle, includeNames}))
+  console.log(buildParserFile(require("fs").readFileSync(file, "utf8"), {fileName: file, moduleStyle, includeNames}))
 } catch (e) {
   console.error(e instanceof SyntaxError ? e.message : e.stack)
   process.exit(1)

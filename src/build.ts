@@ -225,6 +225,13 @@ class BuiltRule {
   }
 }
 
+export type BuildOptions = {
+  fileName?: string,
+  warn?: (message: string) => void,
+  includeNames?: boolean,
+  moduleStyle?: string
+}
+
 class Builder {
   ast: GrammarDeclaration
   input: Input
@@ -238,8 +245,8 @@ class Builder {
   tokens: {[name: string]: TokenGroup} = Object.create(null)
   used: {[name: string]: boolean} = Object.create(null)
 
-  constructor(text: string, fileName: string | null = null) {
-    this.input = new Input(text, fileName)
+  constructor(text: string, readonly options: BuildOptions) {
+    this.input = new Input(text, options.fileName)
     this.ast = this.input.parse()
 
     if (this.ast.tokens) this.gatherTokenGroups(this.ast.tokens)
@@ -260,8 +267,7 @@ class Builder {
     if (!this.rules.length)
       this.input.raise(`Missing 'program' rule declaration`)
     for (let rule of this.ast.rules) if (!this.used[rule.id.name])
-      // FIXME should probably be a warning
-      this.input.raise(`Unused rule '${rule.id.name}'`, rule.start)
+      this.warn(`Unused rule '${rule.id.name}'`, rule.start)
     for (let rule of this.rules) if (rule.parts.length >= 64)
       this.input.raise(`Overlong rule (${rule.parts.length} > 63) in grammar`)
     for (let tokens of this.tokenGroups) tokens.checkUnused()
@@ -339,7 +345,8 @@ class Builder {
 
   // FIXME at some point compress the various tables into a single big
   // array, encode it as a string and decode into Uint16Array
-  getParserString({includeNames = false, moduleStyle = "CommonJS"}: GenOptions) {
+  getParserString() {
+    let {includeNames = false, moduleStyle = "CommonJS"} = this.options
     let {states, taggedGoto, untaggedGoto, specialized, specializations, tags, names, repeatInfo} = this.getParserData()
     let counts: {[key: string]: number} = Object.create(null)
     function count(value: any) { let key = "" + value; counts[key] = (counts[key] || 0) + 1 }
@@ -492,6 +499,12 @@ class Builder {
       }
     }
     return {here, atEnd}
+  }
+
+  warn(message: string, pos = -1) {
+    let msg = this.input.message(message, pos)
+    if (this.options.warn) this.options.warn(msg)
+    else console.warn(msg)
   }
 }
 
@@ -692,8 +705,7 @@ class TokenGroup {
 
   checkUnused() {
     for (let rule of this.rules) if (!this.used[rule.id.name])
-      // FIXME should probably be a warning
-      this.raise(`Unused token rule '${rule.id.name}'`, rule.start)
+      this.b.warn(`Unused token rule '${rule.id.name}'`, rule.start)
   }
 }
 
@@ -839,12 +851,10 @@ function simplifyRules(rules: readonly Rule[]): readonly Rule[] {
   return mergeRules(inlineRules(rules))
 }
 
-export function buildParser(text: string, fileName: string | null = null): Parser {
-  return new Builder(text, fileName).getParser()
+export function buildParser(text: string, options: BuildOptions = {}): Parser {
+  return new Builder(text, options).getParser()
 }
 
-export type GenOptions = {includeNames?: boolean, moduleStyle?: string}
-
-export function buildParserFile(text: string, fileName: string | null = null, options: GenOptions = {}): string {
-  return new Builder(text, fileName).getParserString(options)
+export function buildParserFile(text: string, options: BuildOptions = {}): string {
+  return new Builder(text, options).getParserString()
 }

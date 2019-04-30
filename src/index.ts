@@ -1,1 +1,1 @@
-export {GenOptions, buildParser, buildParserFile} from "./build"
+export {BuildOptions, buildParser, buildParserFile} from "./build"

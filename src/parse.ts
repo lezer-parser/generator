@@ -32,13 +32,17 @@ export class Input {
     }
   }
 
-  raise(msg: string, pos: number = -1): never {
+  message(msg: string, pos: number = -1): string {
     let posInfo = this.fileName || ""
     if (pos > -1) {
       let info = this.lineInfo(pos)
       posInfo += (posInfo ? " " : "") + info.line + ":" + info.ch
     }
-    throw new SyntaxError(posInfo ? msg + ` (${posInfo})` : msg)
+    return posInfo ? msg + ` (${posInfo})` : msg
+  }
+
+  raise(msg: string, pos: number = -1): never {
+    throw new SyntaxError(this.message(msg, pos))
   }
 
   match(pos: number, re: RegExp) {
