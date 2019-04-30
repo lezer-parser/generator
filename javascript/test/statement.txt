@@ -1,9 +1,40 @@
-# Expressions
+# Variable declaration
 
-1;
-"two";
+var a = b
+  , c = d;
+const [x] = y = 3;
 
-==> Number, String
+==>
+
+VariableDeclaration(Keyword, Definition, Operator, Variable, Definition, Operator, Variable),
+VariableDeclaration(Keyword, ArrayPattern(Definition), Operator, AssignmentExpression(Variable, Operator, Number))
+
+# Function declaration
+
+function a(a, b) { return 3; }
+function b({b}, c = d, e = f) {}
+
+==>
+
+FunctionDeclaration(Keyword, Definition, ParamList(Definition, Definition), Block(ReturnStatement(Keyword, Number))),
+FunctionDeclaration(Keyword, Definition, ParamList(
+  ObjectPattern(Property(PropertyName)),
+  Definition, Operator, Variable,
+  Definition, Operator, Variable), Block)
+
+# Async functions
+
+async function foo() {}
+
+class Foo { async bar() {} }
+
+async (a) => { return foo; };
+
+==>
+
+FunctionDeclaration(Keyword, Keyword, Definition, ParamList, Block),
+ClassDeclaration(Keyword, Definition, ClassBody(MethodDefinition(Keyword, PropertyName, ParamList, Block))),
+ArrowFunction(Keyword, ParamList(Definition), Block(ReturnStatement(Keyword, Variable)))
 
 # While loop
 
@@ -79,3 +110,65 @@ ForStatement(Keyword,
              Block),
 ForStatement(Keyword, LoopDeclaration(Keyword, Definition, Keyword, Variable), Block),
 ForStatement(Keyword, LoopDeclaration(Keyword, Definition, Keyword, Variable), Block)
+
+# Classes
+
+class Foo {
+  static one(a) { return a; };
+  two(b) { return b; }
+  finally() {}
+}
+
+class Foo extends require('another-class') {
+  constructor() { super(); }
+  bar() { super.a(); }
+}
+
+==>
+
+ClassDeclaration(Keyword, Definition, ClassBody(
+  MethodDefinition(Keyword, PropertyName, ParamList(Definition), Block(ReturnStatement(Keyword, Variable))),
+  MethodDefinition(PropertyName, ParamList(Definition), Block(ReturnStatement(Keyword, Variable))),
+  MethodDefinition(PropertyName, ParamList, Block))),
+
+ClassDeclaration(Keyword, Definition, Keyword, CallExpression(Variable, ArgList(String)), ClassBody(
+  MethodDefinition(PropertyName, ParamList, Block(CallExpression(Super, ArgList))),
+  MethodDefinition(PropertyName, ParamList, Block(CallExpression(MemberExpression(Super, PropertyName), ArgList)))))
+
+# Imports
+
+import defaultMember from "module-name";
+import * as name from "module-name";
+import { member } from "module-name";
+import { member1, member2 as alias2 } from "module-name";
+import defaultMember, { member1, member2 as alias2, } from "module-name";
+import "module-name";
+
+==>
+
+ImportDeclaration(Keyword, Definition, Keyword, String),
+ImportDeclaration(Keyword, Star, Keyword, Definition, Keyword, String),
+ImportDeclaration(Keyword, ImportGroup(Definition), Keyword, String),
+ImportDeclaration(Keyword, ImportGroup(Definition, Variable, Keyword, Definition), Keyword, String),
+ImportDeclaration(Keyword, Definition, ImportGroup(Definition, Variable, Keyword, Definition), Keyword, String),
+ImportDeclaration(Keyword, String)
+
+# Exports
+
+export { name1, name2, name3 as x, nameN };
+export let a, b = 2;
+export default 2 + 2;
+export default function() { }
+export default async function name1() { }
+export { name1 as default, } from "foo";
+export * from 'foo';
+
+==>
+
+ExportDeclaration(Keyword, ExportGroup(Variable, Variable, Variable, Keyword, Variable, Variable)),
+ExportDeclaration(Keyword, VariableDeclaration(Keyword, Definition, Definition, Operator, Number)),
+ExportDeclaration(Keyword, Keyword, BinaryExpression(Number, Operator, Number)),
+ExportDeclaration(Keyword, Keyword, FunctionDeclaration(Keyword, ParamList, Block)),
+ExportDeclaration(Keyword, Keyword, FunctionDeclaration(Keyword, Keyword, Definition, ParamList, Block)),
+ExportDeclaration(Keyword, ExportGroup(Variable, Keyword, Variable), Keyword, String),
+ExportDeclaration(Keyword, Star, Keyword, String)

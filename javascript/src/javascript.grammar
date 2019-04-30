@@ -26,8 +26,8 @@ precedence {
 program { statement+ }
 
 statement {
-  ExportStatement |
-  ImportStatement |
+  ExportDeclaration |
+  ImportDeclaration |
   tag.ForStatement<kw<"for"> "(" forSpec ")" statement> |
   tag.WhileStatement<kw<"while"> parenExpression statement> |
   tag.WithStatement<kw<"with"> parenExpression statement> |
@@ -47,24 +47,24 @@ statement {
   semi
 }
 
-ExportStatement {
-  kw<"export"> "*" kw<"from"> String semi |
-  kw<"export"> kw<"default"> expression semi |
-  kw<"export"> declaration semi |
+ExportDeclaration {
+  kw<"export"> Star kw<"from"> String semi |
+  kw<"export"> kw<"default"> (FunctionDeclaration | ClassDeclaration | expression semi) |
+  kw<"export"> declaration |
   kw<"export"> ExportGroup (kw<"from"> String)? semi
 }
 
 ExportGroup {
-  "{" (Variable (kw<"as"> Variable)?)* "}"
+  "{" commaSep<Variable (kw<"as"> Variable)?> "}"
 }
 
-ImportStatement {
-  kw<"import"> ("*" kw<"as"> Definition | Definition | ImportGroup) kw<"from"> String semi
+ImportDeclaration {
+  kw<"import"> (Star kw<"as"> Definition | commaSep<Definition | ImportGroup>) kw<"from"> String semi |
   kw<"import"> String semi
 }
 
 ImportGroup {
-  "{" (Definition (kw<"as"> Definition)?)* "}"
+  "{" commaSep<Definition | Variable kw<"as"> Definition> "}"
 }
 
 LabeledStatement {
@@ -82,7 +82,7 @@ declaration {
 }
 
 FunctionDeclaration {
-  ckw<"async">? !only kw<"function"> "*"? Definition ParamList Block
+  ckw<"async">? !only kw<"function"> Star? Definition? ParamList Block
 }
 
 ClassDeclaration {
@@ -90,13 +90,13 @@ ClassDeclaration {
 }
 
 ClassBody {
-  "{" MethodDefinition* "}"
+  "{" (MethodDefinition | ";")* "}"
 }
 
 MethodDefinition {
   kw<"static">?
   ckw<"async">?
-  (ckw<"get"> | ckw<"set"> | "*")?
+  (ckw<"get"> | ckw<"set"> | Star)?
   PropertyName
   ParamList
   Block
@@ -150,6 +150,7 @@ expressionNoComma {
   boolean |
   this |
   null |
+  super |
   RegExp |
   ArrayExpression |
   tag.ObjectExpression<"{" commaSep<Property> ~destructure "}"> |
@@ -175,7 +176,7 @@ ArrayExpression {
 propName { PropertyName | "[" expression "]" | Number | String }
 
 Property {
-  ckw<"async">? (ckw<"get"> | ckw<"set"> | "*")? propName ParamList Block |
+  ckw<"async">? (ckw<"get"> | ckw<"set"> | Star)? propName ParamList Block |
   propName ~destructure (":" expressionNoComma)? |
   "..." expressionNoComma
 }
@@ -190,7 +191,7 @@ ClassExpression {
 }
 
 FunctionExpression {
-  kw<"function"> "*"? Definition? ParamList Block
+  kw<"function"> Star? Definition? ParamList Block
 }
 
 NewExpression {
@@ -259,6 +260,10 @@ boolean { specialize<identifier, "true", Boolean> | specialize<identifier, "fals
 this { specialize<identifier, "this", This> }
 
 null { specialize<identifier, "null", Null> }
+
+super { specialize<identifier, "super", Super> }
+
+Star { "*" }
 
 PropertyName { identifier }
 

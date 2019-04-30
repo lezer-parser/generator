@@ -305,7 +305,7 @@ ObjectExpression(
   Property(PropertyName, ParamList(Definition, Definition), Block(ReturnStatement(Keyword, BinaryExpression(Variable, Operator, Variable)))),
   Property(Keyword, PropertyName, ParamList, Block(ReturnStatement(Keyword, Variable))),
   Property(Keyword, PropertyName, ParamList(Definition), Block(AssignmentExpression(Variable, Operator, Variable))),
-  Property(PropertyName, ParamList, Block(PrefixExpression(Keyword, Variable))),
+  Property(Star, PropertyName, ParamList, Block(PrefixExpression(Keyword, Variable))),
   Property(PropertyName, ParamList, Block(ReturnStatement(Keyword, Number))))
 
 # Keyword property names
@@ -342,8 +342,8 @@ ObjectExpression(
 ==>
 
 ArrayExpression(
-  FunctionExpression(Keyword, ParamList, Block),
-  FunctionExpression(Keyword, Definition, ParamList(Definition, Definition), Block(Variable, PrefixExpression(Keyword, Variable))))
+  FunctionExpression(Keyword, Star, ParamList, Block),
+  FunctionExpression(Keyword, Star, Definition, ParamList(Definition, Definition), Block(Variable, PrefixExpression(Keyword, Variable))))
 
 # Member expressions
 
