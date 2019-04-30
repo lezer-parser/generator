@@ -36,6 +36,29 @@ FunctionDeclaration(Keyword, Keyword, Definition, ParamList, Block),
 ClassDeclaration(Keyword, Definition, ClassBody(MethodDefinition(Keyword, PropertyName, ParamList, Block))),
 ArrowFunction(Keyword, ParamList(Definition), Block(ReturnStatement(Keyword, Variable)))
 
+# If statements
+
+if (x) log(y);
+
+if (a.b) {
+  d;
+}
+
+if (a) {
+  c;
+  d;
+} else {
+  e;
+}
+
+==>
+
+IfStatement(Keyword, Variable, CallExpression(Variable, ArgList(Variable))),
+
+IfStatement(Keyword, MemberExpression(Variable, PropertyName), Block(Variable)),
+
+IfStatement(Keyword, Variable, Block(Variable, Variable), Keyword, Block(Variable))
+
 # While loop
 
 while (1) debugger;
@@ -100,6 +123,11 @@ SwitchStatement(
 for (let x = 1; x < 10; x++) {}
 for (const y of z) {}
 for (var m in n) {}
+for (q in r) {}
+for (var a, b; c; d) continue;
+for (i = 0, init(); i < 10; i++) {}
+for (;;) {}
+for (const {thing} in things) thing;
 
 ==>
 
@@ -109,7 +137,13 @@ ForStatement(Keyword,
              SuffixExpression(Variable, Operator),
              Block),
 ForStatement(Keyword, LoopDeclaration(Keyword, Definition, Keyword, Variable), Block),
-ForStatement(Keyword, LoopDeclaration(Keyword, Definition, Keyword, Variable), Block)
+ForStatement(Keyword, LoopDeclaration(Keyword, Definition, Keyword, Variable), Block),
+ForStatement(Keyword, LoopDeclaration(Variable, Keyword, Variable), Block),
+ForStatement(Keyword, VariableDeclaration(Keyword, Definition, Definition), Variable, Variable, ContinueStatement(Keyword)),
+ForStatement(Keyword, SequenceExpression(AssignmentExpression(Variable, Operator, Number), CallExpression(Variable, ArgList)),
+             BinaryExpression(Variable, Operator, Number), SuffixExpression(Variable, Operator), Block),
+ForStatement(Keyword, Block),
+ForStatement(Keyword, LoopDeclaration(Keyword, ObjectPattern(Property(PropertyName)), Keyword, Variable), Variable)
 
 # Classes
 

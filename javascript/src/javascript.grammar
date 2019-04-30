@@ -11,6 +11,7 @@ precedence {
   times left,
   plus left,
   shift left,
+  loop,
   rel left,
   equal left,
   bitOr left,
@@ -32,7 +33,7 @@ statement {
   tag.WhileStatement<kw<"while"> parenExpression statement> |
   tag.WithStatement<kw<"with"> parenExpression statement> |
   tag.DoWhileStatement<kw<"do"> statement kw<"while"> parenExpression semi> |
-  tag.IfStatement<kw<"if"> parenExpression statement !else (kw<"else"> statement)?> |
+  tag.IfStatement<kw<"if"> parenExpression statement (!else kw<"else"> statement)?> |
   tag.SwitchStatement<kw<"switch"> parenExpression tag.Block<"{" switchItem* "}">> |
   tag.TryStatement<kw<"try"> Block (kw<"catch"> ("(" pattern ")")? Block)? (kw<"finally"> Block)?> |
   tag.ReturnStatement<kw<"return"> expression semi> |
@@ -72,8 +73,11 @@ LabeledStatement {
 }
 
 forSpec {
-  VariableDeclaration expression? ";" expression? |
-  tag.LoopDeclaration<(kw<"let"> | kw<"var"> | kw<"const">) pattern (kw<"in"> | kw<"of">) expression> |
+  (VariableDeclaration | expression ";") expression? ";" expression? |
+  tag.LoopDeclaration<
+    ((kw<"let"> | kw<"var"> | kw<"const">) pattern | Variable | MemberExpression | ArrayPattern | ObjectPattern)
+    !loop (kw<"in"> | kw<"of">) expression
+  > |
   ";" expression? ";" expression?
 }
 
