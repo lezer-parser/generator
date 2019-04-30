@@ -51,13 +51,17 @@ if (a) {
   e;
 }
 
+if (1) if (2) b; else c;
+
 ==>
 
 IfStatement(Keyword, Variable, CallExpression(Variable, ArgList(Variable))),
 
 IfStatement(Keyword, MemberExpression(Variable, PropertyName), Block(Variable)),
 
-IfStatement(Keyword, Variable, Block(Variable, Variable), Keyword, Block(Variable))
+IfStatement(Keyword, Variable, Block(Variable, Variable), Keyword, Block(Variable)),
+
+IfStatement(Keyword, Number, IfStatement(Keyword, Number, Variable, Keyword, Variable))
 
 # While loop
 
@@ -84,12 +88,12 @@ LabeledStatement(Label, WhileStatement(Keyword, Number, BreakStatement(Keyword, 
 
 # Try
 
-try {} catch {}
+try { throw new Error; } catch {}
 try { 1; } catch (x) { 2; } finally { 3; }
 
 ==>
 
-TryStatement(Keyword, Block, Keyword, Block),
+TryStatement(Keyword, Block(ThrowStatement(Keyword, NewExpression(Keyword, Variable))), Keyword, Block),
 TryStatement(Keyword, Block(Number), Keyword, Definition, Block(Number), Keyword, Block(Number))
 
 # Switch
@@ -128,6 +132,7 @@ for (var a, b; c; d) continue;
 for (i = 0, init(); i < 10; i++) {}
 for (;;) {}
 for (const {thing} in things) thing;
+for await (let x of stream) {}
 
 ==>
 
@@ -143,7 +148,20 @@ ForStatement(Keyword, VariableDeclaration(Keyword, Definition, Definition), Vari
 ForStatement(Keyword, SequenceExpression(AssignmentExpression(Variable, Operator, Number), CallExpression(Variable, ArgList)),
              BinaryExpression(Variable, Operator, Number), SuffixExpression(Variable, Operator), Block),
 ForStatement(Keyword, Block),
-ForStatement(Keyword, LoopDeclaration(Keyword, ObjectPattern(Property(PropertyName)), Keyword, Variable), Variable)
+ForStatement(Keyword, LoopDeclaration(Keyword, ObjectPattern(Property(PropertyName)), Keyword, Variable), Variable),
+ForStatement(Keyword, Keyword, LoopDeclaration(Keyword, Definition, Keyword, Variable), Block)
+
+# Labeled statements
+
+theLoop: for (;;) {
+  if (a) {
+    break theLoop;
+  }
+}
+
+==>
+
+LabeledStatement(Label, ForStatement(Keyword, Block(IfStatement(Keyword, Variable, Block(BreakStatement(Keyword, Label))))))
 
 # Classes
 
@@ -206,3 +224,42 @@ ExportDeclaration(Keyword, Keyword, FunctionDeclaration(Keyword, ParamList, Bloc
 ExportDeclaration(Keyword, Keyword, FunctionDeclaration(Keyword, Keyword, Definition, ParamList, Block)),
 ExportDeclaration(Keyword, ExportGroup(Variable, Keyword, Variable), Keyword, String),
 ExportDeclaration(Keyword, Star, Keyword, String)
+
+# Empty statements
+
+if (true) { ; };;;
+
+==>
+
+IfStatement(Keyword, Boolean, Block)
+
+# Comments
+
+/* a */
+one;
+
+/* b **/
+two;
+
+/* c ***/
+three;
+
+/* d
+
+***/
+four;
+
+y // comment
+  * z;
+
+==>
+
+Comment,
+Variable,
+Comment,
+Variable,
+Comment,
+Variable,
+Comment,
+Variable,
+BinaryExpression(Variable, Comment, Operator, Variable)

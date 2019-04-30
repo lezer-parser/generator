@@ -29,7 +29,7 @@ program { statement+ }
 statement {
   ExportDeclaration |
   ImportDeclaration |
-  tag.ForStatement<kw<"for"> "(" forSpec ")" statement> |
+  tag.ForStatement<kw<"for"> ckw<"await">? "(" forSpec ")" statement> |
   tag.WhileStatement<kw<"while"> parenExpression statement> |
   tag.WithStatement<kw<"with"> parenExpression statement> |
   tag.DoWhileStatement<kw<"do"> statement kw<"while"> parenExpression semi> |
@@ -282,9 +282,13 @@ semi { ";" }
 tokens {
   skip { std.whitespace+ | LineComment | BlockComment }
 
-  LineComment { "//" [^\n]* }
+  LineComment=Comment { "//" [^\n]* }
 
-  BlockComment { "/*" ([^*] | "*" [^/])* "*/" }
+  BlockComment=Comment { "/*" blockCommentRest }
+
+  blockCommentRest { [^*] blockCommentRest | "*" blockCommentAfterStar }
+
+  blockCommentAfterStar { "/" | "*" blockCommentAfterStar | [^/*] blockCommentRest }
 
   identifierChar { std.asciiLetter | [_$\u{a1}-\u{10ffff}] }
 

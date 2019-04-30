@@ -30,8 +30,10 @@ theVar;
 theVar2;
 $_;
 é象𫝄;
+últimaVez;
+県;
 
-==> Variable, Variable, Variable, Variable
+==> Variable, Variable, Variable, Variable, Variable, Variable
 
 # RegExps
 
@@ -381,7 +383,7 @@ ReturnStatement(Keyword, CallExpression(
   MemberExpression(CallExpression(
     MemberExpression(This, PropertyName), ArgList(FunctionExpression(Keyword, ParamList(Definition), Block(
       ReturnStatement(Keyword, MemberExpression(Variable, PropertyName)))))),
-    LineComment,
+    Comment,
     PropertyName),
   ArgList(FunctionExpression(Keyword, ParamList(Definition), Block(ReturnStatement(Keyword, Number))))))
 
