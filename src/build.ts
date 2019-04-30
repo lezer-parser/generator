@@ -339,7 +339,7 @@ class Builder {
         let precs = this.ast.precedences!
         let pos = precs ? precs.names.findIndex(id => id.name == marker.id.name) : -1
         if (pos < 0) this.raise(`Reference to unknown precedence: '${marker.id.name}'`, marker.id.start)
-        let assoc = precs.assoc[pos], value = (precs.names.length - pos) << 1
+        let assoc = precs.assoc[pos], value = (precs.names.length - pos) << 2
         here = here.join(new Conflicts(value, none))
         atEnd = atEnd.join(new Conflicts(value + (assoc == "left" ? 1 : assoc == "right" ? -1 : 0), none))
       }
