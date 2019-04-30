@@ -142,7 +142,7 @@ SequenceExpression {
   expressionNoComma !comma "," expressionNoComma
 }
 
-expressionInner {
+expressionNoComma {
   Number |
   String |
   TemplateString |
@@ -158,11 +158,7 @@ expressionInner {
   "(" expression ")" |
   ClassExpression |
   FunctionExpression |
-  ArrowFunction
-}
-
-expressionNoComma {
-  expressionInner |
+  ArrowFunction |
   MemberExpression<expressionNoComma> |
   BinaryExpression |
   tag.ConditionalExpression<expressionNoComma !ternary op<"?"> expressionNoComma tag.Operator<":"> expressionNoComma> |
@@ -198,8 +194,7 @@ FunctionExpression {
 }
 
 NewExpression {
-  kw<"new"> (expressionInner | MemberExpression<expressionInner>) !newArgs ArgList |
-  kw<"new"> (expressionInner | MemberExpression<expressionInner>)
+  kw<"new"> expressionNoComma (!newArgs ArgList)?
 }
 
 PrefixExpression {

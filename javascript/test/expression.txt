@@ -45,12 +45,6 @@ $_;
 
 ==> RegExp, RegExp, RegExp, RegExp, RegExp, RegExp, RegExp
 
-# Calls
-
-f(new foo.bar(1), 2);
-
-==> CallExpression(Variable, ArgList(NewExpression(Keyword, MemberExpression(Variable, PropertyName), ArgList(Number)), Number))
-
 # Arrays
 
 [];
@@ -397,19 +391,23 @@ x.someMethod(arg1, "arg2");
 (function(x, y) {
 
 }(a, b));
+f(new foo.bar(1), 2);
 
-==>
+==> 
 
 CallExpression(MemberExpression(Variable, PropertyName), ArgList(Variable, String)),
-CallExpression(FunctionExpression(Keyword, ParamList(Definition, Definition), Block), ArgList(Variable, Variable))
+CallExpression(FunctionExpression(Keyword, ParamList(Definition, Definition), Block), ArgList(Variable, Variable)),
+CallExpression(Variable, ArgList(NewExpression(Keyword, MemberExpression(Variable, PropertyName), ArgList(Number)), Number))
 
 # Constructor calls
 
+new foo(1);
 new module.Klass(1, "two");
 new Thing;
 
 ==>
 
+NewExpression(Keyword, Variable, ArgList(Number)),
 NewExpression(Keyword, MemberExpression(Variable, PropertyName), ArgList(Number, String)),
 NewExpression(Keyword, Variable)
 
