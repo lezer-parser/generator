@@ -334,3 +334,19 @@ ObjectExpression(
   Property(PropertyName, ParamList, Block),
   Property(PropertyName, Boolean),
   Property(PropertyName, Boolean))
+
+# Generator functions
+
+[
+  function *() {},
+  function *generateStuff(arg1, arg2) {
+    yield;
+    yield arg2;
+  }
+];
+
+==>
+
+ArrayExpression(
+  FunctionExpression(Keyword, ParamList, Block),
+  FunctionExpression(Keyword, Definition, ParamList(Definition, Definition), Block(Variable, PrefixExpression(Keyword, Variable))))

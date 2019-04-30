@@ -48,7 +48,7 @@ statement {
 }
 
 ExportStatement {
-  kw<"export"> plainStar kw<"from"> String semi |
+  kw<"export"> "*" kw<"from"> String semi |
   kw<"export"> kw<"default"> expression semi |
   kw<"export"> declaration semi |
   kw<"export"> ExportGroup (kw<"from"> String)? semi
@@ -59,7 +59,7 @@ ExportGroup {
 }
 
 ImportStatement {
-  kw<"import"> (plainStar kw<"as"> Definition | Definition | ImportGroup) kw<"from"> String semi
+  kw<"import"> ("*" kw<"as"> Definition | Definition | ImportGroup) kw<"from"> String semi
   kw<"import"> String semi
 }
 
@@ -82,8 +82,7 @@ declaration {
 }
 
 FunctionDeclaration {
-  !only kw<"function"> Definition plainStar? ParamList Block |
-  async !only kw<"function"> Definition plainStar? ParamList Block
+  ckw<"async">? !only kw<"function"> "*"? Definition ParamList Block
 }
 
 ClassDeclaration {
@@ -96,8 +95,8 @@ ClassBody {
 
 MethodDefinition {
   kw<"static">?
-  async?
-  (get | set | plainStar)?
+  ckw<"async">?
+  (ckw<"get"> | ckw<"set"> | "*")?
   PropertyName
   ParamList
   Block
@@ -180,7 +179,7 @@ ArrayExpression {
 propName { PropertyName | "[" expression "]" | Number | String }
 
 Property {
-  async? (get | set | plainStar)? propName ParamList Block |
+  ckw<"async">? (ckw<"get"> | ckw<"set"> | "*")? propName ParamList Block |
   propName ~destructure (":" expressionNoComma)? |
   "..." expressionNoComma
 }
@@ -195,7 +194,7 @@ ClassExpression {
 }
 
 FunctionExpression {
-  kw<"function"> Definition? plainStar? ParamList Block
+  kw<"function"> "*"? Definition? ParamList Block
 }
 
 NewExpression {
@@ -204,12 +203,12 @@ NewExpression {
 }
 
 PrefixExpression {
-  !prefix (kw<"yield"> | kw<"void"> | kw<"typeof"> | kw<"delete"> | op<"!"> | op<"~"> | op<"++" | "--"> | op<"+" | "-">) expressionNoComma
+  !prefix (ckw<"yield"> | kw<"void"> | kw<"typeof"> | kw<"delete"> | op<"!"> | op<"~"> | op<"++" | "--"> | op<"+" | "-">) expressionNoComma
 }
 
 BinaryExpression {
   expressionNoComma !exp op<"**"> expressionNoComma |
-  expressionNoComma !times op<"*" | "/" | "%"> expressionNoComma |
+  expressionNoComma !times (op<"/" | "%"> | tag.Operator<"*">) expressionNoComma |
   expressionNoComma !plus op<"+" | "-"> expressionNoComma |
   expressionNoComma !shift op<">>" ">"? | "<<"> expressionNoComma |
   expressionNoComma !rel (op<"<" "="? | ">" "="> | kw<"in"> | kw<"instanceof">) expressionNoComma |
@@ -238,7 +237,7 @@ ArgList {
 }
 
 ArrowFunction {
-  async? (tag.ParamList<Definition> | ParamList) "=>" (Block | expression)
+  ckw<"async">? (tag.ParamList<Definition> | ParamList) "=>" (Block | expression)
 }
 
 TemplateString {
@@ -255,6 +254,9 @@ commaSep1<content> {
 
 kw<word> { specialize<identifier, word, Keyword> }
 
+// Contextual keywords
+ckw<word> { extend<identifier, word, Keyword> }
+
 boolean { specialize<identifier, "true", Boolean> | specialize<identifier, "false", Boolean> }
 
 this { specialize<identifier, "this", This> }
@@ -270,12 +272,6 @@ Definition { identifier ~arrow }
 Label { identifier }
 
 semi { ";" }
-
-async { extend<identifier, "async", Keyword> }
-
-get { extend<identifier, "get", Keyword> }
-
-set { extend<identifier, "set", Keyword> }
 
 tokens {
   skip { std.whitespace+ | LineComment | BlockComment }
@@ -332,9 +328,5 @@ tokens {
 
   group {
     RegExp { "/" ([^/\\\n[] | "\\" [^\n] | "[" ([^\n\\\]] | "\\" [^\n])* "]")+ ("/" [gimsuy]*)? }
-  }
-
-  group {
-    plainStar { "*" }
   }
 }
