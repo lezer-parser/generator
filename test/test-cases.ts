@@ -6,7 +6,7 @@ let fs = require("fs"), path = require("path")
 let caseDir = path.join(__dirname, "cases")
 
 function compressAST(ast: string, file: string) {
-  let token = /\s*($|[(),]|\"(?:\\.|[^"])*\"|[\w⚠]+)/gy
+  let token = /\s*($|[(),]|"(?:\\.|[^"])*"|[\p{Alphabetic}\d_$⚠]+)/gyu
   let result = ""
   for (;;) {
     let m = token.exec(ast)

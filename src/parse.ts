@@ -5,7 +5,9 @@ import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclarat
 
 // Note that this is the parser for grammar files, not the generated parser
 
-const wordChar = /[\w_$]/ // FIXME international
+let word = /[\w_$]+/gy
+// Some engines (specifically SpiderMonkey) have still not implemented \p
+try { word = /[\p{Alphabetic}\d_$]+/ugy } catch (_) {}
 
 const none: readonly any[] = []
 
@@ -69,12 +71,11 @@ export class Input {
       return this.set("set", this.string.slice(start + 1, end - 1), start, end)
     } else if (/[()!~+*?{}<>\.,|=]/.test(next)) {
       return this.set(next, null, start, start + 1)
-    } else if (wordChar.test(next)) {
-      let end = start + 1
-      while (end < this.string.length && wordChar.test(this.string[end])) end++
-      return this.set("id", this.string.slice(start, end), start, end)
     } else {
-      this.raise("Unexpected character " + JSON.stringify(next), start)
+      word.lastIndex = start
+      let m = word.exec(this.string)
+      if (!m) return this.raise("Unexpected character " + JSON.stringify(next), start)
+      return this.set("id", m[0], start, start + m[0].length)
     }
   }
 
