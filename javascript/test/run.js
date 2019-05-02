@@ -1,4 +1,4 @@
-const {Parser, StringStream} = require("lezer")
+const {Parser, StringStream, Tokenizer} = require("lezer")
 const {buildParser} = require("../..")
 const ist = require("ist")
 
@@ -17,11 +17,22 @@ function compressAST(ast, file) {
   return result
 }
 
+function externalTokenizer(name, terms) {
+  if (name != "insertSemicolon") throw new Error("Unexpected external tokenizer name " + name)
+  const newline = /[\n\u2028\u2029]/, brace = "}".charCodeAt(0)
+  return new Tokenizer((input, stack) => {
+    let next = input.next()
+    if (next == brace || next == -1 || newline.test(input.read(stack.pos, input.pos - 1)))
+      input.accept(terms.insertSemi, input.pos - 1)
+  })
+}
+
 let parser = null
+
 let force = () => {
   if (!parser) {
     let text = fs.readFileSync(path.join(__dirname, "../src/javascript.grammar"), "utf8")
-    parser = buildParser(text, {fileName: "javascript.grammar"})
+    parser = buildParser(text, {fileName: "javascript.grammar", externalTokenizer})
   }
   return parser
 }
