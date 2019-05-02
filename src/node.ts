@@ -35,7 +35,16 @@ export class PrecDeclaration extends Node {
 export class TokenGroupDeclaration extends Node {
   constructor(start: number,
               readonly rules: readonly RuleDeclaration[],
-              readonly groups: readonly TokenGroupDeclaration[]) {
+              readonly groups: readonly (TokenGroupDeclaration | ExternalTokenGroupDeclaration)[]) {
+    super(start)
+  }
+}
+
+export class ExternalTokenGroupDeclaration extends Node {
+  constructor(start: number,
+              readonly id: Identifier,
+              readonly source: string,
+              readonly items: readonly Identifier[]) {
     super(start)
   }
 }

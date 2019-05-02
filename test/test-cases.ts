@@ -1,5 +1,5 @@
 import {buildParser} from ".."
-import {Parser, StringStream} from "lezer"
+import {Parser, InputStream, StringStream, Tokenizer} from "lezer"
 const ist = require("ist")
 
 let fs = require("fs"), path = require("path")
@@ -17,14 +17,26 @@ function compressAST(ast: string, file: string) {
   return result
 }
 
+function externalTokenizer(name: string, terms: {[name: string]: number}) {
+  if (name == "ext1") return new Tokenizer((input: InputStream) => {
+    let next = input.next()
+    if (next == "{".charCodeAt(0)) input.accept(terms.braceOpen)
+    else if (next == "}".charCodeAt(0)) input.accept(terms.braceClose)
+    else if (next == ".".charCodeAt(0)) input.accept(terms.dot)
+  })
+  throw new Error("Undefined external tokenizer " + name)
+}
+
 describe("Cases", () => {
   for (let file of fs.readdirSync(caseDir)) {
-    let name = /^[^\.]*/.exec(file)![0]
-    let content = fs.readFileSync(path.join(caseDir, file), "utf8")
+    let match = /^(.*)\.txt$/.exec(file)
+    if (!match) continue
+    let name = match[1], fileName = path.join(caseDir, file)
+    let content = fs.readFileSync(fileName, "utf8")
     let parts = content.split(/\n---+\n/), grammarText = parts.shift()
     let parser: Parser | null = null
     let force = () => {
-      if (!parser) parser = buildParser(grammarText, {fileName: file})
+      if (!parser) parser = buildParser(grammarText, {fileName, externalTokenizer})
       return parser
     }
 

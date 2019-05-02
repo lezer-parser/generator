@@ -1,4 +1,5 @@
-import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenGroupDeclaration,
+import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
+        TokenGroupDeclaration, ExternalTokenGroupDeclaration,
         Identifier, Expression,
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, AnyExpression, ConflictMarker} from "./node"
@@ -275,12 +276,30 @@ function parseTokenGroup(input: Input) {
   let start = input.start
   input.next()
   input.expect("{")
-  let tokenRules: RuleDeclaration[] = [], subGroups: TokenGroupDeclaration[] = []
+  let tokenRules: RuleDeclaration[] = [], subGroups: (TokenGroupDeclaration | ExternalTokenGroupDeclaration)[] = []
   while (!input.eat("}")) {
     if (input.type == "id" && input.value == "group") subGroups.push(parseTokenGroup(input))
+    else if (input.type == "id" && input.value == "external") subGroups.push(parseExternalTokenGroup(input))
     else tokenRules.push(parseRule(input, true))
   }
   return new TokenGroupDeclaration(start, tokenRules, subGroups)
+}
+
+function parseExternalTokenGroup(input: Input) {
+  let start = input.start
+  input.next()
+  let id = parseIdent(input)
+  input.expect("id", "from")
+  if (input.type != "string") input.unexpected()
+  let source = input.value
+  input.next()
+  input.expect("{")
+  let items: Identifier[] = []
+  while (!input.eat("}")) {
+    if (items.length) input.expect(",")
+    items.push(parseIdent(input))
+  }
+  return new ExternalTokenGroupDeclaration(start, id, source, items)
 }
 
 function readString(string: string) {

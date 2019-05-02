@@ -1,4 +1,4 @@
-import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration,
+import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration, ExternalTokenGroupDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
         exprsEq, exprEq} from "./node"
@@ -6,7 +6,8 @@ import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
-import {Parser, ParseState, REDUCE_DEPTH_SIZE, noToken, Tokenizer, TERM_TAGGED, SPECIALIZE, REPLACE, EXTEND} from "lezer"
+import {Parser, ParseState, REDUCE_DEPTH_SIZE, noToken, Tokenizer,
+        TERM_TAGGED, SPECIALIZE, REPLACE, EXTEND} from "lezer"
 
 const none: readonly any[] = []
 
@@ -73,20 +74,22 @@ export type BuildOptions = {
   fileName?: string,
   warn?: (message: string) => void,
   includeNames?: boolean,
-  moduleStyle?: string
+  moduleStyle?: string,
+  externalTokenizer?: (name: string, terms: {[name: string]: number}) => Tokenizer
 }
 
 class Builder {
   ast: GrammarDeclaration
   input: Input
   terms = new TermSet
-  tokenGroups: TokenGroup[] = []
+  tokenGroups: TokenSet[] = []
   specialized: {[name: string]: {value: string, term: Term, type: string}[]} = Object.create(null)
   rules: Rule[] = []
   built: BuiltRule[] = []
   ruleNames: {[name: string]: boolean} = Object.create(null)
   namespaces: {[name: string]: Namespace} = Object.create(null)
-  tokens: {[name: string]: TokenGroup} = Object.create(null)
+  tokens: {[name: string]: TokenSet} = Object.create(null)
+  namedTerms: {[name: string]: Term} = Object.create(null)
   used: {[name: string]: boolean} = Object.create(null)
 
   constructor(text: string, readonly options: BuildOptions) {
@@ -94,7 +97,7 @@ class Builder {
     this.ast = this.input.parse()
 
     if (this.ast.tokens) this.gatherTokenGroups(this.ast.tokens)
-    else this.tokenGroups.push(new TokenGroup(this, none, null))
+    else this.tokenGroups.push(new TokenGroup(this, none, null, "t0"))
 
     this.defineNamespace("tag", new TagNamespace)
 
@@ -144,20 +147,6 @@ class Builder {
     for (let rule of rules) rule.name.rules.push(rule)
     let table = buildAutomaton(this.terms)
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
-    let tokenizers: string[] = []
-    let skipped: (string | null)[] = []
-    for (let group of this.tokenGroups) {
-      skipped.push(group.skipState ? group.skipState.compile().toSource() :
-                   group.parent ? skipped[this.tokenGroups.indexOf(group.parent)] : null)
-      let startState = group.startState.compile()
-      let source = startState.toSource()
-      if (source) tokenizers.push(source)
-      if (startState.accepting)
-        this.raise(`Grammar contains zero-length tokens (in '${startState.accepting.name}')`,
-                         group.rules.find(r => r.id.name == startState.accepting!.name)!.start)
-      if (group.skipState && /\bskip\b/.test(verbose)) console.log(group.skipState.compile().toString())
-      if (/\btokens\b/.test(verbose)) console.log(startState.toString())
-    }
     let specialized = [], specializations = []
     for (let name in this.specialized) {
       specialized.push(this.terms.terminals.find(t => t.name == name)!.id)
@@ -168,18 +157,27 @@ class Builder {
       }
       specializations.push(table)
     }
-    let states = table.map(s => this.stateData(s, skipped, tokenizers))
+    let states = table.map(s => this.stateData(s))
     let {taggedGoto, untaggedGoto} = computeGotoTables(table)
 
-    return {rules, tags, names, repeatInfo, states, taggedGoto, untaggedGoto, specialized, specializations}
+    let terms: {[name: string]: number} = {}
+    for (let prop in this.namedTerms) terms[prop] = this.namedTerms[prop].id
+
+    return {rules, tags, names, repeatInfo, states, taggedGoto, untaggedGoto, specialized, specializations, terms}
   }
 
   getParser() {
-    let {states, tags, names, repeatInfo, taggedGoto, untaggedGoto, specialized, specializations} = this.getParserData()
+    let {states, tags, names, repeatInfo, taggedGoto, untaggedGoto, specialized, specializations, terms} = this.getParserData()
     let evaluated: {[source: string]: Tokenizer} = Object.create(null)
-    function getTokenizer(source: string | null): Tokenizer {
-      return source == null ? noToken : evaluated[source] || (evaluated[source] = new Tokenizer((1,eval)("(" + source + ")")))
+    let getTokenizer = (tok: TokenizerSpec | null): Tokenizer => {
+      if (!tok) return noToken
+      let found = evaluated[tok.id]
+      if (found) return found
+      if (!tok.external) return evaluated[tok.id] = new Tokenizer((1, eval)("(" + tok.func + ")"))
+      if (!this.options.externalTokenizer) throw new Error("No externalTokenizer option given")
+      return evaluated[tok.id] = this.options.externalTokenizer(tok.external.name, terms)
     }
+
     let stateObjs = states.map((s, i) => {
       let {actions, recover, defaultReduce, forcedReduce, skip, tokenizers} = s
       return new ParseState(i, actions, recover, defaultReduce, forcedReduce, getTokenizer(skip), tokenizers.map(getTokenizer))
@@ -195,19 +193,8 @@ class Builder {
     let counts: {[key: string]: number} = Object.create(null)
     function count(value: any) { let key = "" + value; counts[key] = (counts[key] || 0) + 1 }
 
-    let tokenizerNames: {[key: string]: string} = Object.create(null), tokenizerID = 0, tokenizerText = "", sawNoToken = false
-    function tokenizerName(tok: string | null) {
-      if (!tok) { sawNoToken = true; return "noToken" }
-      let name = tokenizerNames[tok]
-      if (!name) {
-        tokenizerNames[tok] = name = "t" + tokenizerID++
-        tokenizerText += `const ${name} = new Tokenizer(${tok})\n`
-      }
-      return name
-    }
-
-    function tokenizersToCode(toks: (string | null)[]) {
-      return "[" + toks.map(tokenizerName).join(",") + "]"
+    function tokenizersToCode(toks: TokenizerSpec[]) {
+      return "[" + toks.map(t => t.id).join(",") + "]"
     }
     function numbersToCode(nums: number[]) {
       return "[" + nums.join(",") + "]"
@@ -236,14 +223,14 @@ class Builder {
     for (let state of states) {
       stateText.push(`s(${state.defaultReduce || reference(numbersToCode(state.actions))
                       }, ${state.forcedReduce}, ${
-                      tokenizerName(state.skip)}, ${reference(tokenizersToCode(state.tokenizers))}${
+                      state.skip ? state.skip.id : "noToken"}, ${reference(tokenizersToCode(state.tokenizers))}${
                       state.recover.length ? ", " + reference(numbersToCode(state.recover)) : ""})`)
     }
 
     return "// This file was generated by the parser generator (FIXME)\n" +
-      (moduleStyle == "es6" ? `import {s, Tokenizer, Parser${sawNoToken ? ", noToken" : ""}} from "lezer"\n`
-       : `const {s, Tokenizer, Parser${sawNoToken ? ", noToken" : ""}} = require("lezer")\n`) +
-      tokenizerText +
+      (moduleStyle == "es6" ? `import {s, Tokenizer, Parser${states.some(s => !s.skip) ? ", noToken" : ""}} from "lezer"\n`
+       : `const {s, Tokenizer, Parser${states.some(s => !s.skip) ? ", noToken" : ""}} = require("lezer")\n`) +
+      this.tokenGroups.reduce((s, group) => s + group.imports(moduleStyle), "") +
       varText +
       "s.id = 0\n" +
       (moduleStyle == "es6" ? `export default` : `module.exports = `) +
@@ -254,12 +241,15 @@ class Builder {
   }
 
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
-    let group = new TokenGroup(this, decl.rules, parent)
+    let group = new TokenGroup(this, decl.rules, parent, "t" + this.tokenGroups.length)
     this.tokenGroups.push(group)
-    for (let subGroup of decl.groups) this.gatherTokenGroups(subGroup, group)
+    for (let subGroup of decl.groups) {
+      if (subGroup instanceof TokenGroupDeclaration) this.gatherTokenGroups(subGroup, group)
+      else this.tokenGroups.push(new ExternalTokenGroup(this, subGroup, parent!, "t" + this.tokenGroups.length))
+    }
   }
 
-  makeTerminal(name: string, tag: string | null, group: TokenGroup) {
+  makeTerminal(name: string, tag: string | null, group: TokenSet) {
     for (let i = 0;; i++) {
       let cur = i ? `${name}-${i}` : name
       if (this.terms.terminals.some(t => t.name == cur)) continue
@@ -268,7 +258,7 @@ class Builder {
     }
   }
 
-  stateData(state: LRState, skipped: (null | string)[], tokenizers: string[]) {
+  stateData(state: LRState) {
     let actions = [], recover = [], forcedReduce = 0, defaultReduce = 0
     if (state.actions.length) {
       let first = state.actions[0] as Reduce
@@ -287,26 +277,26 @@ class Builder {
       let defaultPos = positions.reduce((a, b) => a.pos - b.pos || b.rule.parts.length - a.rule.parts.length < 0 ? b : a)
       forcedReduce = (defaultPos.rule.name.id << REDUCE_DEPTH_SIZE) | (defaultPos.pos + 1)
     }
-    let {skip, tokenizers: tok} = this.tokensForState(state, skipped, tokenizers)
+    let {skip, tokenizers: tok} = this.tokensForState(state)
     return {actions, recover, defaultReduce, forcedReduce, skip, tokenizers: tok}
   }
 
-  tokensForState(state: LRState, skipped: (null | string)[], tokenizers: string[]) {
-    let found: (string | null)[] = [], skip = null
-    for (let action of state.actions) {
-      let group = this.tokens[action.term.name]
-      let index = this.tokenGroups.indexOf(group)
-      let curSkip = skipped[index < 0 ? 0 : index]
-      if (skip != curSkip) {
-        if (skip != null)
+  tokensForState(state: LRState): {skip: TokenizerSpec | null, tokenizers: TokenizerSpec[]} {
+    let found: TokenizerSpec[] = [], skip: TokenizerSpec | null = null
+    let add = (group: TokenSet) => {
+      let curSkip = group.skip, curToken = group.tokenizer
+      if (curSkip) {
+        if (skip && skip != curSkip)
           this.raise(`Inconsistent skip rules for state ${state.set.filter(p => p.pos > 0).join() || "start"}`)
         skip = curSkip
       }
-      if (index < 0) continue
-      let tokenizer = tokenizers[index]
-      if (!found.includes(tokenizer)) found.push(tokenizer)
+      if (curToken && !found.includes(curToken)) found.push(curToken)
     }
-    if (found.length == 0) found.push(null)
+    for (let action of state.actions) {
+      let group = this.tokens[action.term.name]
+      if (group) add(group)
+    }
+    if (found.length == 0) add(this.tokenGroups[0])
     return {skip, tokenizers: found}
   }
 
@@ -445,7 +435,7 @@ class Builder {
     } else if (expr instanceof SequenceExpression) {
       return this.normalizeSequence(expr)
     } else if (expr instanceof LiteralExpression) {
-      return [p(this.tokenGroups[0].getLiteral(expr))]
+      return [p(this.tokenGroups[0].getLiteral(expr)!)]
     } else if (expr instanceof NamedExpression) {
       return this.resolve(expr)
     } else {
@@ -458,6 +448,7 @@ class Builder {
     this.used[rule.id.name] = true
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
                             rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
+    if (args.length == 0) this.namedTerms[rule.id.name] = name
     this.built.push(new BuiltRule(rule.id.name, args, name))
     return this.defineRule(name, this.normalizeExpr(expr))
   }
@@ -543,16 +534,33 @@ class BuildingRule {
   constructor(readonly name: string, readonly start: State, readonly to: State, readonly args: readonly Expression[]) {}
 }
 
-class TokenGroup {
+abstract class TokenSet {
+  constructor(readonly parent: TokenGroup | null, readonly id: string) {}
+  abstract getToken(expr: NamedExpression): Term | null
+  getLiteral(expr: LiteralExpression): Term | null { return null }
+  checkUnused() {}
+  get skip(): TokenizerSpec | null { return null }
+  abstract get tokenizer(): TokenizerSpec | null
+  imports(style: string) { return "" }
+}
+
+class TokenizerSpec {
+  constructor(readonly id: string, readonly func: string, readonly external: ExternalTokenGroup | null = null) {}
+}
+
+class TokenGroup extends TokenSet {
   startState: State = new State
   skipState: State | null = null
   built: BuiltRule[] = []
   used: {[name: string]: boolean} = Object.create(null)
   building: BuildingRule[] = [] // Used for recursion check
+  spec: TokenizerSpec | null = null
+  skipSpec: TokenizerSpec | null = null
 
   constructor(readonly b: Builder,
               readonly rules: readonly RuleDeclaration[],
-              readonly parent: TokenGroup | null) {
+              parent: TokenGroup | null, id: string) {
+    super(parent, id)
     for (let rule of rules) if (rule.id.name != "skip") this.b.unique(rule.id)
     let skip = rules.find(r => r.id.name == "skip")
     if (skip) {
@@ -577,6 +585,7 @@ class TokenGroup {
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
     let term = this.b.makeTerminal(expr.toString(), rule.tag ? rule.tag.name : isTag(name), this)
+    if (expr.args.length == 0) this.b.namedTerms[expr.id.name] = term
     this.buildRule(rule, expr, this.startState, new State(term))
     this.built.push(new BuiltRule(name, expr.args, term))
     return term
@@ -685,6 +694,73 @@ class TokenGroup {
   checkUnused() {
     for (let rule of this.rules) if (!this.used[rule.id.name])
       this.b.warn(`Unused token rule '${rule.id.name}'`, rule.start)
+  }
+
+  get skip() {
+    if (!this.skipState) return null
+    if (!this.skipSpec) {
+      let compiled = this.skipState.compile(), source = compiled.toSource()
+      if (!source) return null
+      if (/\bskip\b/.test(verbose)) console.log(compiled.toString())
+      this.skipSpec = new TokenizerSpec(this.id + "s", source)
+    }
+    return this.skipSpec
+  }
+
+  get tokenizer() {
+    if (!this.spec) {
+      let startState = this.startState.compile()
+      let source = startState.toSource()
+      if (!source) return null
+      if (startState.accepting)
+        this.b.raise(`Grammar contains zero-length tokens (in '${startState.accepting.name}')`,
+                     this.rules.find(r => r.id.name == startState.accepting!.name)!.start)
+      if (/\btokens\b/.test(verbose)) console.log(startState.toString())
+      this.spec = new TokenizerSpec(this.id, source)
+    }
+    return this.spec
+  }
+
+  get source() {
+    let result = ""
+    if (this.skipSpec) result += `const ${this.id}s = new Tokenizer(${this.skipSpec.func})\n`
+    if (this.spec) result += `const ${this.id} = new Tokenizer(${this.spec.func})\n`
+    return result
+  }
+}
+
+class ExternalTokenGroup extends TokenSet {
+  name: string
+  from: string
+  terms: Term[] = []
+  spec: TokenizerSpec | null = null
+
+  constructor(readonly b: Builder,
+              decl: ExternalTokenGroupDeclaration,
+              parent: TokenGroup, id: string) {
+    super(parent, id)
+    this.name = decl.id.name
+    this.from = decl.source
+    for (let item of decl.items) {
+      b.unique(item)
+      this.terms.push(b.namedTerms[item.name] = b.makeTerminal(item.name, null, this))
+    }
+  }
+
+  getToken(expr: NamedExpression) {
+    if (expr.args.length) this.b.raise(`External tokens can't take arguments`, expr.start)
+    return this.terms.find(t => t.name == expr.id.name) || null
+  }
+
+  get tokenizer() {
+    if (!this.spec)
+      this.spec = new TokenizerSpec(this.id, this.id, this)
+    return this.spec
+  }
+
+  source(style: string) {
+    if (style == "es6") return `import {${this.name} as ${this.id}} from ${JSON.stringify(this.from)}\n`
+    else return `const {${this.name}: ${this.id}} = require(${JSON.stringify(this.from)})\n`
   }
 }
 
