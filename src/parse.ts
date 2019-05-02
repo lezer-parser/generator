@@ -259,15 +259,15 @@ function parsePrec(input: Input) {
   let start = input.start
   input.next()
   input.expect("{")
-  let assoc: ("left" | "right" | null)[] = [], names = []
+  let items: {id: Identifier, type: "left" | "right" | "cut" | null}[] = []
   while (!input.eat("}")) {
-    if (names.length) input.expect(",")
-    let name = parseIdent(input)
-    if (name.name == "only") input.raise("The precedence name 'only' is reserved", name.start)
-    names.push(name)
-    assoc.push(input.eat("id", "left") ? "left" : input.eat("id", "right") ? "right" : null)
+    if (items.length) input.expect(",")
+    items.push({
+      id: parseIdent(input),
+      type: input.eat("id", "left") ? "left" : input.eat("id", "right") ? "right" : input.eat("id", "cut") ? "cut" : null
+    })
   }
-  return new PrecDeclaration(start, assoc, names)
+  return new PrecDeclaration(start, items)
 }
       
 function parseTokenGroup(input: Input) {

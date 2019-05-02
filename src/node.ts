@@ -27,8 +27,7 @@ export class RuleDeclaration extends Node {
 
 export class PrecDeclaration extends Node {
   constructor(start: number,
-              readonly assoc: ("left" | "right" | null)[],
-              readonly names: readonly Identifier[]) {
+              readonly items: {id: Identifier, type: "left" | "right" | "cut" | null}[]) {
     super(start)
   }
 }

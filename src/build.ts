@@ -30,7 +30,7 @@ class Parts {
   }
 
   withConflicts(pos: number, conflicts: Conflicts) {
-    if (conflicts.precedence == 0 && conflicts.ambigGroups.length == 0 && !conflicts.only) return this
+    if (conflicts == Conflicts.none) return this
     let array = this.conflicts ? this.conflicts.slice() : this.ensureConflicts() as Conflicts[]
     array[pos] = array[pos].join(conflicts)
     return new Parts(this.terms, array)
@@ -333,15 +333,17 @@ class Builder {
     for (let marker of markers) {
       if (marker.type == "ambig") {
         here = here.join(new Conflicts(0, [marker.id.name]))
-      } else if (marker.id.name == "only") {
-        here = here.join(new Conflicts(0, none, true))
       } else {
         let precs = this.ast.precedences!
-        let pos = precs ? precs.names.findIndex(id => id.name == marker.id.name) : -1
-        if (pos < 0) this.raise(`Reference to unknown precedence: '${marker.id.name}'`, marker.id.start)
-        let assoc = precs.assoc[pos], value = (precs.names.length - pos) << 2
-        here = here.join(new Conflicts(value, none))
-        atEnd = atEnd.join(new Conflicts(value + (assoc == "left" ? 1 : assoc == "right" ? -1 : 0), none))
+        let index = precs ? precs.items.findIndex(item => item.id.name == marker.id.name) : -1
+        if (index < 0) this.raise(`Reference to unknown precedence: '${marker.id.name}'`, marker.id.start)
+        let prec = precs.items[index], value = precs.items.length - index
+        if (prec.type == "cut") {
+          here = here.join(new Conflicts(0, none, value))
+        } else {
+          here = here.join(new Conflicts(value << 2))
+          atEnd = atEnd.join(new Conflicts((value << 2) + (prec.type == "left" ? 1 : prec.type == "right" ? -1 : 0)))
+        }
       }
     }
     return {here, atEnd}

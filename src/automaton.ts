@@ -335,7 +335,7 @@ export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[
     for (let i = 0; i < byTerm.length; i++) {
       let term = byTerm[i]
       if (term.terminal) {
-        let set = applyOnly(byTermPos[i])
+        let set = applyCut(byTermPos[i])
         let next = getState(set)
         if (next) state.addAction(new Shift(term, next), set.map(p => p.reverse()))
       } else {
@@ -356,9 +356,17 @@ export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[
   return states
 }
 
-function applyOnly(set: readonly Pos[]): readonly Pos[] {
-  let found: null | Pos[] = null
-  for (let pos of set) if (pos.rule.conflicts[pos.pos - 1].only) (found || (found = [])).push(pos)
+function applyCut(set: readonly Pos[]): readonly Pos[] {
+  let found: null | Pos[] = null, cut = 1
+  for (let pos of set) {
+    let value = pos.rule.conflicts[pos.pos - 1].cut
+    if (value < cut) continue
+    if (!found || value > cut) {
+      cut = value
+      found = []
+    }
+    found.push(pos)
+  }
   return found || set
 }
 

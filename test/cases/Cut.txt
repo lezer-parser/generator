@@ -1,7 +1,11 @@
+precedence {
+  statement cut
+}
+
 program { statement* }
 
 statement {
-  tag.Block<!only "{" statement* "}"> |
+  tag.Block<!statement "{" statement* "}"> |
   expression ";"
 }
 

@@ -89,21 +89,21 @@ export const PREC_REPEAT = 2e8
 const none: readonly any[] = []
 
 export class Conflicts {
-  constructor(readonly precedence: number, readonly ambigGroups: readonly string[], readonly only = false) {}
+  constructor(readonly precedence: number, readonly ambigGroups: readonly string[] = none, readonly cut = 0) {}
 
   join(other: Conflicts) {
     if (this == Conflicts.none || this == other) return other
     if (other == Conflicts.none) return this
     return new Conflicts(Math.max(this.precedence, other.precedence), union(this.ambigGroups, other.ambigGroups),
-                         this.only || other.only)
+                         Math.max(this.cut, other.cut))
   }
 
   cmp(other: Conflicts) {
     return this.precedence - other.precedence || cmpSet(this.ambigGroups, other.ambigGroups, (a, b) => a < b ? -1 : a > b ? 1 : 0) ||
-      +this.only - +other.only
+      this.cut - other.cut
   }
 
-  static none = new Conflicts(0, none)
+  static none = new Conflicts(0)
 }
 
 export function union(a: readonly string[], b: readonly string[]): readonly string[] {
