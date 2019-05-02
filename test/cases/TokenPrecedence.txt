@@ -1,0 +1,11 @@
+program { tag.A<"A"> BB? tag.B<"B">+ }
+
+tokens {
+  group !high { BB { "B" } }
+}
+
+---
+
+ABBB
+
+==> A, BB, B, B

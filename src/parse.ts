@@ -96,8 +96,8 @@ export class Input {
     }
   }
 
-  unexpected() {
-    this.raise(`Unexpected token '${this.string.slice(this.start, this.end)}'`, this.start)
+  unexpected(): never {
+    return this.raise(`Unexpected token '${this.string.slice(this.start, this.end)}'`, this.start)
   }
 
   expect(type: string, value: any = null) {
@@ -275,6 +275,7 @@ function parsePrec(input: Input) {
 function parseTokenGroup(input: Input) {
   let start = input.start
   input.next()
+  let prec = parseTokenPrecedence(input)
   input.expect("{")
   let tokenRules: RuleDeclaration[] = [], subGroups: (TokenGroupDeclaration | ExternalTokenGroupDeclaration)[] = []
   while (!input.eat("}")) {
@@ -282,7 +283,16 @@ function parseTokenGroup(input: Input) {
     else if (input.type == "id" && input.value == "external") subGroups.push(parseExternalTokenGroup(input))
     else tokenRules.push(parseRule(input, true))
   }
-  return new TokenGroupDeclaration(start, tokenRules, subGroups)
+  return new TokenGroupDeclaration(start, prec, tokenRules, subGroups)
+}
+
+function parseTokenPrecedence(input: Input) {
+  if (!input.eat("!")) return 2
+  return input.eat("id", "extraLow") ? 0 :
+    input.eat("id", "low") ? 1 :
+    input.eat("id", "high") ? 3 :
+    input.eat("id", "extraHigh") ? 4 :
+    input.unexpected()
 }
 
 function parseExternalTokenGroup(input: Input) {
@@ -293,13 +303,14 @@ function parseExternalTokenGroup(input: Input) {
   if (input.type != "string") input.unexpected()
   let source = input.value
   input.next()
+  let prec = parseTokenPrecedence(input)
   input.expect("{")
   let items: Identifier[] = []
   while (!input.eat("}")) {
     if (items.length) input.expect(",")
     items.push(parseIdent(input))
   }
-  return new ExternalTokenGroupDeclaration(start, id, source, items)
+  return new ExternalTokenGroupDeclaration(start, id, source, prec, items)
 }
 
 function readString(string: string) {

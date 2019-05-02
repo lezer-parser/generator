@@ -97,7 +97,7 @@ class Builder {
     this.ast = this.input.parse()
 
     if (this.ast.tokens) this.gatherTokenGroups(this.ast.tokens)
-    else this.tokenGroups.push(new TokenGroup(this, none, null, "t0"))
+    else this.tokenGroups.push(new TokenGroup(this, none, null, "t0", 2))
 
     this.defineNamespace("tag", new TagNamespace)
 
@@ -239,11 +239,11 @@ class Builder {
   }
 
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
-    let group = new TokenGroup(this, decl.rules, parent, "t" + this.tokenGroups.length)
+    let group = new TokenGroup(this, decl.rules, parent, "t" + this.tokenGroups.length, decl.prec)
     this.tokenGroups.push(group)
     for (let subGroup of decl.groups) {
       if (subGroup instanceof TokenGroupDeclaration) this.gatherTokenGroups(subGroup, group)
-      else this.tokenGroups.push(new ExternalTokenGroup(this, subGroup, parent!, "t" + this.tokenGroups.length))
+      else this.tokenGroups.push(new ExternalTokenGroup(this, subGroup, parent!, "t" + this.tokenGroups.length, subGroup.prec))
     }
   }
 
@@ -295,7 +295,7 @@ class Builder {
       if (group) add(group)
     }
     if (found.length == 0) add(this.tokenGroups[0])
-    return {skip, tokenizers: found}
+    return {skip, tokenizers: found.sort((a, b) => b.prec - a.prec)}
   }
 
   substituteArgs(expr: Expression, args: readonly Expression[], params: readonly Identifier[]) {
@@ -533,7 +533,7 @@ class BuildingRule {
 }
 
 abstract class TokenSet {
-  constructor(readonly parent: TokenGroup | null, readonly id: string) {}
+  constructor(readonly parent: TokenGroup | null, readonly id: string, readonly prec: number) {}
   abstract getToken(expr: NamedExpression): Term | null
   getLiteral(expr: LiteralExpression): Term | null { return null }
   checkUnused() {}
@@ -552,8 +552,8 @@ class TokenGroup extends TokenSet {
 
   constructor(readonly b: Builder,
               readonly rules: readonly RuleDeclaration[],
-              parent: TokenGroup | null, id: string) {
-    super(parent, id)
+              parent: TokenGroup | null, id: string, prec: number) {
+    super(parent, id, prec)
     for (let rule of rules) if (rule.id.name != "skip") this.b.unique(rule.id)
     let skip = rules.find(r => r.id.name == "skip")
     if (skip) {
@@ -719,13 +719,13 @@ class TokenGroup extends TokenSet {
 
   tokenizer() {
     let src = this.tokenizerSource
-    return src ? new Tokenizer((1, eval)("(" + src + ")")) : null
+    return src ? new Tokenizer((1, eval)("(" + src + ")")).withPrec(this.prec) : null
   }
 
   source() {
     let skip = this.skipSource, tok = this.tokenizerSource
     return (skip ? `const ${this.id}s = new Tokenizer(${skip})\n` : "") +
-      (tok ? `const ${this.id} = new Tokenizer(${tok})\n` : "")
+      (tok ? `const ${this.id} = new Tokenizer(${tok})${this.prec != 2 ? `.withPrec(${this.prec})` : ""}\n` : "")
   }
 }
 
@@ -736,8 +736,8 @@ class ExternalTokenGroup extends TokenSet {
 
   constructor(readonly b: Builder,
               decl: ExternalTokenGroupDeclaration,
-              parent: TokenGroup, id: string) {
-    super(parent, id)
+              parent: TokenGroup, id: string, prec: number) {
+    super(parent, id, prec)
     this.name = decl.id.name
     this.from = decl.source
     for (let item of decl.items) {
@@ -755,12 +755,14 @@ class ExternalTokenGroup extends TokenSet {
 
   tokenizer(terms: {[name: string]: number}) {
     if (!this.b.options.externalTokenizer) throw new Error("No externalTokenizer option given")
-    return this.b.options.externalTokenizer(this.name, terms)
+    return this.b.options.externalTokenizer(this.name, terms).withPrec(this.prec)
   }
 
   source(style: string) {
-    if (style == "es6") return `import {${this.name} as ${this.id}} from ${JSON.stringify(this.from)}\n`
-    else return `const {${this.name}: ${this.id}} = require(${JSON.stringify(this.from)})\n`
+    let iName = this.prec != 2 ? this.id + "i" : this.id
+    let importLine = style == "es6" ? `import {${this.name} as ${iName}} from ${JSON.stringify(this.from)}\n`
+      : `const {${this.name}: ${iName}} = require(${JSON.stringify(this.from)})\n`
+    return this.prec == 2 ? importLine : importLine + `const ${this.id} = ${this.id}i.withPrec(${this.prec})\n`
   }
 }
 
