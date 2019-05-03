@@ -305,10 +305,11 @@ function parseExternalTokenGroup(input: Input) {
   input.next()
   let prec = parseTokenPrecedence(input)
   input.expect("{")
-  let items: Identifier[] = []
+  let items: {id: Identifier, tag: Iderntifier | null}[] = []
   while (!input.eat("}")) {
     if (items.length) input.expect(",")
-    items.push(parseIdent(input))
+    let name = parseIdent(input), tag = input.eat("=") ? parseIdent(input) : null
+    items.push({id: name, tag})
   }
   return new ExternalTokenGroupDeclaration(start, id, source, prec, items)
 }

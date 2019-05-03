@@ -740,9 +740,9 @@ class ExternalTokenGroup extends TokenSet {
     super(parent, id, prec)
     this.name = decl.id.name
     this.from = decl.source
-    for (let item of decl.items) {
-      b.unique(item)
-      this.terms.push(b.namedTerms[item.name] = b.makeTerminal(item.name, null, this))
+    for (let {id, tag} of decl.items) {
+      b.unique(id)
+      this.terms.push(b.namedTerms[id.name] = b.makeTerminal(id.name, tag ? tag.name : null, this))
     }
   }
 

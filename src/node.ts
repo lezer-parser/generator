@@ -46,7 +46,7 @@ export class ExternalTokenGroupDeclaration extends Node {
               readonly id: Identifier,
               readonly source: string,
               readonly prec: number,
-              readonly items: readonly Identifier[]) {
+              readonly items: readonly {id: Identifier, tag: Identifier | null}[]) {
     super(start)
   }
 }

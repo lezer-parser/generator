@@ -6,7 +6,7 @@ tokens {
   external ext1 from "./external_tokens.js" {
     braceOpen,
     braceClose,
-    dot
+    dot=Dot
   }
 }
 
@@ -14,4 +14,4 @@ tokens {
 
 x{x}x.y
 
-==> X, Braced(X), X(Y)
+==> X, Braced(X), X(Dot, Y)
