@@ -28,11 +28,12 @@ export class Pos {
   }
 
   cmp(pos: Pos) {
-    return this.cmpSimple(pos) || cmpSet(this.ahead, pos.ahead, (a, b) => a.cmp(b)) || cmpSet(this.ambigAhead, pos.ambigAhead, cmpStr)
+    return this.rule.cmp(pos.rule) || this.pos - pos.pos ||
+      cmpSet(this.ahead, pos.ahead, (a, b) => a.cmp(b)) || cmpSet(this.ambigAhead, pos.ambigAhead, cmpStr)
   }
 
-  cmpSimple(pos: Pos) {
-    return this.rule.cmp(pos.rule) || this.pos - pos.pos
+  eqSimple(pos: Pos) {
+    return pos.rule == this.rule && pos.pos == this.pos
   }
 
   toString() {
@@ -407,10 +408,9 @@ function collapseAutomaton(states: State[]): State[] {
   for (;;) {
     let newStates: State[] = [], mapping: number[] = []
     for (let i = 0; i < states.length; i++) {
-      let state = states[i], set: Pos[] = []
-      for (let pos of state.set) if (!set.some(p => p.cmpSimple(pos) == 0)) set.push(pos)
+      let state = states[i], set = state.set
       let newID = newStates.findIndex((s, index) => {
-        return cmpSet(s.set, set, (a, b) => a.cmpSimple(b)) == 0 &&
+        return s.set.length == set.length && s.set.every((p, i) => p.eqSimple(set[i])) &&
           !hasConflict(i, index, mapping, conflicts)
       })
       if (newID < 0) {
