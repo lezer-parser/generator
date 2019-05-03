@@ -127,7 +127,7 @@ x instanceof String;
 
 ==>
 
-PrefixExpression(Keyword, Variable),
+UnaryExpression(Keyword, Variable),
 BinaryExpression(Variable, Keyword, Variable)
 
 # Delete
@@ -137,14 +137,14 @@ true ? delete thing.prop : null;
 
 ==>
 
-PrefixExpression(Keyword, MemberExpression(Variable, String)),
-ConditionalExpression(Boolean, Operator, PrefixExpression(Keyword, MemberExpression(Variable, PropertyName)), Operator, Null)
+UnaryExpression(Keyword, MemberExpression(Variable, String)),
+ConditionalExpression(Boolean, Operator, UnaryExpression(Keyword, MemberExpression(Variable, PropertyName)), Operator, Null)
 
 # Void
 
 a = void b();
 
-==> AssignmentExpression(Variable, Operator, PrefixExpression(Keyword, CallExpression(Variable, ArgList)))
+==> AssignmentExpression(Variable, Operator, UnaryExpression(Keyword, CallExpression(Variable, ArgList)))
 
 # Augmented assignment
 
@@ -184,7 +184,7 @@ BinaryExpression(BinaryExpression(Variable, Operator, Variable), Operator, Binar
 AssignmentExpression(MemberExpression(Variable, PropertyName), Operator, ConditionalExpression(Variable, Operator, Variable, Operator, Variable)),
 BinaryExpression(BinaryExpression(Variable, Operator, CallExpression(Variable, ArgList(Variable))), Operator, Variable),
 BinaryExpression(BinaryExpression(Variable, Operator, NewExpression(Keyword, Variable, ArgList(Variable))), Operator, Variable),
-BinaryExpression(BinaryExpression(PrefixExpression(Keyword, Variable), Operator, Variable), Operator, BinaryExpression(Variable, Keyword, Variable))
+BinaryExpression(BinaryExpression(UnaryExpression(Keyword, Variable), Operator, Variable), Operator, BinaryExpression(Variable, Keyword, Variable))
 
 # Rest args
 
@@ -214,7 +214,7 @@ BinaryExpression(
 
 yield db.users.where('[endpoint+email]');
 
-==> PrefixExpression(Keyword, CallExpression(MemberExpression(MemberExpression(Variable, PropertyName), PropertyName), ArgList(String)))
+==> UnaryExpression(Keyword, CallExpression(MemberExpression(MemberExpression(Variable, PropertyName), PropertyName), ArgList(String)))
 
 # Template strings
 
@@ -307,7 +307,7 @@ ObjectExpression(
   Property(PropertyName, ParamList(Definition, Definition), Block(ReturnStatement(Keyword, BinaryExpression(Variable, Operator, Variable)))),
   Property(Keyword, PropertyName, ParamList, Block(ReturnStatement(Keyword, Variable))),
   Property(Keyword, PropertyName, ParamList(Definition), Block(AssignmentExpression(Variable, Operator, Variable))),
-  Property(Star, PropertyName, ParamList, Block(PrefixExpression(Keyword, Variable))),
+  Property(Star, PropertyName, ParamList, Block(UnaryExpression(Keyword, Variable))),
   Property(PropertyName, ParamList, Block(ReturnStatement(Keyword, Number))))
 
 # Keyword property names
@@ -345,7 +345,7 @@ ObjectExpression(
 
 ArrayExpression(
   FunctionExpression(Keyword, Star, ParamList, Block),
-  FunctionExpression(Keyword, Star, Definition, ParamList(Definition, Definition), Block(Variable, PrefixExpression(Keyword, Variable))))
+  FunctionExpression(Keyword, Star, Definition, ParamList(Definition, Definition), Block(Variable, UnaryExpression(Keyword, Variable))))
 
 # Member expressions
 
@@ -420,8 +420,8 @@ await asyncPromise;
 
 ==>
 
-PrefixExpression(Keyword, CallExpression(Variable, ArgList)),
-PrefixExpression(Keyword, Variable)
+UnaryExpression(Keyword, CallExpression(Variable, ArgList)),
+UnaryExpression(Keyword, Variable)
 
 # Numeric operators
 
@@ -435,16 +435,16 @@ i + j * 3 - j % 5;
 
 ==>
 
-SuffixExpression(Variable, Operator),
-SuffixExpression(Variable, Operator),
+UnaryExpression(Variable, Operator),
+UnaryExpression(Variable, Operator),
 BinaryExpression(
   BinaryExpression(Variable, Operator, BinaryExpression(Variable, Operator, Number)),
   Operator,
   BinaryExpression(Variable, Operator, Number)),
 BinaryExpression(BinaryExpression(Number, Operator, Variable), Operator, Number),
 BinaryExpression(Number, Operator, BinaryExpression(Variable, Operator, Number)),
-PrefixExpression(Operator, Variable),
-PrefixExpression(Operator, Variable)
+UnaryExpression(Operator, Variable),
+UnaryExpression(Operator, Variable)
 
 # Boolean operators
 
@@ -457,9 +457,9 @@ i && j;
 BinaryExpression(Variable, Operator, Variable),
 BinaryExpression(Variable, Operator, Variable),
 BinaryExpression(
-  BinaryExpression(PrefixExpression(Operator, Variable), Operator, PrefixExpression(Operator, Variable)),
+  BinaryExpression(UnaryExpression(Operator, Variable), Operator, UnaryExpression(Operator, Variable)),
   Operator,
-  BinaryExpression(PrefixExpression(Operator, Variable), Operator, PrefixExpression(Operator, Variable)))
+  BinaryExpression(UnaryExpression(Operator, Variable), Operator, UnaryExpression(Operator, Variable)))
 
 # Bitwise operators
 
@@ -477,7 +477,7 @@ BinaryExpression(Variable, Operator, Variable),
 BinaryExpression(Variable, Operator, Variable),
 BinaryExpression(Variable, Operator, Variable),
 BinaryExpression(Variable, Operator, Variable),
-BinaryExpression(PrefixExpression(Operator, Variable), Operator, PrefixExpression(Operator, Variable))
+BinaryExpression(UnaryExpression(Operator, Variable), Operator, UnaryExpression(Operator, Variable))
 
 # Relational operators
 
@@ -500,6 +500,18 @@ BinaryExpression(Variable, Operator, Variable),
 BinaryExpression(Variable, Operator, Variable),
 BinaryExpression(Variable, Operator, Variable),
 BinaryExpression(Variable, Operator, Variable)
+
+# Word operators
+
+x in y;
+x instanceof y;
+!x instanceof y;
+
+==>
+
+BinaryExpression(Variable, Keyword, Variable),
+BinaryExpression(Variable, Keyword, Variable),
+BinaryExpression(UnaryExpression(Operator, Variable), Keyword, Variable)
 
 # Assignments
 

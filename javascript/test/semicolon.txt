@@ -1,0 +1,61 @@
+# No semicolons
+
+x
+if (a) {
+  var b = c
+  d
+} else
+  e
+
+==>
+
+Variable,
+IfStatement(Keyword, Variable, Block(
+  VariableDeclaration(Keyword, Definition, Operator, Variable),
+  Variable), Keyword, Variable)
+
+# Continued expressions on new line
+
+x
++ 2
+foo
+(bar)
+
+==>
+
+BinaryExpression(Variable, Operator, Number),
+CallExpression(Variable, ArgList(Variable))
+
+# Doesn't parse postfix ops on a new line
+
+x
+++y
+
+==>
+
+Variable,
+UnaryExpression(Operator, Variable)
+
+# Eagerly cut return/break/continue
+
+return 2
+return
+2
+continue foo
+continue
+foo
+break bar
+break
+bar
+
+==>
+
+ReturnStatement(Keyword, Number),
+ReturnStatement(Keyword),
+Number,
+ContinueStatement(Keyword, Label),
+ContinueStatement(Keyword),
+Variable,
+BreakStatement(Keyword, Label),
+BreakStatement(Keyword),
+Variable

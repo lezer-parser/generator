@@ -5,7 +5,7 @@ precedence {
   call,
   taggedTemplate,
   prefix,
-  suffix,
+  postfix,
   typeof,
   exp left,
   times left,
@@ -37,10 +37,10 @@ statement {
   tag.IfStatement<kw<"if"> parenExpression statement (!else kw<"else"> statement)?> |
   tag.SwitchStatement<kw<"switch"> parenExpression tag.Block<"{" switchItem* "}">> |
   tag.TryStatement<kw<"try"> Block (kw<"catch"> ("(" pattern ")")? Block)? (kw<"finally"> Block)?> |
-  tag.ReturnStatement<kw<"return"> expression semi> |
+  tag.ReturnStatement<kw<"return"> (noInsertSemi expression)? semi> |
   tag.ThrowStatement<kw<"throw"> expression semi> |
-  tag.BreakStatement<kw<"break"> Label? semi> |
-  tag.ContinueStatement<kw<"continue"> Label? semi> |
+  tag.BreakStatement<kw<"break"> (noInsertSemi Label)? semi> |
+  tag.ContinueStatement<kw<"continue"> (noInsertSemi Label)? semi> |
   tag.DebuggerStatement<kw<"debugger"> semi> |
   Block |
   LabeledStatement |
@@ -160,7 +160,7 @@ expressionNoComma {
   ArrayExpression |
   tag.ObjectExpression<"{" commaSep<Property> ~destructure "}"> |
   NewExpression |
-  PrefixExpression |
+  UnaryExpression |
   "(" expression ")" |
   ClassExpression |
   FunctionExpression |
@@ -169,7 +169,7 @@ expressionNoComma {
   BinaryExpression |
   tag.ConditionalExpression<expressionNoComma !ternary op<"?"> expressionNoComma tag.Operator<":"> expressionNoComma> |
   AssignmentExpression |
-  SuffixExpression |
+  tag.UnaryExpression<expressionNoComma !postfix postfixOp> |
   tag.CallExpression<expressionNoComma !call ArgList> |
   tag.TaggedTemplateExpression<expressionNoComma !taggedTemplate TemplateString>
 }
@@ -203,7 +203,7 @@ NewExpression {
   kw<"new"> expressionNoComma (!newArgs ArgList)?
 }
 
-PrefixExpression {
+UnaryExpression {
   !prefix (ckw<"await"> | ckw<"yield"> | kw<"void"> | kw<"typeof"> | kw<"delete"> | op<"!"> | op<"~"> | op<"++" | "--"> | op<"+" | "-">)
   expressionNoComma
 }
@@ -229,10 +229,6 @@ AssignmentExpression {
 
 MemberExpression {
   expressionNoComma !member ("." PropertyName | "[" expression "]")
-}
-
-SuffixExpression {
-  expressionNoComma !suffix op<"++" | "--">
 }
 
 ArgList {
@@ -342,4 +338,8 @@ tokens {
   }
 
   external insertSemicolon from "./semicolon" !low { insertSemi }
+
+  external noInsertSemicolon from "./semicolon" { noInsertSemi }
+
+  external postfix from "./semicolon" { postfixOp=Operator }
 }

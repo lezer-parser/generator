@@ -18,13 +18,30 @@ function compressAST(ast, file) {
 }
 
 function externalTokenizer(name, terms) {
-  if (name != "insertSemicolon") throw new Error("Unexpected external tokenizer name " + name)
   const newline = /[\n\u2028\u2029]/, brace = "}".charCodeAt(0)
-  return new Tokenizer((input, stack) => {
-    let next = input.next()
-    if (next == brace || next == -1 || newline.test(input.read(stack.pos, input.pos - 1)))
-      input.accept(terms.insertSemi, input.pos - 1)
-  })
+  if (name == "insertSemicolon") {
+    return new Tokenizer((input, stack) => {
+      let start = input.pos, next = input.next()
+      if (next == brace || next == -1 || newline.test(input.read(stack.pos, input.pos - 1)))
+        input.accept(terms.insertSemi, start)
+    })
+  } else if (name == "noInsertSemicolon") {
+    return new Tokenizer((input, stack) => {
+      let start = input.pos, next = input.next()
+      if (next != brace && next != -1 && !newline.test(input.read(stack.pos, input.pos - 1)))
+        input.accept(terms.noInsertSemi, start)
+    })
+  } else if (name == "postfix") {
+    const plus = "+".charCodeAt(0), minus = "-".charCodeAt(0)
+    return new Tokenizer((input, stack) => {
+      let next = input.next()
+      if ((next == plus || next == minus) && next == input.next() &&
+          !newline.test(input.read(stack.pos, input.pos - 2)))
+        input.accept(terms.postfixOp)
+    })
+  } else {
+    throw new Error("Unexpected external tokenizer name " + name)
+  }
 }
 
 let parser = null
@@ -37,12 +54,12 @@ let force = () => {
   return parser
 }
 
-describe("JavaScript cases", () => {
-  for (let file of fs.readdirSync(caseDir)) {
-    if (!/\.txt$/.test(file)) continue
-    let name = /^[^\.]*/.exec(file)[0]
-    let content = fs.readFileSync(path.join(caseDir, file), "utf8")
-    let caseExpr = /#\s*(.*)\n([^]*?)==+>([^]*?)\n+(?=#|$)/gy
+for (let file of fs.readdirSync(caseDir)) {
+  if (!/\.txt$/.test(file)) continue
+  let name = /^[^\.]*/.exec(file)[0]
+  let content = fs.readFileSync(path.join(caseDir, file), "utf8")
+  let caseExpr = /#\s*(.*)\n([^]*?)==+>([^]*?)\n+(?=#|$)/gy
+  describe(file.replace(/\.txt/, ""), () => {
     for (;;) {
       let m = caseExpr.exec(content)
       if (!m) throw new Error("Unexpected file format in " + file)
@@ -67,5 +84,6 @@ describe("JavaScript cases", () => {
       })
       if (m.index + m[0].length == content.length) break
     }
-  }
-})
+  })
+}
+
