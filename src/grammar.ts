@@ -12,6 +12,7 @@ export class Term {
 
   constructor(readonly name: string,
               private flags: number,
+              readonly groupID: number,
               readonly tag: string | null,
               readonly repeats: Term | null = null) {}
   toString() { return this.name }
@@ -31,23 +32,23 @@ export class TermSet {
   error: Term
 
   constructor() {
-    this.eof = this.term("␄", null, TERMINAL | EOF)
-    this.error = this.term("⚠", "⚠", ERROR)
+    this.eof = this.term("␄", null, -1, TERMINAL | EOF)
+    this.error = this.term("⚠", "⚠", -1, ERROR)
   }
 
-  term(name: string, tag: string | null, flags: number = 0, repeats?: Term) {
-    let term = new Term(name, flags, tag, repeats)
+  term(name: string, tag: string | null, groupID: number, flags: number = 0, repeats?: Term) {
+    let term = new Term(name, flags, groupID, tag, repeats)
     ;(term.terminal ? this.terminals : this.nonTerminals).push(term)
     return term
   }
 
-  makeTerminal(name: string, tag: string | null) {
-    return this.term(name, tag, TERMINAL)
+  makeTerminal(name: string, groupID: number, tag: string | null) {
+    return this.term(name, tag, groupID, TERMINAL)
   }
 
   makeNonTerminal(name: string, tag: string | null, repeats?: Term) {
     // FIXME maybe don't hard-code the start symbol name—some grammars don't even parse "programs" (JSON, Markdown)
-    return this.term(name, tag, name == "program" ? PROGRAM : 0, repeats)
+    return this.term(name, tag, -1, name == "program" ? PROGRAM : 0, repeats)
   }
 
   finish(rules: readonly Rule[]) {

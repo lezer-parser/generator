@@ -88,7 +88,6 @@ class Builder {
   built: BuiltRule[] = []
   ruleNames: {[name: string]: boolean} = Object.create(null)
   namespaces: {[name: string]: Namespace} = Object.create(null)
-  tokens: {[name: string]: TokenSet} = Object.create(null)
   namedTerms: {[name: string]: Term} = Object.create(null)
   used: {[name: string]: boolean} = Object.create(null)
 
@@ -251,8 +250,7 @@ class Builder {
     for (let i = 0;; i++) {
       let cur = i ? `${name}-${i}` : name
       if (this.terms.terminals.some(t => t.name == cur)) continue
-      this.tokens[cur] = group
-      return this.terms.makeTerminal(cur, tag)
+      return this.terms.makeTerminal(cur, group.id, tag)
     }
   }
 
@@ -291,8 +289,7 @@ class Builder {
       if (!found.includes(group)) found.push(group)
     }
     for (let action of state.actions) {
-      let group = this.tokens[action.term.name]
-      if (group) add(group)
+      if (action.term.groupID > -1) add(this.tokenGroups[action.term.groupID])
     }
     if (found.length == 0) add(this.tokenGroups[0])
     return {skip, tokenizers: found.sort((a, b) => b.prec - a.prec || a.id - b.id)}
@@ -469,7 +466,7 @@ class Builder {
     let table = this.specialized[term.name] || (this.specialized[term.name] = [])
     let known = table.find(sp => sp.value == value), token
     if (known == null) {
-      token = this.makeTerminal(JSON.stringify(value), tag, this.tokens[term.name])
+      token = this.makeTerminal(JSON.stringify(value), tag, this.tokenGroups[term.groupID])
       table.push({value, term: token, type})
     } else {
       if (known.type != type)

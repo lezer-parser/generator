@@ -305,7 +305,7 @@ function parseExternalTokenGroup(input: Input) {
   input.next()
   let prec = parseTokenPrecedence(input)
   input.expect("{")
-  let items: {id: Identifier, tag: Iderntifier | null}[] = []
+  let items: {id: Identifier, tag: Identifier | null}[] = []
   while (!input.eat("}")) {
     if (items.length) input.expect(",")
     let name = parseIdent(input), tag = input.eat("=") ? parseIdent(input) : null
