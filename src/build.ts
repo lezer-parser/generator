@@ -146,7 +146,7 @@ class Builder {
     for (let rule of rules) rule.name.rules.push(rule)
 
     let first = computeFirstSets(this.terms), fullTable = buildFullAutomaton(this.terms, first)
-    let tokenGroups = this.buildTokenGroups(fullTable)
+    let {tokenMasks, stateGroups} = this.buildTokenGroups(fullTable)
     let table = finishAutomaton(fullTable, first)
 
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
@@ -160,7 +160,7 @@ class Builder {
       }
       specializations.push(table)
     }
-    let states = table.map(s => this.stateData(s))
+    let states = table.map(s => this.stateData(s, tokenMasks[s.id]))
     let {taggedGoto, untaggedGoto} = computeGotoTables(table)
 
     let terms: {[name: string]: number} = {}
@@ -268,26 +268,42 @@ class Builder {
     })
 
     let groups: TokenGroup_[] = []
+    let stateGroups: number[] = []
     for (let state of states) {
-      let terms = state.actions.map(a => a.term)
-      let localConflicts = conflictsFor(terms, conflicts)
-      if (localConflicts instanceof TokenConflict)
-        return this.raise(`Overlapping tokens ${localConflicts.a.name} and ${localConflicts.b.name} used in same context`)
+      // Find potentially-conflicting terms (in terms) and the things
+      // they conflict with (in incompatible), and raise an error if
+      // there's a token conflict directly in this state.
+      let terms = [], incompatible: Term[] = []
+      for (let {term} of state.actions) {
+        let hasConflict = false
+        for (let conflict of conflicts) {
+          let conflicting = conflict.a == term ? conflict.b : conflict.b == term ? conflict.a : null
+          if (!conflicting) continue
+          hasConflict = true
+          if (!incompatible.includes(conflicting)) {
+            if (state.actions.some(a => a.term == conflicting))
+              return this.raise(`Overlapping tokens ${term.name} and ${conflicting.name} used in same context`)
+            incompatible.push(conflicting)
+          }
+        }
+        if (hasConflict) terms.push(term)
+      }
       let foundGroup = null
       for (let group of groups) {
-        if (localConflicts.some(term => group.tokens.includes(term))) continue
+        if (incompatible.some(term => group.tokens.includes(term))) continue
         for (let term of terms) addToSet(group.tokens, term)
         foundGroup = group
         break
       }
       if (!foundGroup) foundGroup = new TokenGroup_(terms, groups.length)
-      // Store group in state
+      stateGroups.push(foundGroup.id)
     }
-    if (groups.length > 30) this.raise(`Too many different token groups to represent them as a bitfield`)
-    return groups
+    // FIXME more helpful message?
+    if (groups.length > 16) this.raise(`Too many different token groups to represent them as a 16-bit bitfield`)
+    return {stateGroups, tokenMasks: buildTokenMasks(groups)}
   }
 
-  stateData(state: LRState) {
+  stateData(state: LRState, tokenGroup: number) {
     let actions = [], recover = [], forcedReduce = 0, defaultReduce = 0
     if (state.actions.length) {
       let first = state.actions[0] as Reduce
@@ -307,7 +323,7 @@ class Builder {
       forcedReduce = (defaultPos.rule.name.id << REDUCE_DEPTH_SIZE) | (defaultPos.pos + 1)
     }
     let {skip, tokenizers: tok} = this.tokensForState(state)
-    return {actions, recover, defaultReduce, forcedReduce, skip, tokenizers: tok}
+    return {actions, recover, defaultReduce, forcedReduce, skip, tokenizers: tok, tokenGroup}
   }
 
   tokensForState(state: LRState): {skip: TokenSet | null, tokenizers: TokenSet[]} {
@@ -548,18 +564,15 @@ function addToSet<T>(set: T[], value: T) {
   if (!set.includes(value)) set.push(value)
 }
 
-function conflictsFor(terms: readonly Term[], conflicts: TokenConflict[]): TokenConflict | readonly Term[] {
-  let found: Term[] | null = null
-  for (let conflict of conflicts) {
-    let hasA = terms.includes(conflict.a), hasB = terms.includes(conflict.b)
-    if (hasA) {
-      if (hasB) return conflict
-      addToSet(found || (found = []), conflict.b)
-    } else if (hasB) {
-      addToSet(found || (found = []), conflict.a)
+function buildTokenMasks(groups: TokenGroup_[]) {
+  let masks: {[id: number]: number} = Object.create(null)
+  for (let group of groups) {
+    let groupMask = 1 << group.id
+    for (let term of group.tokens) {
+      masks[term.id] = (masks[term.id] || 0) | groupMask
     }
   }
-  return found || none
+  return masks
 }
 
 interface Namespace {

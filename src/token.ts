@@ -107,14 +107,34 @@ export class State {
     return out + "}"
   }
 
-  toArrays() {
+  // Tokenizer data is represented using arrays of numbers. The array
+  // for a state starts with the state's mask (the logical or of all
+  // the masks of the terminals that can be reached from it), which is
+  // used for abandoning a scan when it can't reach any applicable
+  // tokens.
+  //
+  // Next follows the number of accepting tokens for this state,
+  // followed by term id, token mask pairs for each of those.
+  //
+  // After that follow the edges going out of the state, consisting of
+  // from, to, state id triplets.
+  toArrays(groupMasks: {[id: number]: number}) {
     let arrays: number[][] = []
     this.reachable(state => {
-      let array = [state.accepting.length, ...state.accepting.map(t => t.id)]
+      let array = [state.stateMask(groupMasks), state.accepting.length]
+      for (let term of state.accepting) array.push(term.id, groupMasks[term.id] || 0xffff)
       for (let edge of state.edges) array.push(edge.from, edge.to, edge.target.id)
       arrays.push(array)
     })
     return arrays
+  }
+
+  stateMask(groupMasks: {[id: number]: number}) {
+    let mask = 0
+    this.reachable(state => {
+      for (let term of state.accepting) mask |= (groupMasks[term.id] || 0xffff)
+    })
+    return mask
   }
 }
 
