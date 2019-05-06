@@ -182,6 +182,7 @@ class Builder {
     return new Parser(stateObjs, tags, repeatInfo, taggedGoto, untaggedGoto, specialized, specializations, names)
   }
 
+/*
   // FIXME at some point compress the various tables into a single big
   // array, encode it as a string and decode into Uint16Array
   getParserString() {
@@ -235,7 +236,7 @@ class Builder {
        JSON.stringify(repeatInfo)},\n${JSON.stringify(taggedGoto)},\n${JSON.stringify(untaggedGoto)},${
        JSON.stringify(specialized)},\n${JSON.stringify(specializations)
        }${includeNames ? `,\n${JSON.stringify(names)}` : ""})`
-  }
+  }*/
 
   gatherTokenGroups(decl: TokenGroupDeclaration, parent: TokenGroup | null = null) {
     let group = new TokenGroup(this, decl.rules, parent, this.tokenGroups.length, decl.prec)
@@ -537,7 +538,6 @@ abstract class TokenSet {
   get hasSkip(): TokenSet | null { return null }
   skip(): Tokenizer | null { return null }
   abstract tokenizer(terms: {[name: string]: number}): Tokenizer | null
-  abstract source(moduleStyle: string): string
 }
 
 class TokenGroup extends TokenSet {
@@ -690,39 +690,20 @@ class TokenGroup extends TokenSet {
     return this.skipState != null ? this : this.parent ? this.parent.hasSkip : null
   }
 
-  get skipSource(): string | null {
-    if (!this.skipState) return this.parent ? this.parent.skipSource : null
-    let compiled = this.skipState.compile(), source = compiled.toSource()
-    if (!source) return null
+  skip(): Tokenizer | null {
+    if (!this.skipState) return this.parent ? this.parent.skip() : null
+    let compiled = this.skipState.compile()
     if (/\bskip\b/.test(verbose)) console.log(compiled.toString())
-    return source
+    return new Tokenizer(compiled.toArrays())
   }
 
-  skip() {
-    let src = this.skipSource
-    return src ? new Tokenizer((1, eval)("(" + src + ")")) : null
-  }
-
-  get tokenizerSource() {
+  tokenizer() {
     let startState = this.startState.compile()
-    let source = startState.toSource()
-    if (!source) return null
     if (startState.accepting.length)
       this.b.raise(`Grammar contains zero-length tokens (in '${startState.accepting[0].name}')`,
                    this.rules.find(r => r.id.name == startState.accepting[0].name)!.start)
     if (/\btokens\b/.test(verbose)) console.log(startState.toString())
-    return source
-  }
-
-  tokenizer() {
-    let src = this.tokenizerSource
-    return src ? new Tokenizer((1, eval)("(" + src + ")")).withPrec(this.prec) : null
-  }
-
-  source() {
-    let skip = this.skipSource, tok = this.tokenizerSource
-    return (skip ? `const t${this.id}s = new Tokenizer(${skip})\n` : "") +
-      (tok ? `const t${this.id} = new Tokenizer(${tok})${this.prec != 2 ? `.withPrec(${this.prec})` : ""}\n` : "")
+    return new Tokenizer(startState.toArrays()).withPrec(this.prec)
   }
 }
 
@@ -753,13 +734,6 @@ class ExternalTokenGroup extends TokenSet {
   tokenizer(terms: {[name: string]: number}) {
     if (!this.b.options.externalTokenizer) throw new Error("No externalTokenizer option given")
     return this.b.options.externalTokenizer(this.name, terms).withPrec(this.prec)
-  }
-
-  source(style: string) {
-    let name = "t" + this.id, iName = this.prec != 2 ? name + "i" : name
-    let importLine = style == "es6" ? `import {${this.name} as ${iName}} from ${JSON.stringify(this.from)}\n`
-      : `const {${this.name}: ${iName}} = require(${JSON.stringify(this.from)})\n`
-    return this.prec == 2 ? importLine : importLine + `const ${name} = ${iName}.withPrec(${this.prec})\n`
   }
 }
 
@@ -909,6 +883,8 @@ export function buildParser(text: string, options: BuildOptions = {}): Parser {
   return new Builder(text, options).getParser()
 }
 
+/*
 export function buildParserFile(text: string, options: BuildOptions = {}): string {
   return new Builder(text, options).getParserString()
 }
+*/

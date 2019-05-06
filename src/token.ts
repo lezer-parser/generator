@@ -16,8 +16,6 @@ function charFor(n: number) {
   return n > MAX_CHAR ? "∞" : n >= 0xd800 && n < 0xdfff ? "\\u{" + n.toString(16) + "}" : String.fromCharCode(n)
 }
 
-const MAX_SOURCE_BRANCH = 8
-
 let stateID = 1
 
 export class State {
@@ -69,120 +67,54 @@ export class State {
 
   findConflicts(): [Term, Term][] {
     let conflicts: [Term, Term][] = []
-    let seen: State[] = []
     function add(a: Term, b: Term) {
       if (a.id < b.id) [a, b] = [b, a]
       if (!conflicts.some(([x, y]) => x == a && y == b)) conflicts.push([a, b])
     }
-    function explore(state: State) {
-      seen.push(state)
-      if (state.accepting.length > 0) {
-        for (let i = 0; i < state.accepting.length; i++)
-          for (let j = i + 1; j < state.accepting.length; j++)
-            add(state.accepting[i], state.accepting[j])
-        findSuffixes(state.accepting, state, [])
-      }
-      for (let edge of state.edges)
-        if (!seen.includes(edge.target)) explore(edge.target)
-    }
-    function findSuffixes(terms: Term[], state: State, seen: State[]) {
-      seen.push(state)
-      for (let term of state.accepting) for (let orig of terms)
-        if (term != orig) add(term, orig)
-      for (let edge of state.edges)
-        if (!seen.includes(edge.target)) findSuffixes(terms, edge.target, seen)
-    }
-    explore(this)
+    this.reachable(state => {
+      if (state.accepting.length == 0) return
+      for (let i = 0; i < state.accepting.length; i++)
+        for (let j = i + 1; j < state.accepting.length; j++)
+          add(state.accepting[i], state.accepting[j])
+      state.reachable(s => {
+        if (s != state) for (let term of s.accepting)
+          for (let orig of state.accepting)
+            if (term != orig)
+              add(term, orig)
+      })
+    })
     return conflicts
   }
 
+  reachable(f: (s: State) => void) {
+    let seen: State[] = []
+    ;(function explore(s: State) {
+      f(s)
+      seen.push(s)
+      for (let edge of s.edges)
+        if (!seen.includes(edge.target)) explore(edge.target)
+    })(this)
+  }
+
   toString() {
-    return `digraph {\n${this.toGraphViz([this])}}`
+    let out = "digraph {\n"
+    this.reachable(state => {
+      if (state.accepting.length)
+        out += `  ${state.id} [label=${state.accepting.join()}];\n`
+      for (let edge of state.edges)
+        out += `  ${state.id} ${edge};\n`
+    })
+    return out + "}"
   }
 
-  toGraphViz(seen: State[]) {
-    let out = ""
-    if (this.accepting.length)
-      out += `  ${this.id} [label=${this.accepting.join()}];\n`
-    for (let edge of this.edges)
-      out += `  ${this.id} ${edge};\n`
-    for (let edge of this.edges) {
-      if (!seen.includes(edge.target)) {
-        seen.push(edge.target)
-        out += edge.target.toGraphViz(seen)
-      }
-    }
-    return out
-  }
-
-  // FIXME I think interpreting data would be preferable after all
-  toSource() {
-    let enter = Object.create(null)
-    let head = `function (input) {\n  let done = false, state = 0, next, start\n  while (!done) {\n    start = input.pos\n    next = input.next();\n    `
-    let tail = `\n  }\n}`
-    let states: string[] = [], nextID = 0
-    function explore(state: State): string {
-      let known = enter[state.id]
-      if (known != null) return known
-      if (state.edges.length == 0 && state.accepting.length) return `(input.accept(${state.accepting[0].id}), done = true)`
-      let id = nextID++
-      let here = enter[state.id] = `state = ${id}`
-      states[id] = state.toLocalSource(explore, here)
-      return here
-    }
-    explore(this)
-    if (!states.length) return null
-    // FIXME profile whether this is worthwhile and whether another technique (switch, functions) is faster
-    function flattenStates(from: number, to: number): string {
-      if (to - from > MAX_SOURCE_BRANCH) {
-        let mid = (to + from) >> 1
-        return `state < ${mid}\n    ? ${flattenStates(from, mid)}: ${flattenStates(mid, to)}`
-      } else {
-        let text = ""
-        for (let i = from; i < to - 1; i++) text += `state == ${i} ? ${states[i]}\n    : `
-        text += `${states[to - 1]}\n    `
-        return text
-      }
-    }
-    return head + flattenStates(0, states.length) + tail
-  }
-
-  toLocalSource(explore: (state: State) => string, here: string) {
-    let edgesToSource = (start: number, end: number, low: number, hi: number): string => {
-      if (end == start + 1 && this.edges[start].from == low && this.edges[start].to >= hi)
-        return explore(this.edges[start].target)
-
-      if (end > start + MAX_SOURCE_BRANCH) {
-        let mid = (end + start) >> 1, midChar = this.edges[mid].from
-        return `next < ${midChar} ? ${edgesToSource(start, mid, low, midChar)} : ${edgesToSource(mid, end, midChar, hi)}`
-      }
-
-      let tests = [], actions = []
-      for (let  i = start; i < end; i++) {
-        let edge = this.edges[i]
-        if (edge.to == edge.from + 1) tests.push(`next == ${edge.from}`)
-        else if (edge.to >= hi) tests.push(`next > ${edge.from - 1}`)
-        else if (edge.from == low) tests.push(`next < ${edge.to}`)
-        else tests.push(`next > ${edge.from - 1} && next < ${edge.to}`)
-        actions.push(explore(edge.target))
-      }
-      let text = ""
-      for (let i = 0; i < tests.length; i++) {
-        let test = tests[i], action = actions[i]
-        while (i < actions.length - 1 && actions[i + 1] == action)
-          test += " || " + tests[++i]
-        if (action == here) action = "0"
-        text += `${test} ? ${action} : `
-      }
-      text += `done = true`
-      return text
-    }
-    let source = edgesToSource(0, this.edges.length, -1, MAX_CHAR)
-    return this.accepting.length ? `(input.accept(${this.accepting[0].id}, start), ${source})` : source
-  }
-
-  toFunction() {
-    return (1,eval)("(" + this.toSource() + ")")
+  toArrays() {
+    let arrays: number[][] = []
+    this.reachable(state => {
+      let array = [state.accepting.length, ...state.accepting.map(t => t.id)]
+      for (let edge of state.edges) array.push(edge.from, edge.to, edge.target.id)
+      arrays.push(array)
+    })
+    return arrays
   }
 }
 
