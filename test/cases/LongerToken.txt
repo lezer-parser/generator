@@ -1,10 +1,4 @@
-program { (A | B | C)+ }
-
-tokens {
-  A { "foo" }
-  B { "foobar" }
-  C { "baz" }
-}
+program { (tag.A<"foo"> | tag.B<"foobar"> | tag.C<"baz">)+ }
 
 ---
 

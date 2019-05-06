@@ -1,7 +1,9 @@
 program { (KW<"let"> | KW<"if"> | Foo)+ }
 
+skip { whitespace }
+
 tokens {
-  skip { std.whitespace* }
+  whitespace { std.whitespace+ }
   KW<word> { word }
   Foo { bar<"foo"> }
   bar<x> { baz<x> }

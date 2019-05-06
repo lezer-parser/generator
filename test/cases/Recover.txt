@@ -4,8 +4,10 @@ Class { "class" "{" "classitem"* "}" }
 
 Block { "{" (Block | "statement")* "}" }
 
+skip { whitespace }
+
 tokens {
-  skip { std.whitespace* }
+  whitespace { std.whitespace+ }
 }
 
 ---

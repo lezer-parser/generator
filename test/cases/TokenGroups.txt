@@ -6,8 +6,10 @@ expr { RegExp | Symbol | BinOp }
 
 BinOp { expr !div "/" expr }
 
+skip { whitespace }
+
 tokens {
-  skip { std.whitespace* }
+  whitespace { std.whitespace+ }
 
   Symbol { std.asciiLetter+ }
 

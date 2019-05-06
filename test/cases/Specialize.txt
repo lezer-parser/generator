@@ -14,8 +14,10 @@ kwSpec<word> { specialize<Identifier, word> }
 
 kwExt<word> { extend<Identifier, word> }
 
+skip { whitespace }
+
 tokens {
-  skip { std.whitespace* }
+  whitespace { std.whitespace+ }
   Identifier { std.asciiLetter+ }
   Number { std.digit+ }
 }

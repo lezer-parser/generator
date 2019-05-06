@@ -40,8 +40,9 @@ describe("parsing", () => {
     tokens {
       Number { std.digit+ }
       Variable { std.asciiLetter+ }
-      skip { std.whitespace* }
-    }`)
+      whitespace { std.whitespace+ }
+    }
+    skip { whitespace }`)
 
   function qq(parser: Parser, ast: SyntaxTree) {
     return function(tag: string, offset = 1): {start: number, end: number} {

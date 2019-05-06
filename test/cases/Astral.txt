@@ -1,7 +1,9 @@
 program { (Identifier | Thing)+ }
 
+skip { whitespace }
+
 tokens {
-  skip { std.whitespace+ }
+  whitespace { std.whitespace+ }
 
   identifierChar { std.asciiLetter | [\u{a1}-\u{10ffff}] }
 

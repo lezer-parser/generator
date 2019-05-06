@@ -1,11 +1,13 @@
 program { (Word | Number | Operator)+ }
 
+skip { whitespace }
+
 tokens {
-  skip { std.whitespace* }
+  whitespace { std.whitespace+ }
 
   Word { std.asciiLetter (letter | std.digit)* }
 
-  Number { ("-" | "+")? (std.digit+ ("." std.digit*)? | "." std.digit+) (("e" | "E") ("+" | "-")? std.digit+)? }
+  Number { (std.digit+ ("." std.digit*)? | "." std.digit+) (("e" | "E") ("+" | "-")? std.digit+)? }
 
   Operator { "+" "+"? | "-" }
 
@@ -21,6 +23,6 @@ azAZ09
 
 ---
 
-50 + 200e-5 ++ +.2 - -111.111e+111
+50 + 200e-5 ++ .2 - 111.111e+111
 
 ==> Number,Operator,Number,Operator,Number,Operator,Number

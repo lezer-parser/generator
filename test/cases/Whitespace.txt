@@ -1,7 +1,9 @@
 program { X+ }
 
+skip { whitespace | Comment }
+
 tokens {
-  skip { (" " | "\n")+ | Comment }
+  whitespace { (" " | "\n")+ }
 
   Comment { "#" [^\n]* }
 

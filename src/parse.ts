@@ -1,6 +1,5 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
-        TokenGroupDeclaration, ExternalTokenGroupDeclaration,
-        Identifier, Expression,
+        TokenDeclaration, Identifier, Expression,
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, AnyExpression, ConflictMarker} from "./node"
 
@@ -113,20 +112,23 @@ function parseTop(input: Input) {
   let start = input.start
   let rules: RuleDeclaration[] = []
   let prec: PrecDeclaration | null = null
-  let tokens: TokenGroupDeclaration | null = null
+  let tokens: TokenDeclaration | null = null
+  let skip: RuleDeclaration | null = null
 
   while (input.type != "eof") {
     if (input.type == "id" && input.value == "tokens") {
       if (tokens) input.raise(`Multiple tokens declaractions`, input.start)
-      else tokens = parseTokenGroup(input)
+      else tokens = parseTokens(input)
     } else if (input.type == "id" && input.value == "precedence") {
       if (prec) input.raise(`Multiple prec declarations`, input.start)
       else prec = parsePrec(input)
+    } else if (input.type == "id" && input.value == "skip") {
+      skip = parseRule(input, false)
     } else {
       rules.push(parseRule(input, false))
     }
   }
-  return new GrammarDeclaration(start, rules, tokens, prec)
+  return new GrammarDeclaration(start, rules, tokens, prec, skip)
 }
 
 function parseRule(input: Input, isToken: boolean) {
@@ -272,50 +274,20 @@ function parsePrec(input: Input) {
   return new PrecDeclaration(start, items)
 }
       
-function parseTokenGroup(input: Input) {
+function parseTokens(input: Input) {
   let start = input.start
   input.next()
-  let prec = parseTokenPrecedence(input)
   input.expect("{")
-  let tokenRules: RuleDeclaration[] = [], subGroups: (TokenGroupDeclaration | ExternalTokenGroupDeclaration)[] = []
-  while (!input.eat("}")) {
-    if (input.type == "id" && input.value == "group") subGroups.push(parseTokenGroup(input))
-    else if (input.type == "id" && input.value == "external") subGroups.push(parseExternalTokenGroup(input))
-    else tokenRules.push(parseRule(input, true))
-  }
-  return new TokenGroupDeclaration(start, prec, tokenRules, subGroups)
-}
-
-function parseTokenPrecedence(input: Input) {
-  if (!input.eat("!")) return 2
-  return input.eat("id", "extraLow") ? 0 :
-    input.eat("id", "low") ? 1 :
-    input.eat("id", "high") ? 3 :
-    input.eat("id", "extraHigh") ? 4 :
-    input.unexpected()
-}
-
-function parseExternalTokenGroup(input: Input) {
-  let start = input.start
-  input.next()
-  let id = parseIdent(input)
-  input.expect("id", "from")
-  if (input.type != "string") input.unexpected()
-  let source = input.value
-  input.next()
-  let prec = parseTokenPrecedence(input)
-  input.expect("{")
-  let items: {id: Identifier, tag: Identifier | null}[] = []
-  while (!input.eat("}")) {
-    if (items.length) input.expect(",")
-    let name = parseIdent(input), tag = input.eat("=") ? parseIdent(input) : null
-    items.push({id: name, tag})
-  }
-  return new ExternalTokenGroupDeclaration(start, id, source, prec, items)
+  let tokenRules: RuleDeclaration[] = []
+  while (!input.eat("}")) tokenRules.push(parseRule(input, true))
+  return new TokenDeclaration(start, tokenRules)
 }
 
 function readString(string: string) {
   // Can't use JSON.parse because it has too limited support for
-  // escape sequences, can't be bothered to write a custom reader
+  // escape sequences, can't be bothered to write a custom reader.
+
+  // FIXME maybe .replace the necessary escapes (such as \u{}) and
+  // then feed to JSON.parse?
   return (1,eval)(string)
 }

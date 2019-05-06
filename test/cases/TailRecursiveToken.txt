@@ -1,7 +1,9 @@
 program { (Single | Open "." Close)+ }
 
+skip { spaces }
+
 tokens {
-  skip { " "+ }
+  spaces { " "+ }
 
   Single { "`" toEnd }
 

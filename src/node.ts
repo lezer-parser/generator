@@ -5,8 +5,9 @@ export class Node {
 export class GrammarDeclaration extends Node {
   constructor(start: number,
               readonly rules: readonly RuleDeclaration[],
-              readonly tokens: TokenGroupDeclaration | null,
-              readonly precedences: PrecDeclaration | null) {
+              readonly tokens: TokenDeclaration | null,
+              readonly precedences: PrecDeclaration | null,
+              readonly skip: RuleDeclaration | null) {
     super(start)
   }
   toString() { return Object.values(this.rules).join("\n") }
@@ -32,21 +33,9 @@ export class PrecDeclaration extends Node {
   }
 }
 
-export class TokenGroupDeclaration extends Node {
+export class TokenDeclaration extends Node {
   constructor(start: number,
-              readonly prec: number,
-              readonly rules: readonly RuleDeclaration[],
-              readonly groups: readonly (TokenGroupDeclaration | ExternalTokenGroupDeclaration)[]) {
-    super(start)
-  }
-}
-
-export class ExternalTokenGroupDeclaration extends Node {
-  constructor(start: number,
-              readonly id: Identifier,
-              readonly source: string,
-              readonly prec: number,
-              readonly items: readonly {id: Identifier, tag: Identifier | null}[]) {
+              readonly rules: readonly RuleDeclaration[]) {
     super(start)
   }
 }

@@ -10,8 +10,10 @@ Identifier { word ~arrow }
 
 ParamName { word ~arrow }
 
+skip { whitespace }
+
 tokens {
-  skip { std.whitespace* }
+  whitespace { std.whitespace+ }
 
   word { std.asciiLetter+ }
 }
