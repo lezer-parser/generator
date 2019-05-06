@@ -107,7 +107,7 @@ export class Conflicts {
   static none = new Conflicts(0)
 }
 
-export function union(a: readonly string[], b: readonly string[]): readonly string[] {
+export function union<T>(a: readonly T[], b: readonly T[]): readonly T[] {
   if (a.length == 0 || a == b) return b
   if (b.length == 0) return a
   let result = a.slice()

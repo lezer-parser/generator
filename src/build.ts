@@ -557,14 +557,14 @@ class TokenGroup extends TokenSet {
       this.used.skip = true
       if (skip.params.length) return this.b.raise("Skip rules should not take parameters", skip.params[0].start)
       this.skipState = new State
-      let nameless = new State(b.terms.eof)
+      let nameless = new State([b.terms.eof])
       for (let choice of skip.expr instanceof ChoiceExpression ? skip.expr.exprs : [skip.expr]) {
         let tag = null
         if (choice instanceof NamedExpression) {
           let rule = this.rules.find(r => r.id.name == (choice as NamedExpression).id.name)
           if (rule) tag = rule.tag ? rule.tag.name : isTag(rule.id.name)
         }
-        this.build(choice, this.skipState, tag ? new State(this.b.makeTerminal(tag, tag, this)) : nameless, none)
+        this.build(choice, this.skipState, tag ? new State([this.b.makeTerminal(tag, tag, this)]) : nameless, none)
       }
     }
   }
@@ -576,7 +576,7 @@ class TokenGroup extends TokenSet {
     if (!rule) return null
     let term = this.b.makeTerminal(expr.toString(), rule.tag ? rule.tag.name : isTag(name), this)
     if (expr.args.length == 0) this.b.namedTerms[expr.id.name] = term
-    this.buildRule(rule, expr, this.startState, new State(term))
+    this.buildRule(rule, expr, this.startState, new State([term]))
     this.built.push(new BuiltRule(name, expr.args, term))
     return term
   }
@@ -585,7 +585,7 @@ class TokenGroup extends TokenSet {
     let id = JSON.stringify(expr.value)
     for (let built of this.built) if (built.id == id) return built.term
     let term = this.b.makeTerminal(id, null, this)
-    this.build(expr, this.startState, new State(term), none)
+    this.build(expr, this.startState, new State([term]), none)
     this.built.push(new BuiltRule(id, none, term))
     return term
   }
@@ -707,9 +707,9 @@ class TokenGroup extends TokenSet {
     let startState = this.startState.compile()
     let source = startState.toSource()
     if (!source) return null
-    if (startState.accepting)
-      this.b.raise(`Grammar contains zero-length tokens (in '${startState.accepting.name}')`,
-                   this.rules.find(r => r.id.name == startState.accepting!.name)!.start)
+    if (startState.accepting.length)
+      this.b.raise(`Grammar contains zero-length tokens (in '${startState.accepting[0].name}')`,
+                   this.rules.find(r => r.id.name == startState.accepting[0].name)!.start)
     if (/\btokens\b/.test(verbose)) console.log(startState.toString())
     return source
   }

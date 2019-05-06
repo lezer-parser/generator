@@ -144,6 +144,7 @@ export class State {
   actionPositions: (readonly Pos[])[] = []
   goto: Shift[] = []
   recover: Shift[] = []
+  _tokenGroups = -1
 
   constructor(readonly id: number, readonly set: readonly Pos[], public flags = 0, public hash = hashPositions(set)) {}
 
@@ -206,6 +207,15 @@ export class State {
 
   hasSet(set: readonly Pos[]) {
     return eqSet(this.set, set)
+  }
+
+  get tokenGroups() {
+    if (this._tokenGroups == -1) {
+      let groups = 0
+      for (let action of this.actions) if (action.term.groupID > -1) groups |= 1 << action.term.groupID
+      this._tokenGroups = groups || 1
+    }
+    return this._tokenGroups
   }
 }
 
@@ -411,11 +421,14 @@ function collapseAutomaton(states: State[]): State[] {
       let state = states[i], set = state.set
       let newID = newStates.findIndex((s, index) => {
         return s.set.length == set.length && s.set.every((p, i) => p.eqSimple(set[i])) &&
+          s.tokenGroups == state.tokenGroups &&
           !hasConflict(i, index, mapping, conflicts)
       })
       if (newID < 0) {
         newID = newStates.length
-        newStates.push(new State(newID, set, state.flags, 0))
+        let newState = new State(newID, set, state.flags, 0)
+        newState._tokenGroups = state.tokenGroups
+        newStates.push(newState)
       } else {
         newStates[newID].flags |= state.flags
       }
@@ -454,7 +467,8 @@ function addRecoveryRules(table: State[], first: {[name: string]: Term[]}) {
 
 export function buildAutomaton(terms: TermSet) {
   let first = computeFirst(terms)
-  let table = collapseAutomaton(buildFullAutomaton(terms, first))
+  let full = buildFullAutomaton(terms, first)
+  let table = collapseAutomaton(full)
   addRecoveryRules(table, first)
   return table
 }

@@ -1,4 +1,4 @@
-import {Term} from "./grammar"
+import {Term, union} from "./grammar"
 
 export const MAX_CHAR = 0xffff
 
@@ -23,7 +23,7 @@ let stateID = 1
 export class State {
   edges: Edge[] = []
 
-  constructor(readonly accepting: Term | null = null, readonly id = stateID++) {}
+  constructor(readonly accepting: Term[] = [], readonly id = stateID++) {}
 
   edge(from: number, to: number = from + 1, target: State) {
     this.edges.push(new Edge(from, to, target))
@@ -36,12 +36,8 @@ export class State {
     return explore(this.closure().sort((a, b) => a.id - b.id))
 
     function explore(states: State[]) {
-      let newState = labeled[ids(states)] = new State(states.reduce((a: Term | null, s: State) => {
-        if (!s.accepting) return a
-        if (a && a != s.accepting)
-          throw new SyntaxError(`Overlapping tokens ${a.name} and ${s.accepting.name}`)
-        return s.accepting
-      }, null), localID++)
+      let newState = labeled[ids(states)] =
+        new State(states.reduce((a: readonly Term[], s: State) => union(a, s.accepting), []) as Term[], localID++)
       let out: Edge[] = []
       for (let state of states) for (let edge of state.edges) {
         if (edge.from >= 0) out.push(edge)
@@ -63,12 +59,41 @@ export class State {
       // isn't also in the next states are left out to help reduce the
       // number of unique state combinations
       if (state.edges.some(e => e.from >= 0) ||
-          (state.accepting && !state.edges.some(e => state.accepting == e.target.accepting)))
+          (state.accepting.length > 0 && !state.edges.some(e => sameSet(state.accepting, e.target.accepting))))
         result.push(state)
       for (let edge of state.edges) if (edge.from < 0) explore(edge.target)
     }
     explore(this)
     return result
+  }
+
+  findConflicts(): [Term, Term][] {
+    let conflicts: [Term, Term][] = []
+    let seen: State[] = []
+    function add(a: Term, b: Term) {
+      if (a.id < b.id) [a, b] = [b, a]
+      if (!conflicts.some(([x, y]) => x == a && y == b)) conflicts.push([a, b])
+    }
+    function explore(state: State) {
+      seen.push(state)
+      if (state.accepting.length > 0) {
+        for (let i = 0; i < state.accepting.length; i++)
+          for (let j = i + 1; j < state.accepting.length; j++)
+            add(state.accepting[i], state.accepting[j])
+        findSuffixes(state.accepting, state, [])
+      }
+      for (let edge of state.edges)
+        if (!seen.includes(edge.target)) explore(edge.target)
+    }
+    function findSuffixes(terms: Term[], state: State, seen: State[]) {
+      seen.push(state)
+      for (let term of state.accepting) for (let orig of terms)
+        if (term != orig) add(term, orig)
+      for (let edge of state.edges)
+        if (!seen.includes(edge.target)) findSuffixes(terms, edge.target, seen)
+    }
+    explore(this)
+    return conflicts
   }
 
   toString() {
@@ -77,8 +102,8 @@ export class State {
 
   toGraphViz(seen: State[]) {
     let out = ""
-    if (this.accepting)
-      out += `  ${this.id} [label=${this.accepting.name}];\n`
+    if (this.accepting.length)
+      out += `  ${this.id} [label=${this.accepting.join()}];\n`
     for (let edge of this.edges)
       out += `  ${this.id} ${edge};\n`
     for (let edge of this.edges) {
@@ -99,7 +124,7 @@ export class State {
     function explore(state: State): string {
       let known = enter[state.id]
       if (known != null) return known
-      if (state.edges.length == 0 && state.accepting) return `(input.accept(${state.accepting.id}), done = true)`
+      if (state.edges.length == 0 && state.accepting.length) return `(input.accept(${state.accepting[0].id}), done = true)`
       let id = nextID++
       let here = enter[state.id] = `state = ${id}`
       states[id] = state.toLocalSource(explore, here)
@@ -153,7 +178,7 @@ export class State {
       return text
     }
     let source = edgesToSource(0, this.edges.length, -1, MAX_CHAR)
-    return this.accepting ? `(input.accept(${this.accepting.id}, start), ${source})` : source
+    return this.accepting.length ? `(input.accept(${this.accepting[0].id}, start), ${source})` : source
   }
 
   toFunction() {
@@ -165,6 +190,12 @@ function ids(states: State[]) {
   let result = ""
   for (let state of states) result += (result.length ? "-" : "") + state.id
   return result
+}
+
+function sameSet<T>(a: readonly T[], b: readonly T[]) {
+  if (a.length != b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] != b[i]) return false
+  return true
 }
 
 class MergedEdge {
