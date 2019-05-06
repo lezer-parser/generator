@@ -65,11 +65,11 @@ export class State {
     return result
   }
 
-  findConflicts(): [Term, Term][] {
-    let conflicts: [Term, Term][] = []
+  findConflicts(): Conflict[] {
+    let conflicts: Conflict[] = []
     function add(a: Term, b: Term) {
       if (a.id < b.id) [a, b] = [b, a]
-      if (!conflicts.some(([x, y]) => x == a && y == b)) conflicts.push([a, b])
+      if (!conflicts.some(c => c.a == a && c.b == b)) conflicts.push(new Conflict(a, b))
     }
     this.reachable(state => {
       if (state.accepting.length == 0) return
@@ -116,6 +116,10 @@ export class State {
     })
     return arrays
   }
+}
+
+export class Conflict {
+  constructor(readonly a: Term, readonly b: Term) {}
 }
 
 function ids(states: State[]) {

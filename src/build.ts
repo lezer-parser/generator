@@ -3,9 +3,9 @@ import {GrammarDeclaration, RuleDeclaration, TokenGroupDeclaration, ExternalToke
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
         exprsEq, exprEq} from "./node"
 import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
-import {State, MAX_CHAR} from "./token"
+import {State, Conflict as TokenConflict, MAX_CHAR} from "./token"
 import {Input} from "./parse"
-import {buildAutomaton, State as LRState, Shift, Reduce} from "./automaton"
+import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {Parser, ParseState, REDUCE_DEPTH_SIZE, noToken, Tokenizer,
         TERM_TAGGED, SPECIALIZE, REPLACE, EXTEND} from "lezer"
 
@@ -144,7 +144,11 @@ class Builder {
     let {tags, names, repeatInfo} = this.terms.finish(rules)
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
     for (let rule of rules) rule.name.rules.push(rule)
-    let table = buildAutomaton(this.terms)
+
+    let first = computeFirstSets(this.terms), fullTable = buildFullAutomaton(this.terms, first)
+    let tokenGroups = this.buildTokenGroups(fullTable)
+    let table = finishAutomaton(fullTable, first)
+
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
     let specialized = [], specializations = []
     for (let name in this.specialized) {
@@ -253,6 +257,34 @@ class Builder {
       if (this.terms.terminals.some(t => t.name == cur)) continue
       return this.terms.makeTerminal(cur, group.id, tag)
     }
+  }
+
+  buildTokenGroups(states: readonly LRState[]) {
+    let tokens = (this.tokenGroups[0] as TokenGroup).startState.compile()
+    // Allow conflicts between literals that appear in the same state
+    let conflicts = tokens.findConflicts().filter(({a, b}) => {
+      return !(/\"/.test(a.name) && /\"/.test(b.name) && // FIXME kind of kludgey way to detect literal tokens
+               states.some(s => s.actions.some(action => action.term == a) && s.actions.some(action => action.term == b)))
+    })
+
+    let groups: TokenGroup_[] = []
+    for (let state of states) {
+      let terms = state.actions.map(a => a.term)
+      let localConflicts = conflictsFor(terms, conflicts)
+      if (localConflicts instanceof TokenConflict)
+        return this.raise(`Overlapping tokens ${localConflicts.a.name} and ${localConflicts.b.name} used in same context`)
+      let foundGroup = null
+      for (let group of groups) {
+        if (localConflicts.some(term => group.tokens.includes(term))) continue
+        for (let term of terms) addToSet(group.tokens, term)
+        foundGroup = group
+        break
+      }
+      if (!foundGroup) foundGroup = new TokenGroup_(terms, groups.length)
+      // Store group in state
+    }
+    if (groups.length > 30) this.raise(`Too many different token groups to represent them as a bitfield`)
+    return groups
   }
 
   stateData(state: LRState) {
@@ -506,6 +538,28 @@ function computeGotoTables(states: readonly LRState[]) {
     table[+term >> 1] = assoc
   }
   return {taggedGoto, untaggedGoto}
+}
+
+class TokenGroup_ { // FIXME rename
+  constructor(readonly tokens: Term[], readonly id: number) {}
+}
+
+function addToSet<T>(set: T[], value: T) {
+  if (!set.includes(value)) set.push(value)
+}
+
+function conflictsFor(terms: readonly Term[], conflicts: TokenConflict[]): TokenConflict | readonly Term[] {
+  let found: Term[] | null = null
+  for (let conflict of conflicts) {
+    let hasA = terms.includes(conflict.a), hasB = terms.includes(conflict.b)
+    if (hasA) {
+      if (hasB) return conflict
+      addToSet(found || (found = []), conflict.b)
+    } else if (hasB) {
+      addToSet(found || (found = []), conflict.a)
+    }
+  }
+  return found || none
 }
 
 interface Namespace {

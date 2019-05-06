@@ -272,7 +272,7 @@ function addTo<T>(value: T, array: T[]) {
   if (!array.includes(value)) array.push(value)
 }
 
-function computeFirst(terms: TermSet) {
+export function computeFirstSets(terms: TermSet) {
   let table: {[term: string]: Term[]} = {}
   for (let t of terms.nonTerminals) table[t.name] = []
   for (;;) {
@@ -392,7 +392,7 @@ function mergeState(mapping: number[], newStates: State[], state: State, target:
   return true
 }
 
-function markConflicts(mapping: number[], newID: number, oldStates: State[], newStates: State[], conflicts: number[]) {
+function markConflicts(mapping: number[], newID: number, oldStates: readonly State[], newStates: State[], conflicts: number[]) {
   // For all combinations of merged states
   for (let i = 0; i < mapping.length; i++) if (mapping[i] == newID) {
     for (let j = 0; j < mapping.length; j++) if (j != i && mapping[j] == newID) {
@@ -413,7 +413,7 @@ function hasConflict(id: number, newID: number, mapping: number[], conflicts: nu
 }
 
 // Collapse an LR(1) automaton to an LALR-like automaton
-function collapseAutomaton(states: State[]): State[] {
+function collapseAutomaton(states: readonly State[]): State[] {
   let conflicts: number[] = []
   for (;;) {
     let newStates: State[] = [], mapping: number[] = []
@@ -465,9 +465,7 @@ function addRecoveryRules(table: State[], first: {[name: string]: Term[]}) {
   }
 }
 
-export function buildAutomaton(terms: TermSet) {
-  let first = computeFirst(terms)
-  let full = buildFullAutomaton(terms, first)
+export function finishAutomaton(full: readonly State[], first: {[term: string]: Term[]}) {
   let table = collapseAutomaton(full)
   addRecoveryRules(table, first)
   return table
