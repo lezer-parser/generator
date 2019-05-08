@@ -1,4 +1,4 @@
-const {Parser, StringStream, Tokenizer} = require("lezer")
+const {Parser, StringStream, ExternalTokenizer} = require("lezer")
 const {buildParser} = require("../..")
 const ist = require("ist")
 
@@ -20,20 +20,20 @@ function compressAST(ast, file) {
 function externalTokenizer(name, terms) {
   const newline = /[\n\u2028\u2029]/, brace = "}".charCodeAt(0)
   if (name == "insertSemicolon") {
-    return new Tokenizer((input, stack) => {
+    return new ExternalTokenizer((input, stack) => {
       let start = input.pos, next = input.next()
       if (next == brace || next == -1 || newline.test(input.read(stack.pos, input.pos - 1)))
         input.accept(terms.insertSemi, start)
     })
   } else if (name == "noInsertSemicolon") {
-    return new Tokenizer((input, stack) => {
+    return new ExternalTokenizer((input, stack) => {
       let start = input.pos, next = input.next()
       if (next != brace && next != -1 && !newline.test(input.read(stack.pos, input.pos - 1)))
         input.accept(terms.noInsertSemi, start)
     })
   } else if (name == "postfix") {
     const plus = "+".charCodeAt(0), minus = "-".charCodeAt(0)
-    return new Tokenizer((input, stack) => {
+    return new ExternalTokenizer((input, stack) => {
       let next = input.next()
       if ((next == plus || next == minus) && next == input.next() &&
           !newline.test(input.read(stack.pos, input.pos - 2)))

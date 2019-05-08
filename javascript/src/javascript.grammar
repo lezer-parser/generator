@@ -240,7 +240,7 @@ ArrowFunction {
 }
 
 TemplateString {
-  Template | TemplateStart expression (TemplateContinue expression)* TemplateEnd
+  "`" (templateContent | "{" expression "}")* "`"
 }
 
 commaSep<content> {
@@ -276,8 +276,15 @@ Definition { identifier ~arrow }
 
 Label { identifier }
 
+skip { whitespace | LineComment | BlockComment }
+
+
+external tokens noInsertSemicolon from "./semicolon" { noInsertSemi }
+
+external tokens postfix from "./semicolon" { postfixOp=Operator }
+
 tokens {
-  skip { std.whitespace+ | LineComment | BlockComment }
+  whitespace { std.whitespace+ }
 
   LineComment=Comment { "//" [^\n]* }
 
@@ -303,43 +310,13 @@ tokens {
     "'" ([^\\\n'] | "\\" _)* "'"?
   }
 
-  // This is a rather cryptic kludge using recursion to be able to
-  // match ${ as the end of TemplateStart (and not a valid subsequence in
-  // Template) without getting confused by something like $${. It uses
-  // recursion to switch between two matching modes, depending on
-  // whether the last character was a $. Both modes are expressed by
-  // `templateRest` (or `templateStartRest`) with different arguments.
+  templateContent { ([^`$\\] | "\\" _) templateContent | "$" templateDollar }
 
-  Template { "`" templateRest<[^$\\`]> }
-
-  templateRest<exclude> {
-    "`" |
-    "$" templateRest<[^$\\`{]> |
-    "\\" _ templateRest<[^$\\`]> |
-    exclude templateRest<[^$\\`]>
-  }
-
-  TemplateStart=Template { "`" templateStartRest<[^$\\`]> }
-
-  templateStartRest<exclude> {
-    "$" ("{" | templateStartRest<[^`${\\]>) |
-    "\\" _ templateStartRest<[^$\\`]> |
-    exclude templateStartRest<[^$\\`]>
-  }
-
-  TemplateContinue=Template { "}" templateStartRest<[^$\\`]> }
-
-  TemplateEnd=Template { "}" templateRest<[^$\\`]> }
+  templateDollar { ([^`${\\] | "\\" _) templateContent | "$" templateDollar }
 
   op<expr>=Operator { expr }
 
-  group {
-    RegExp { "/" ([^/\\\n[] | "\\" [^\n] | "[" ([^\n\\\]] | "\\" [^\n])* "]")+ ("/" [gimsuy]*)? }
-  }
-
-  external insertSemicolon from "./semicolon" !low { insertSemi }
-
-  external noInsertSemicolon from "./semicolon" { noInsertSemi }
-
-  external postfix from "./semicolon" { postfixOp=Operator }
+  RegExp { "/" ([^/\\\n[] | "\\" [^\n] | "[" ([^\n\\\]] | "\\" [^\n])* "]")+ ("/" [gimsuy]*)? }
 }
+
+external tokens insertSemicolon from "./semicolon" { insertSemi }
