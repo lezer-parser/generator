@@ -331,12 +331,13 @@ function parseExternalTokens(input: Input) {
 }
 
 function readString(string: string) {
-  let point = /\\\u(?:{([\da-f]+)\}|([\da-f]{4}))|\\x([\da-f]{2})|\\([ntb0])|./yig
+  let point = /\\(?:u\{([\da-f]+)\}|u([\da-f]{4})|x([\da-f]{2})|([ntb0])|(.))|./yig
   let out = "", m
   while (m = point.exec(string)) {
-    let [all, u1, u2, u3, single] = m
+    let [all, u1, u2, u3, single, unknown] = m
     if (u1 || u2 || u3) out += String.fromCodePoint(parseInt(u1 || u2 || u3, 16))
     else if (single) out += single == "n" ? "\n" : single == "t" ? "\t" : single == "0" ? "\0" : "\b"
+    else if (unknown) out += unknown
     else out += all
   }
   return out
