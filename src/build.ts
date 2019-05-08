@@ -123,8 +123,10 @@ class Builder {
       this.raise(`Missing 'program' rule declaration`)
     for (let name in this.ruleNames) {
       let value = this.ruleNames[name]
-      if (value) this.raise(`Unused rule '${value.name}'`, value.start)
+      if (value) this.warn(`Unused rule '${value.name}'`, value.start)
     }
+
+    this.tokens.takePrecedences()
   }
 
   unique(id: Identifier) {
@@ -158,7 +160,7 @@ class Builder {
     for (let rule of rules) rule.name.rules.push(rule)
 
     let first = computeFirstSets(this.terms), fullTable = buildFullAutomaton(this.terms, first)
-    let {tokenMasks, tokenGroups} = this.buildTokenGroups(fullTable)
+    let {tokenMasks, tokenGroups, tokenPrec} = this.tokens.buildTokenGroups(fullTable)
     let table = finishAutomaton(fullTable, first)
 
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
@@ -182,7 +184,8 @@ class Builder {
     return new Parser(states, tags, repeatInfo,
                       taggedGoto, untaggedGoto,
                       specialized, specializations,
-                      this.tokens.tokenizer(tokenMasks),
+                      this.tokens.tokenizer(tokenMasks, tokenPrec),
+                      tokenPrec,
                       tokenGroups.map(g => new LezerTokenGroup(skipped)),
                       names)
   }
@@ -249,52 +252,6 @@ class Builder {
       if (this.terms.terminals.some(t => t.name == cur)) continue
       return this.terms.makeTerminal(cur, tag)
     }
-  }
-
-  buildTokenGroups(states: readonly LRState[]) {
-    let tokens = this.tokens.startState.compile()
-    // Allow conflicts between literals that appear in the same state
-    let conflicts = tokens.findConflicts().filter(({a, b}) => {
-      return !(/\"/.test(a.name) && /\"/.test(b.name) && // FIXME kind of kludgey way to detect literal tokens
-               states.some(s => s.actions.some(action => action.term == a) && s.actions.some(action => action.term == b)))
-    })
-
-    let groups: TokenGroup_[] = []
-    for (let state of states) {
-      // Find potentially-conflicting terms (in terms) and the things
-      // they conflict with (in incompatible), and raise an error if
-      // there's a token conflict directly in this state.
-      let terms = [], incompatible: Term[] = []
-      for (let {term} of state.actions) {
-        let hasConflict = false
-        for (let conflict of conflicts) {
-          let conflicting = conflict.a == term ? conflict.b : conflict.b == term ? conflict.a : null
-          if (!conflicting) continue
-          hasConflict = true
-          if (!incompatible.includes(conflicting)) {
-            if (state.actions.some(a => a.term == conflicting))
-              return this.raise(`Overlapping tokens ${term.name} and ${conflicting.name} used in same context`)
-            incompatible.push(conflicting)
-          }
-        }
-        if (hasConflict) terms.push(term)
-      }
-      let foundGroup = null
-      for (let group of groups) {
-        if (incompatible.some(term => group.tokens.includes(term))) continue
-        for (let term of terms) addToSet(group.tokens, term)
-        foundGroup = group
-        break
-      }
-      if (!foundGroup) {
-        foundGroup = new TokenGroup_(terms, groups.length)
-        groups.push(foundGroup)
-      }
-      state.tokenGroup = foundGroup.id
-    }
-    // FIXME more helpful message?
-    if (groups.length > 16) this.raise(`Too many different token groups to represent them as a 16-bit bitfield`)
-    return {tokenMasks: buildTokenMasks(groups), tokenGroups: groups}
   }
 
   finishState(state: LRState): ParseState {
@@ -530,7 +487,7 @@ function computeGotoTables(states: readonly LRState[]) {
   return {taggedGoto, untaggedGoto}
 }
 
-class TokenGroup_ { // FIXME rename
+class TokenGroup { // FIXME rename
   constructor(readonly tokens: Term[], readonly id: number) {}
 }
 
@@ -538,7 +495,7 @@ function addToSet<T>(set: T[], value: T) {
   if (!set.includes(value)) set.push(value)
 }
 
-function buildTokenMasks(groups: TokenGroup_[]) {
+function buildTokenMasks(groups: TokenGroup[]) {
   let masks: {[id: number]: number} = Object.create(null)
   for (let group of groups) {
     let groupMask = 1 << group.id
@@ -576,7 +533,7 @@ class TokenSet {
   built: BuiltRule[] = []
   building: BuildingRule[] = [] // Used for recursion check
   rules: readonly RuleDeclaration[]
-
+  precedences: Term[] = []
 
   constructor(readonly b: Builder, readonly ast: TokenDeclaration | null) {
     this.rules = ast ? ast.rules : none
@@ -689,13 +646,83 @@ class TokenSet {
     for (let [a, b] of STD_RANGES[expr.id.name]) from.edge(a, b, to)
   }
 
-  tokenizer(tokenMasks: {[id: number]: number}) {
+  tokenizer(tokenMasks: {[id: number]: number}, precedence: readonly number[]) {
     let startState = this.startState.compile()
     if (startState.accepting.length)
       this.b.raise(`Grammar contains zero-length tokens (in '${startState.accepting[0].name}')`,
                    this.rules.find(r => r.id.name == startState.accepting[0].name)!.start)
     if (/\btokens\b/.test(verbose)) console.log(startState.toString())
-    return startState.toArrays(tokenMasks)
+    return startState.toArrays(tokenMasks, precedence)
+  }
+
+  takePrecedences() {
+    if (this.ast && this.ast.precedences) for (let item of this.ast.precedences.items) {
+      let known
+      if (item instanceof NamedExpression) {
+        known = this.built.find(b => b.matches(item as NamedExpression))
+      } else {
+        let id = JSON.stringify(item.value)
+        known = this.built.find(b => b.id == id)
+      }
+      if (!known)
+        this.b.warn(`Precedence specified for unknown token ${item}`, item.start)
+      else
+        this.precedences.push(known.term)
+    }
+  }
+
+  buildTokenGroups(states: readonly LRState[]) {
+    let tokens = this.startState.compile()
+    let usedPrec: Term[] = []
+    let conflicts = tokens.findConflicts().filter(({a, b}) => {
+      // Allow conflicts between literals that appear in the same state
+      if (/\"/.test(a.name) && /\"/.test(b.name) && // FIXME kind of kludgey way to detect literal tokens
+          states.some(s => s.actions.some(action => action.term == a) && s.actions.some(action => action.term == b)))
+        return false
+      // If both tokens have a precedence, the conflict is resolved
+      addToSet(usedPrec, a)
+      addToSet(usedPrec, b)
+      return !(this.precedences.includes(a) && this.precedences.includes(b))
+    })
+
+    let groups: TokenGroup[] = []
+    for (let state of states) {
+      // Find potentially-conflicting terms (in terms) and the things
+      // they conflict with (in incompatible), and raise an error if
+      // there's a token conflict directly in this state.
+      let terms = [], incompatible: Term[] = []
+      for (let {term} of state.actions) {
+        let hasConflict = false
+        for (let conflict of conflicts) {
+          let conflicting = conflict.a == term ? conflict.b : conflict.b == term ? conflict.a : null
+          if (!conflicting) continue
+          hasConflict = true
+          if (!incompatible.includes(conflicting)) {
+            if (state.actions.some(a => a.term == conflicting))
+              return this.b.raise(`Overlapping tokens ${term.name} and ${conflicting.name} used in same context`)
+            incompatible.push(conflicting)
+          }
+        }
+        if (hasConflict) terms.push(term)
+      }
+      let foundGroup = null
+      for (let group of groups) {
+        if (incompatible.some(term => group.tokens.includes(term))) continue
+        for (let term of terms) addToSet(group.tokens, term)
+        foundGroup = group
+        break
+      }
+      if (!foundGroup) {
+        foundGroup = new TokenGroup(terms, groups.length)
+        groups.push(foundGroup)
+      }
+      state.tokenGroup = foundGroup.id
+    }
+    // FIXME more helpful message?
+    if (groups.length > 16) this.b.raise(`Too many different token groups to represent them as a 16-bit bitfield`)
+
+    let tokenPrec = this.precedences.filter(term => usedPrec.includes(term)).map(t => t.id)
+    return {tokenMasks: buildTokenMasks(groups), tokenGroups: groups, tokenPrec}
   }
 }
 

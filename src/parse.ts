@@ -1,4 +1,4 @@
-import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
+import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenPrecDeclaration,
         TokenDeclaration, Identifier, Expression,
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, AnyExpression, ConflictMarker} from "./node"
@@ -120,8 +120,8 @@ function parseTop(input: Input) {
       if (tokens) input.raise(`Multiple tokens declaractions`, input.start)
       else tokens = parseTokens(input)
     } else if (input.type == "id" && input.value == "precedence") {
-      if (prec) input.raise(`Multiple prec declarations`, input.start)
-      else prec = parsePrec(input)
+      if (prec) input.raise(`Multiple precedence declarations`, input.start)
+      else prec = parsePrecedence(input)
     } else if (input.type == "id" && input.value == "skip") {
       skip = parseRule(input, false)
     } else {
@@ -259,7 +259,7 @@ function parseIdent(input: Input) {
   return new Identifier(start, name)
 }
 
-function parsePrec(input: Input) {
+function parsePrecedence(input: Input) {
   let start = input.start
   input.next()
   input.expect("{")
@@ -279,8 +279,31 @@ function parseTokens(input: Input) {
   input.next()
   input.expect("{")
   let tokenRules: RuleDeclaration[] = []
-  while (!input.eat("}")) tokenRules.push(parseRule(input, true))
-  return new TokenDeclaration(start, tokenRules)
+  let precedence = null
+  while (!input.eat("}")) {
+    if (input.type == "id" && input.value == "precedence") {
+      if (precedence) input.raise("Multiple token precedence declarations", input.start)
+      precedence = parseTokenPrecedence(input)
+    }
+    tokenRules.push(parseRule(input, true))
+  }
+  return new TokenDeclaration(start, precedence, tokenRules)
+}
+
+function parseTokenPrecedence(input: Input) {
+  let start = input.start
+  input.next()
+  input.expect("{")
+  let tokens: (LiteralExpression | NamedExpression)[] = []
+  while (!input.eat("}")) {
+    if (tokens.length) input.expect(",")
+    let expr = parseExprInner(input)
+    if (expr instanceof LiteralExpression || expr instanceof NamedExpression)
+      tokens.push(expr)
+    else
+      input.raise(`Invalid expression in token precedences`, expr.start)
+  }
+  return new TokenPrecDeclaration(start, tokens)
 }
 
 function readString(string: string) {

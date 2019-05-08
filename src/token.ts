@@ -118,10 +118,11 @@ export class State {
   //
   // After that follow the edges going out of the state, consisting of
   // from, to, state id triplets.
-  toArrays(groupMasks: {[id: number]: number}) {
+  toArrays(groupMasks: {[id: number]: number}, precedence: readonly number[]) {
     let arrays: number[][] = []
     this.reachable(state => {
       let array = [state.stateMask(groupMasks), state.accepting.length]
+      state.accepting.sort((a, b) => precedence.indexOf(a.id) - precedence.indexOf(b.id))
       for (let term of state.accepting) array.push(term.id, groupMasks[term.id] || 0xffff)
       for (let edge of state.edges) array.push(edge.from, edge.to, edge.target.id)
       arrays.push(array)

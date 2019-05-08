@@ -13,9 +13,7 @@ tokens {
 
   Symbol { std.asciiLetter+ }
 
-  group {
-    RegExp { "/" [^/]+ "/" }
-  }
+  RegExp { "/" [^/]+ "/" }
 }
 
 ---

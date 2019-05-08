@@ -1,11 +1,15 @@
-program { tag.A<"A"> BB? tag.B<"B">+ }
+program { (A | B | BB)+ }
 
 tokens {
-  group !high { BB { "B" } }
+  precedence { BB, B }
+
+  A { "A" }
+  B { "B" "."? }
+  BB { "BB" }
 }
 
 ---
 
-ABBB
+ABBAB
 
-==> A, BB, B, B
+==> A, BB, A, B

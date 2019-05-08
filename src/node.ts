@@ -33,8 +33,16 @@ export class PrecDeclaration extends Node {
   }
 }
 
+export class TokenPrecDeclaration extends Node {
+  constructor(start: number,
+              readonly items: readonly (NamedExpression | LiteralExpression)[]) {
+    super(start)
+  }
+}
+
 export class TokenDeclaration extends Node {
   constructor(start: number,
+              readonly precedences: TokenPrecDeclaration | null,
               readonly rules: readonly RuleDeclaration[]) {
     super(start)
   }
