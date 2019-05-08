@@ -85,6 +85,7 @@ class Builder {
   tokens: TokenSet
   externalTokens: ExternalTokenSet[]
   specialized: {[name: string]: {value: string, term: Term, type: string}[]} = Object.create(null)
+  tokenOrigins: {[name: string]: Term | ExternalTokenSet} = Object.create(null)
   rules: Rule[] = []
   built: BuiltRule[] = []
   ruleNames: {[name: string]: Identifier | null} = Object.create(null)
@@ -453,8 +454,9 @@ class Builder {
     let table = this.specialized[term.name] || (this.specialized[term.name] = [])
     let known = table.find(sp => sp.value == value), token
     if (known == null) {
-      token = this.makeTerminal(JSON.stringify(value), tag)
+      token = this.makeTerminal(term.name + "/" + JSON.stringify(value), tag)
       table.push({value, term: token, type})
+      this.tokenOrigins[token.name] = term
     } else {
       if (known.type != type)
         this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`, expr.start)
@@ -713,25 +715,28 @@ class TokenSet {
       // Find potentially-conflicting terms (in terms) and the things
       // they conflict with (in incompatible), and raise an error if
       // there's a token conflict directly in this state.
-      let terms = [], incompatible: Term[] = [], external: ExternalTokenSet[] = []
+      let terms: Term[] = [], incompatible: Term[] = [], external: ExternalTokenSet[] = []
       for (let {term} of state.actions) {
-        if (this.built.some(b => b.term == term)) { // Regular token
-          let hasConflict = false
-          for (let conflict of conflicts) {
-            let conflicting = conflict.a == term ? conflict.b : conflict.b == term ? conflict.a : null
-            if (!conflicting) continue
-            hasConflict = true
-            if (!incompatible.includes(conflicting)) {
-              if (state.actions.some(a => a.term == conflicting))
-                return this.b.raise(`Overlapping tokens ${term.name} and ${conflicting.name} used in same context`)
-              incompatible.push(conflicting)
-            }
-          }
-          if (hasConflict) terms.push(term)
-        } else {
-          let isExt = this.b.externalTokens.find(ext => ext.terms.includes(term))
-          if (isExt) addToSet(external, isExt)
+        let orig = this.b.tokenOrigins[term.name]
+        if (orig instanceof ExternalTokenSet) {
+          addToSet(external, orig)
+          continue
+        } else if (orig) {
+          if (terms.includes(orig)) continue
+          term = orig
         }
+        let hasConflict = false
+        for (let conflict of conflicts) {
+          let conflicting = conflict.a == term ? conflict.b : conflict.b == term ? conflict.a : null
+          if (!conflicting) continue
+          hasConflict = true
+          if (!incompatible.includes(conflicting)) {
+            if (state.actions.some(a => a.term == conflicting))
+              return this.b.raise(`Overlapping tokens ${term.name} and ${conflicting.name} used in same context`)
+            incompatible.push(conflicting)
+          }
+        }
+        if (hasConflict) terms.push(term)
       }
       let foundGroup = null
       for (let group of groups) {
@@ -823,21 +828,20 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
 
 class ExternalTokenSet {
   tokens: {[name: string]: Term} = Object.create(null)
-  terms: Term[] = []
 
   constructor(readonly b: Builder, readonly ast: ExternalTokenDeclaration) {
     for (let token of ast.tokens) {
       b.unique(token.id)
       let term = b.makeTerminal(token.id.name, token.tag ? token.tag.name : null)
       b.namedTerms[token.id.name] = this.tokens[token.id.name] = term
-      this.terms.push(term)
+      this.b.tokenOrigins[term.name] = this
     }
   }
 
   getToken(expr: NamedExpression) {
-    if (expr.args.length) this.b.raise("External tokens can not take arguments", expr.args[0].start)
     let found = this.tokens[expr.id.name]
     if (!found) return null
+    if (expr.args.length) this.b.raise("External tokens cannot take arguments", expr.args[0].start)
     this.b.used(expr.id.name)
     return found
   }
