@@ -61,11 +61,11 @@ export class Input {
     if (next == '"') {
       let end = this.match(start + 1, /^(\\.|[^"])*"/)
       if (end == -1) this.raise("Unterminated string literal", start)
-      return this.set("string", readString(this.string.slice(start, end)), start, end)
+      return this.set("string", readString(this.string.slice(start + 1, end - 1)), start, end)
     } else if (next == "'") {
       let end = this.match(start + 1, /^(\\.|[^'])*'/)
       if (end == -1) this.raise("Unterminated string literal", start)
-      return this.set("string", readString(this.string.slice(start, end)), start, end)
+      return this.set("string", readString(this.string.slice(start + 1, end - 1)), start, end)
     } else if (next == "[") {
       let end = this.match(start + 1, /^(?:\\.|[^\]])*\]/)
       if (end == -1) this.raise("Unterminated character set", start)
@@ -173,9 +173,9 @@ function parseExprInner(input: Input): Expression {
       invert = true
       content = content.slice(1)
     }
-    let unescaped = readString('"' + content.replace(/\\.|-|"/g, (m: string) => {
+    let unescaped = readString(content.replace(/\\.|-|"/g, (m: string) => {
       return m == "-" ? SET_MARKER : m == '"' ? '\\"' : m
-    }) + '"') as string
+    }))
     let ranges: [number, number][] = []
     for (let pos = 0; pos < unescaped.length;) {
       let code = unescaped.codePointAt(pos)!
@@ -331,10 +331,13 @@ function parseExternalTokens(input: Input) {
 }
 
 function readString(string: string) {
-  // Can't use JSON.parse because it has too limited support for
-  // escape sequences, can't be bothered to write a custom reader.
-
-  // FIXME maybe .replace the necessary escapes (such as \u{}) and
-  // then feed to JSON.parse?
-  return (1,eval)(string)
+  let point = /\\\u(?:{([\da-f]+)\}|([\da-f]{4}))|\\x([\da-f]{2})|\\([ntb0])|./yig
+  let out = "", m
+  while (m = point.exec(string)) {
+    let [all, u1, u2, u3, single] = m
+    if (u1 || u2 || u3) out += String.fromCodePoint(parseInt(u1 || u2 || u3, 16))
+    else if (single) out += single == "n" ? "\n" : single == "t" ? "\t" : single == "0" ? "\0" : "\b"
+    else out += all
+  }
+  return out
 }
