@@ -1,5 +1,6 @@
-import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, TokenPrecDeclaration,
-        TokenDeclaration, Identifier, Expression,
+import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
+        TokenPrecDeclaration, TokenDeclaration, ExternalTokenDeclaration,
+        Identifier, Expression,
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, AnyExpression, ConflictMarker} from "./node"
 
@@ -114,11 +115,14 @@ function parseTop(input: Input) {
   let prec: PrecDeclaration | null = null
   let tokens: TokenDeclaration | null = null
   let skip: RuleDeclaration | null = null
+  let external: ExternalTokenDeclaration[] = []
 
   while (input.type != "eof") {
     if (input.type == "id" && input.value == "tokens") {
       if (tokens) input.raise(`Multiple tokens declaractions`, input.start)
       else tokens = parseTokens(input)
+    } else if (input.type == "id" && input.value == "external") {
+      external.push(parseExternalTokens(input))
     } else if (input.type == "id" && input.value == "precedence") {
       if (prec) input.raise(`Multiple precedence declarations`, input.start)
       else prec = parsePrecedence(input)
@@ -128,7 +132,7 @@ function parseTop(input: Input) {
       rules.push(parseRule(input, false))
     }
   }
-  return new GrammarDeclaration(start, rules, tokens, prec, skip)
+  return new GrammarDeclaration(start, rules, tokens, external, prec, skip)
 }
 
 function parseRule(input: Input, isToken: boolean) {
@@ -284,8 +288,9 @@ function parseTokens(input: Input) {
     if (input.type == "id" && input.value == "precedence") {
       if (precedence) input.raise("Multiple token precedence declarations", input.start)
       precedence = parseTokenPrecedence(input)
+    } else {
+      tokenRules.push(parseRule(input, true))
     }
-    tokenRules.push(parseRule(input, true))
   }
   return new TokenDeclaration(start, precedence, tokenRules)
 }
@@ -304,6 +309,25 @@ function parseTokenPrecedence(input: Input) {
       input.raise(`Invalid expression in token precedences`, expr.start)
   }
   return new TokenPrecDeclaration(start, tokens)
+}
+
+function parseExternalTokens(input: Input) {
+  let start = input.start
+  input.next()
+  input.expect("id", "tokens")
+  let id = parseIdent(input)
+  input.expect("id", "from")
+  let from = input.value
+  input.expect("string")
+  let tokens: {id: Identifier, tag: Identifier | null}[] = []
+  input.expect("{")
+  while (!input.eat("}")) {
+    if (tokens.length) input.expect(",")
+    let id = parseIdent(input)
+    let tag = input.eat("=") ? parseIdent(input) : null
+    tokens.push({id, tag})
+  }
+  return new ExternalTokenDeclaration(start, id, from, tokens)
 }
 
 function readString(string: string) {

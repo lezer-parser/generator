@@ -1,4 +1,4 @@
-import {GrammarDeclaration, RuleDeclaration, TokenDeclaration,
+import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
         exprsEq, exprEq} from "./node"
@@ -6,7 +6,7 @@ import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
-import {Parser, ParseState, REDUCE_DEPTH_SIZE, TokenGroup as LezerTokenGroup,
+import {Parser, ParseState, REDUCE_DEPTH_SIZE, TokenGroup as LezerTokenGroup, ExternalTokenizer,
         TERM_TAGGED, SPECIALIZE, REPLACE, EXTEND} from "lezer"
 
 const none: readonly any[] = []
@@ -75,7 +75,7 @@ export type BuildOptions = {
   warn?: (message: string) => void,
   includeNames?: boolean,
   moduleStyle?: string,
-  //externalTokenizer?: (name: string, terms: {[name: string]: number}) => Tokenizer
+  externalTokenizer?: (name: string, terms: {[name: string]: number}) => ExternalTokenizer
 }
 
 class Builder {
@@ -83,6 +83,7 @@ class Builder {
   input: Input
   terms = new TermSet
   tokens: TokenSet
+  externalTokens: ExternalTokenSet[]
   specialized: {[name: string]: {value: string, term: Term, type: string}[]} = Object.create(null)
   rules: Rule[] = []
   built: BuiltRule[] = []
@@ -96,6 +97,7 @@ class Builder {
     this.ast = this.input.parse()
 
     this.tokens = new TokenSet(this, this.ast.tokens)
+    this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
 
     this.defineNamespace("tag", new TagNamespace)
 
@@ -136,8 +138,8 @@ class Builder {
     this.ruleNames[id.name] = id
   }
 
-  used(id: Identifier) {
-    this.ruleNames[id.name] = null
+  used(name: string) {
+    this.ruleNames[name] = null
   }
 
   defineNamespace(name: string, value: Namespace, pos: number = 0) {
@@ -186,7 +188,8 @@ class Builder {
                       specialized, specializations,
                       this.tokens.tokenizer(tokenMasks, tokenPrec),
                       tokenPrec,
-                      tokenGroups.map(g => new LezerTokenGroup(skipped)),
+                      tokenGroups.map(g => new LezerTokenGroup(skipped, g.externalBefore(this, terms),
+                                                               g.externalAfter(this, terms))),
                       names)
   }
 
@@ -345,6 +348,10 @@ class Builder {
 
       let found = this.tokens.getToken(expr)
       if (found) return [p(found)]
+      for (let ext of this.externalTokens) {
+        let found = ext.getToken(expr)
+        if (found) return [p(found)]
+      }
 
       let known = this.ast.rules.find(r => r.id.name == expr.id.name)
       if (!known)
@@ -420,7 +427,7 @@ class Builder {
 
   buildRule(rule: RuleDeclaration, args: readonly Expression[]): Term {
     let expr = this.substituteArgs(rule.expr, args, rule.params)
-    this.used(rule.id)
+    this.used(rule.id.name)
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
                             rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
     if (args.length == 0) this.namedTerms[rule.id.name] = name
@@ -487,8 +494,24 @@ function computeGotoTables(states: readonly LRState[]) {
   return {taggedGoto, untaggedGoto}
 }
 
-class TokenGroup { // FIXME rename
-  constructor(readonly tokens: Term[], readonly id: number) {}
+class TokenGroup {
+  constructor(readonly tokens: Term[], readonly id: number, readonly external: ExternalTokenSet[]) {}
+
+  makeExternal(b: Builder, terms: {[name: string]: number}, sets: ExternalTokenSet[]) {
+    return sets.sort((a, b) => a.ast.start - b.ast.start).map(set => {
+      if (!b.options.externalTokenizer)
+        return b.raise(`No 'externalTokenizer' option provided, but external tokenizers used`)
+      return b.options.externalTokenizer(set.ast.id.name, terms)
+    })
+  }
+
+  externalBefore(b: Builder, terms: {[name: string]: number}) {
+    return b.tokens.ast ? this.makeExternal(b, terms, this.external.filter(e => e.ast.start < b.tokens.ast!.start)) : []
+  }
+
+  externalAfter(b: Builder, terms: {[name: string]: number}) {
+    return this.makeExternal(b, terms, this.external.filter(e => b.tokens.ast ? e.ast.start > b.tokens.ast.start : true))
+  }
 }
 
 function addToSet<T>(set: T[], value: T) {
@@ -576,7 +599,7 @@ class TokenSet {
       this.b.raise(`Invalid (non-tail) recursion in token rules: ${
         this.building.slice(lastIndex).map(b => b.name).join(" -> ")}`, expr.start)
     }
-    this.b.used(rule.id)
+    this.b.used(rule.id.name)
     let start = new State
     from.nullEdge(start)
     this.building.push(new BuildingRule(name, start, to, expr.args))
@@ -690,30 +713,36 @@ class TokenSet {
       // Find potentially-conflicting terms (in terms) and the things
       // they conflict with (in incompatible), and raise an error if
       // there's a token conflict directly in this state.
-      let terms = [], incompatible: Term[] = []
+      let terms = [], incompatible: Term[] = [], external: ExternalTokenSet[] = []
       for (let {term} of state.actions) {
-        let hasConflict = false
-        for (let conflict of conflicts) {
-          let conflicting = conflict.a == term ? conflict.b : conflict.b == term ? conflict.a : null
-          if (!conflicting) continue
-          hasConflict = true
-          if (!incompatible.includes(conflicting)) {
-            if (state.actions.some(a => a.term == conflicting))
-              return this.b.raise(`Overlapping tokens ${term.name} and ${conflicting.name} used in same context`)
-            incompatible.push(conflicting)
+        if (this.built.some(b => b.term == term)) { // Regular token
+          let hasConflict = false
+          for (let conflict of conflicts) {
+            let conflicting = conflict.a == term ? conflict.b : conflict.b == term ? conflict.a : null
+            if (!conflicting) continue
+            hasConflict = true
+            if (!incompatible.includes(conflicting)) {
+              if (state.actions.some(a => a.term == conflicting))
+                return this.b.raise(`Overlapping tokens ${term.name} and ${conflicting.name} used in same context`)
+              incompatible.push(conflicting)
+            }
           }
+          if (hasConflict) terms.push(term)
+        } else {
+          let isExt = this.b.externalTokens.find(ext => ext.terms.includes(term))
+          if (isExt) addToSet(external, isExt)
         }
-        if (hasConflict) terms.push(term)
       }
       let foundGroup = null
       for (let group of groups) {
         if (incompatible.some(term => group.tokens.includes(term))) continue
         for (let term of terms) addToSet(group.tokens, term)
+        for (let ext of external) addToSet(group.external, ext)
         foundGroup = group
         break
       }
       if (!foundGroup) {
-        foundGroup = new TokenGroup(terms, groups.length)
+        foundGroup = new TokenGroup(terms, groups.length, external)
         groups.push(foundGroup)
       }
       state.tokenGroup = foundGroup.id
@@ -790,6 +819,28 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
   digit: [[48, 58]],
   whitespace: [[9, 14], [32, 33], [133, 134], [160, 161], [5760, 5761], [8192, 8203],
                [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]]
+}
+
+class ExternalTokenSet {
+  tokens: {[name: string]: Term} = Object.create(null)
+  terms: Term[] = []
+
+  constructor(readonly b: Builder, readonly ast: ExternalTokenDeclaration) {
+    for (let token of ast.tokens) {
+      b.unique(token.id)
+      let term = b.makeTerminal(token.id.name, token.tag ? token.tag.name : null)
+      b.namedTerms[token.id.name] = this.tokens[token.id.name] = term
+      this.terms.push(term)
+    }
+  }
+
+  getToken(expr: NamedExpression) {
+    if (expr.args.length) this.b.raise("External tokens can not take arguments", expr.args[0].start)
+    let found = this.tokens[expr.id.name]
+    if (!found) return null
+    this.b.used(expr.id.name)
+    return found
+  }
 }
 
 // FIXME maybe add a pass that, if there's a tagless token whole only

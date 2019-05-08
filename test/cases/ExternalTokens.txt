@@ -2,12 +2,10 @@ program { expr* }
 
 expr { tag.Braced<braceOpen expr braceClose> | tag.X<"x" (dot tag.Y<"y">)?> }
 
-tokens {
-  external ext1 from "./external_tokens.js" {
-    braceOpen,
-    braceClose,
-    dot=Dot
-  }
+external tokens ext1 from "./external_tokens.js" {
+  braceOpen,
+  braceClose,
+  dot=Dot
 }
 
 ---

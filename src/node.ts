@@ -6,6 +6,7 @@ export class GrammarDeclaration extends Node {
   constructor(start: number,
               readonly rules: readonly RuleDeclaration[],
               readonly tokens: TokenDeclaration | null,
+              readonly externalTokens: readonly ExternalTokenDeclaration[],
               readonly precedences: PrecDeclaration | null,
               readonly skip: RuleDeclaration | null) {
     super(start)
@@ -44,6 +45,15 @@ export class TokenDeclaration extends Node {
   constructor(start: number,
               readonly precedences: TokenPrecDeclaration | null,
               readonly rules: readonly RuleDeclaration[]) {
+    super(start)
+  }
+}
+
+export class ExternalTokenDeclaration extends Node {
+  constructor(start: number,
+              readonly id: Identifier,
+              readonly source: string,
+              readonly tokens: readonly {id: Identifier, tag: Identifier | null}[]) {
     super(start)
   }
 }
