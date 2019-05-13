@@ -735,6 +735,11 @@ class TokenSet {
       return !(this.precedences.includes(a) && this.precedences.includes(b))
     })
 
+    for (let {a, b} of conflicts) {
+      if (this.b.skippedTokens.includes(a)) this.b.raise(`Token '${b}' conflicts with skipped token '${a}'.`)
+      if (this.b.skippedTokens.includes(b)) this.b.raise(`Token '${a}' conflicts with skipped token '${b}'.`)
+    }
+
     let groups: TokenGroup[] = []
     for (let state of states) {
       // Find potentially-conflicting terms (in terms) and the things

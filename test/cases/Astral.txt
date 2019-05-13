@@ -3,7 +3,7 @@ program { (Identifier | Thing)+ }
 skip { whitespace }
 
 tokens {
-  whitespace { std.whitespace+ }
+  whitespace { " "+ }
 
   identifierChar { std.asciiLetter | [\u{a1}-\u{10ffff}] }
 
