@@ -283,16 +283,14 @@ function parseTokens(input: Input) {
   input.next()
   input.expect("{")
   let tokenRules: RuleDeclaration[] = []
-  let precedence = null
+  let precedences: TokenPrecDeclaration[] = []
   while (!input.eat("}")) {
-    if (input.type == "id" && input.value == "precedence") {
-      if (precedence) input.raise("Multiple token precedence declarations", input.start)
-      precedence = parseTokenPrecedence(input)
-    } else {
+    if (input.type == "id" && input.value == "precedence")
+      precedences.push(parseTokenPrecedence(input))
+    else
       tokenRules.push(parseRule(input, true))
-    }
   }
-  return new TokenDeclaration(start, precedence, tokenRules)
+  return new TokenDeclaration(start, precedences, tokenRules)
 }
 
 function parseTokenPrecedence(input: Input) {

@@ -681,19 +681,44 @@ class TokenSet {
   }
 
   takePrecedences() {
-    if (this.ast && this.ast.precedences) for (let item of this.ast.precedences.items) {
-      let known
-      if (item instanceof NamedExpression) {
-        known = this.built.find(b => b.matches(item as NamedExpression))
-      } else {
-        let id = JSON.stringify(item.value)
-        known = this.built.find(b => b.id == id)
+    let graph: {term: Term, after: Term[]}[] = []
+    if (this.ast) for (let group of this.ast.precedences) {
+      let terms: Term[] = []
+      for (let item of group.items) {
+        let known
+        if (item instanceof NamedExpression) {
+          known = this.built.find(b => b.matches(item as NamedExpression))
+        } else {
+          let id = JSON.stringify(item.value)
+          known = this.built.find(b => b.id == id)
+        }
+        if (!known)
+          this.b.warn(`Precedence specified for unknown token ${item}`, item.start)
+        else
+          terms.push(known.term)
       }
-      if (!known)
-        this.b.warn(`Precedence specified for unknown token ${item}`, item.start)
-      else
-        this.precedences.push(known.term)
+      for (let i = 0; i < terms.length; i++) {
+        let found = graph.find(r => r.term == terms[i])
+        if (!found) graph.push(found = {term: terms[i], after: terms.slice(0, i)})
+        else for (let j = 0; j < i; j++) addToSet(found.after, terms[j])
+      }
     }
+    let ordered: Term[] = []
+    add: for (;;) {
+      for (let i = 0; i < graph.length; i++) {
+        let record = graph[i]
+        if (record.after.every(t => ordered.includes(t))) {
+          ordered.push(record.term)
+          let last = graph.pop()!
+          if (i < graph.length) graph[i] = last
+          continue add
+        }
+      }
+      if (graph.length)
+        this.b.raise(`Cyclic token precedence relation between ${graph.map(r => r.term).join(", ")}`)
+      break
+    }
+    this.precedences = ordered
   }
 
   buildTokenGroups(states: readonly LRState[]) {

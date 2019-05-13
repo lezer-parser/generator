@@ -43,7 +43,7 @@ export class TokenPrecDeclaration extends Node {
 
 export class TokenDeclaration extends Node {
   constructor(start: number,
-              readonly precedences: TokenPrecDeclaration | null,
+              readonly precedences: readonly TokenPrecDeclaration[],
               readonly rules: readonly RuleDeclaration[]) {
     super(start)
   }
