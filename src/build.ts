@@ -6,7 +6,7 @@ import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
-import {Parser, ParseState, REDUCE_DEPTH_SIZE, TokenGroup as LezerTokenGroup, ExternalTokenizer,
+import {Parser, ParseState, REDUCE_DEPTH_SIZE, Tokenizer, TokenGroup as LezerTokenGroup, ExternalTokenizer,
         TERM_TAGGED, SPECIALIZE, REPLACE, EXTEND} from "lezer"
 
 const none: readonly any[] = []
@@ -177,20 +177,24 @@ class Builder {
       }
       specializations.push(table)
     }
-    let states = table.map(s => this.finishState(s))
-    let {taggedGoto, untaggedGoto} = computeGotoTables(table)
 
     let terms: {[name: string]: number} = {}
     for (let prop in this.namedTerms) terms[prop] = this.namedTerms[prop].id
+
+    let tokenData = this.tokens.tokenizer(tokenMasks, tokenPrec)
+    let groupObjects = tokenGroups.map(g => new LezerTokenGroup(tokenData, g.id))
+    let externalTokenizers = this.externalTokens.map(ext => new TempExternalTokenizer(ext, terms))
+    let states = table.map(s => this.finishState(s, groupObjects, externalTokenizers))
+
+    let {taggedGoto, untaggedGoto} = computeGotoTables(table)
 
     let skipped = this.skippedTokens.map(t => t.id)
     return new Parser(states, tags, repeatInfo,
                       taggedGoto, untaggedGoto,
                       specialized, specializations,
-                      this.tokens.tokenizer(tokenMasks, tokenPrec),
+                      // FIXME maybe order ids to express precedence at some point
                       tokenPrec,
-                      tokenGroups.map(g => new LezerTokenGroup(skipped, g.externalBefore(this, terms),
-                                                               g.externalAfter(this, terms))),
+                      skipped,
                       names)
   }
 
@@ -258,7 +262,7 @@ class Builder {
     }
   }
 
-  finishState(state: LRState): ParseState {
+  finishState(state: LRState, tokenGroups: Tokenizer[], externalTokenGroups: TempExternalTokenizer[]): ParseState {
     let actions = [], recover = [], forcedReduce = 0, defaultReduce = 0
     if (state.actions.length) {
       let first = state.actions[0] as Reduce
@@ -278,7 +282,20 @@ class Builder {
       forcedReduce = (defaultPos.rule.name.id << REDUCE_DEPTH_SIZE) | (defaultPos.pos + 1)
     }
 
-    return new ParseState(state.id, actions, recover, defaultReduce, forcedReduce, state.tokenGroup)
+    let external: ExternalTokenSet[] = []
+    for (let {term} of state.actions) {
+      let orig = this.tokenOrigins[term.name]
+      if (orig instanceof ExternalTokenSet) addToSet(external, orig)
+    }
+    external.sort((a, b) => a.ast.start - b.ast.start)
+    let mainStart = this.tokens.ast ? this.tokens.ast.start : -1
+    let tokenizers = (external.filter(e => e.ast.start < mainStart).map(e => externalTokenGroups.find(g => g.set == e)!) as Tokenizer[])
+      .concat(state.tokenGroup < 0 ? [] : [tokenGroups[state.tokenGroup]])
+      .concat(external.filter(e => e.ast.start > mainStart).map(e => externalTokenGroups.find(g => g.set == e)!))
+    // FIXME temp kludge until whitespace is handled properly
+    if (!tokenizers.length && tokenGroups.length) tokenizers.push(tokenGroups[0])
+
+    return new ParseState(state.id, actions, recover, defaultReduce, forcedReduce, tokenizers)
   }
 
   substituteArgs(expr: Expression, args: readonly Expression[], params: readonly Identifier[]) {
@@ -497,23 +514,7 @@ function computeGotoTables(states: readonly LRState[]) {
 }
 
 class TokenGroup {
-  constructor(readonly tokens: Term[], readonly id: number, readonly external: ExternalTokenSet[]) {}
-
-  makeExternal(b: Builder, terms: {[name: string]: number}, sets: ExternalTokenSet[]) {
-    return sets.sort((a, b) => a.ast.start - b.ast.start).map(set => {
-      if (!b.options.externalTokenizer)
-        return b.raise(`No 'externalTokenizer' option provided, but external tokenizers used`)
-      return b.options.externalTokenizer(set.ast.id.name, terms)
-    })
-  }
-
-  externalBefore(b: Builder, terms: {[name: string]: number}) {
-    return b.tokens.ast ? this.makeExternal(b, terms, this.external.filter(e => e.ast.start < b.tokens.ast!.start)) : []
-  }
-
-  externalAfter(b: Builder, terms: {[name: string]: number}) {
-    return this.makeExternal(b, terms, this.external.filter(e => b.tokens.ast ? e.ast.start > b.tokens.ast.start : true))
-  }
+  constructor(readonly tokens: Term[], readonly id: number) {}
 }
 
 function addToSet<T>(set: T[], value: T) {
@@ -743,18 +744,18 @@ class TokenSet {
     let groups: TokenGroup[] = []
     for (let state of states) {
       // Find potentially-conflicting terms (in terms) and the things
-      // they conflict with (in incompatible), and raise an error if
+      // they conflict with (in conflicts), and raise an error if
       // there's a token conflict directly in this state.
-      let terms: Term[] = [], incompatible: Term[] = [], external: ExternalTokenSet[] = []
+      let terms: Term[] = [], hasTerms = false, incompatible: Term[] = []
       for (let {term} of state.actions) {
         let orig = this.b.tokenOrigins[term.name]
-        if (orig instanceof ExternalTokenSet) {
-          addToSet(external, orig)
-          continue
-        } else if (orig) {
+        if (orig instanceof Term) {
           if (terms.includes(orig)) continue
           term = orig
+        } else if (orig) {
+          continue
         }
+        hasTerms = true
         let hasConflict = false
         for (let conflict of conflicts) {
           let conflicting = conflict.a == term ? conflict.b : conflict.b == term ? conflict.a : null
@@ -768,19 +769,21 @@ class TokenSet {
         }
         if (hasConflict) terms.push(term)
       }
-      let foundGroup = null
+      // FIXME this causes us to not tokenize whitespace for states that don't match any group
+      if (!hasTerms) continue
+
+      let tokenGroup = null
       for (let group of groups) {
         if (incompatible.some(term => group.tokens.includes(term))) continue
         for (let term of terms) addToSet(group.tokens, term)
-        for (let ext of external) addToSet(group.external, ext)
-        foundGroup = group
+        tokenGroup = group
         break
       }
-      if (!foundGroup) {
-        foundGroup = new TokenGroup(terms, groups.length, external)
-        groups.push(foundGroup)
+      if (!tokenGroup) {
+        tokenGroup = new TokenGroup(terms, groups.length)
+        groups.push(tokenGroup)
       }
-      state.tokenGroup = foundGroup.id
+      state.tokenGroup = tokenGroup.id
     }
     // FIXME more helpful message?
     if (groups.length > 16) this.b.raise(`Too many different token groups to represent them as a 16-bit bitfield`)
@@ -876,6 +879,28 @@ class ExternalTokenSet {
     return found
   }
 }
+
+class TempExternalTokenizer {
+  _inner: null | ExternalTokenizer = null
+
+  constructor(readonly set: ExternalTokenSet, readonly terms: {[name: string]: number}) {}
+
+  get inner(): ExternalTokenizer {
+    if (!this._inner) {
+      let getExt = this.set.b.options.externalTokenizer
+      this._inner = getExt ? getExt(this.set.ast.id.name, this.terms) : null
+      if (!this._inner) return this.set.b.raise(`Using external tokenizer without passing externalTokenizer option`)
+    }
+    return this._inner
+  }
+  
+  token(stream: any, stack: any) {
+    this.inner.token(stream, stack)
+  }
+
+  get contextual() { return this.inner.contextual }
+}
+
 
 // FIXME maybe add a pass that, if there's a tagless token whole only
 // use is in a tagged single-term rule, move the tag to the token and
