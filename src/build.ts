@@ -560,6 +560,7 @@ class TokenSet {
   building: BuildingRule[] = [] // Used for recursion check
   rules: readonly RuleDeclaration[]
   precedences: Term[] = []
+  precedenceRelations: readonly {term: Term, after: readonly Term[]}[] = []
 
   constructor(readonly b: Builder, readonly ast: TokenDeclaration | null) {
     this.rules = ast ? ast.rules : none
@@ -682,7 +683,7 @@ class TokenSet {
   }
 
   takePrecedences() {
-    let graph: {term: Term, after: Term[]}[] = []
+    let rel: {term: Term, after: Term[]}[] = []
     if (this.ast) for (let group of this.ast.precedences) {
       let terms: Term[] = []
       for (let item of group.items) {
@@ -699,41 +700,44 @@ class TokenSet {
           terms.push(known.term)
       }
       for (let i = 0; i < terms.length; i++) {
-        let found = graph.find(r => r.term == terms[i])
-        if (!found) graph.push(found = {term: terms[i], after: terms.slice(0, i)})
+        let found = rel.find(r => r.term == terms[i])
+        if (!found) rel.push(found = {term: terms[i], after: terms.slice(0, i)})
         else for (let j = 0; j < i; j++) addToSet(found.after, terms[j])
       }
     }
+    this.precedenceRelations = rel.slice()
+
     let ordered: Term[] = []
     add: for (;;) {
-      for (let i = 0; i < graph.length; i++) {
-        let record = graph[i]
+      for (let i = 0; i < rel.length; i++) {
+        let record = rel[i]
         if (record.after.every(t => ordered.includes(t))) {
           ordered.push(record.term)
-          let last = graph.pop()!
-          if (i < graph.length) graph[i] = last
+          let last = rel.pop()!
+          if (i < rel.length) rel[i] = last
           continue add
         }
       }
-      if (graph.length)
-        this.b.raise(`Cyclic token precedence relation between ${graph.map(r => r.term).join(", ")}`)
+      if (rel.length)
+        this.b.raise(`Cyclic token precedence relation between ${rel.map(r => r.term).join(", ")}`)
       break
     }
     this.precedences = ordered
+  }
+
+  precededBy(a: Term, b: Term) {
+    let found = this.precedenceRelations.find(r => r.term == a)
+    return found && found.after.includes(b)
   }
 
   buildTokenGroups(states: readonly LRState[]) {
     let tokens = this.startState.compile()
     let usedPrec: Term[] = []
     let conflicts = tokens.findConflicts().filter(({a, b}) => {
-      // Allow conflicts between literals that appear in the same state
-      if (/\"/.test(a.name) && /\"/.test(b.name) && // FIXME kind of kludgey way to detect literal tokens
-          states.some(s => s.actions.some(action => action.term == a) && s.actions.some(action => action.term == b)))
-        return false
       // If both tokens have a precedence, the conflict is resolved
       addToSet(usedPrec, a)
       addToSet(usedPrec, b)
-      return !(this.precedences.includes(a) && this.precedences.includes(b))
+      return !this.precededBy(a, b) && !this.precededBy(b, a)
     })
 
     for (let {a, b} of conflicts) {
