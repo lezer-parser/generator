@@ -8,7 +8,8 @@ export class GrammarDeclaration extends Node {
               readonly tokens: TokenDeclaration | null,
               readonly externalTokens: readonly ExternalTokenDeclaration[],
               readonly precedences: PrecDeclaration | null,
-              readonly skip: RuleDeclaration | null) {
+              readonly mainSkip: Expression | null,
+              readonly scopedSkip: readonly {expr: Expression, rules: readonly RuleDeclaration[]}[]) {
     super(start)
   }
   toString() { return Object.values(this.rules).join("\n") }
@@ -39,6 +40,10 @@ export class TokenPrecDeclaration extends Node {
               readonly items: readonly (NamedExpression | LiteralExpression)[]) {
     super(start)
   }
+}
+
+export class ScopedSkip extends Node {
+  
 }
 
 export class TokenDeclaration extends Node {

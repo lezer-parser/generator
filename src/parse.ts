@@ -114,7 +114,8 @@ function parseTop(input: Input) {
   let rules: RuleDeclaration[] = []
   let prec: PrecDeclaration | null = null
   let tokens: TokenDeclaration | null = null
-  let skip: RuleDeclaration | null = null
+  let mainSkip: Expression | null = null
+  let scopedSkip: {expr: Expression, rules: readonly RuleDeclaration[]}[] = []
   let external: ExternalTokenDeclaration[] = []
 
   while (input.type != "eof") {
@@ -126,13 +127,25 @@ function parseTop(input: Input) {
     } else if (input.type == "id" && input.value == "precedence") {
       if (prec) input.raise(`Multiple precedence declarations`, input.start)
       else prec = parsePrecedence(input)
-    } else if (input.type == "id" && input.value == "skip") {
-      skip = parseRule(input, false)
+    } else if (input.eat("id", "skip")) {
+      let skip = parseBracedExpr(input)
+      if (input.type == "{") {
+        input.next()
+        let scoped = []
+        while (!input.eat("}")) {
+          if (scoped.length) input.expect(",")
+          scoped.push(parseRule(input, false))
+        }
+        scopedSkip.push({expr: skip, rules: scoped})
+      } else {
+        if (mainSkip) input.raise(`Multiple top-level skip declarations`, input.start)
+        mainSkip = skip
+      }
     } else {
       rules.push(parseRule(input, false))
     }
   }
-  return new GrammarDeclaration(start, rules, tokens, external, prec, skip)
+  return new GrammarDeclaration(start, rules, tokens, external, prec, mainSkip, scopedSkip)
 }
 
 function parseRule(input: Input, isToken: boolean) {
@@ -144,10 +157,15 @@ function parseRule(input: Input, isToken: boolean) {
     params.push(parseIdent(input))
   }
   if (input.eat("=")) tag = parseIdent(input)
+  let expr = parseBracedExpr(input)
+  return new RuleDeclaration(start, id, tag, params, expr)
+}
+
+function parseBracedExpr(input: Input): Expression {
   input.expect("{")
   let expr = parseExprChoice(input)
   input.expect("}")
-  return new RuleDeclaration(start, id, tag, params, expr)
+  return expr
 }
 
 const SET_MARKER = "\ufdda" // (Invalid unicode character)

@@ -91,7 +91,7 @@ class Builder {
   ruleNames: {[name: string]: Identifier | null} = Object.create(null)
   namespaces: {[name: string]: Namespace} = Object.create(null)
   namedTerms: {[name: string]: Term} = Object.create(null)
-  skippedTokens: Term[] = []
+  mainSkip: Term[] = []
 
   constructor(text: string, readonly options: BuildOptions) {
     this.input = new Input(text, options.fileName)
@@ -113,12 +113,11 @@ class Builder {
       }
     }
 
-    if (this.ast.skip) {
-      if (this.ast.skip.params.length) this.raise(`'skip' rules should not take parameters`, this.ast.skip.start)
-      for (let choice of this.normalizeExpr(this.ast.skip.expr)) {
+    if (this.ast.mainSkip) {
+      for (let choice of this.normalizeExpr(this.ast.mainSkip)) {
         if (choice.terms.length != 1 || !choice.terms[0].terminal || choice.conflicts)
-          this.raise(`Each alternative in a 'skip' rule should hold a single terminal`, this.ast.skip.start)
-        this.skippedTokens.push(choice.terms[0])
+          this.raise(`Each alternative in a 'skip' rule should hold a single terminal`, this.ast.mainSkip.start)
+        this.mainSkip.push(choice.terms[0])
       }
     }
 
@@ -185,7 +184,7 @@ class Builder {
     let groupObjects = tokenGroups.map(g => new LezerTokenGroup(tokenData, g.id))
     let externalTokenizers = this.externalTokens.map(ext => new TempExternalTokenizer(ext, terms))
     let skip: number[] = []
-    for (let token of this.skippedTokens) skip.push(token.id, GOTO_STAY)
+    for (let token of this.mainSkip) skip.push(token.id, GOTO_STAY)
     let states = table.map(s => this.finishState(s, groupObjects, externalTokenizers, skip))
 
     let {taggedGoto, untaggedGoto} = computeGotoTables(table)
@@ -742,8 +741,8 @@ class TokenSet {
     })
 
     for (let {a, b} of conflicts) {
-      if (this.b.skippedTokens.includes(a)) this.b.raise(`Token '${b}' conflicts with skipped token '${a}'.`)
-      if (this.b.skippedTokens.includes(b)) this.b.raise(`Token '${a}' conflicts with skipped token '${b}'.`)
+      if (this.b.mainSkip.includes(a)) this.b.raise(`Token '${b}' conflicts with skipped token '${a}'.`)
+      if (this.b.mainSkip.includes(b)) this.b.raise(`Token '${a}' conflicts with skipped token '${b}'.`)
     }
 
     let groups: TokenGroup[] = []
