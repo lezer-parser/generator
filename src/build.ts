@@ -6,7 +6,7 @@ import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
-import {Parser, ParseState, REDUCE_DEPTH_SIZE, Tokenizer, TokenGroup as LezerTokenGroup, ExternalTokenizer,
+import {Parser, ParseState, REDUCE_DEPTH_SIZE, GOTO_STAY, Tokenizer, TokenGroup as LezerTokenGroup, ExternalTokenizer,
         TERM_TAGGED, SPECIALIZE, REPLACE, EXTEND} from "lezer"
 
 const none: readonly any[] = []
@@ -184,17 +184,18 @@ class Builder {
     let tokenData = this.tokens.tokenizer(tokenMasks, tokenPrec)
     let groupObjects = tokenGroups.map(g => new LezerTokenGroup(tokenData, g.id))
     let externalTokenizers = this.externalTokens.map(ext => new TempExternalTokenizer(ext, terms))
-    let states = table.map(s => this.finishState(s, groupObjects, externalTokenizers))
+    let skip: number[] = []
+    for (let token of this.skippedTokens) skip.push(token.id, GOTO_STAY)
+    let states = table.map(s => this.finishState(s, groupObjects, externalTokenizers, skip))
 
     let {taggedGoto, untaggedGoto} = computeGotoTables(table)
 
-    let skipped = this.skippedTokens.map(t => t.id)
+
     return new Parser(states, tags, repeatInfo,
                       taggedGoto, untaggedGoto,
                       specialized, specializations,
                       // FIXME maybe order ids to express precedence at some point
                       tokenPrec,
-                      skipped,
                       names)
   }
 
@@ -262,7 +263,7 @@ class Builder {
     }
   }
 
-  finishState(state: LRState, tokenGroups: Tokenizer[], externalTokenGroups: TempExternalTokenizer[]): ParseState {
+  finishState(state: LRState, tokenGroups: Tokenizer[], externalTokenGroups: TempExternalTokenizer[], skip: number[]): ParseState {
     let actions = [], recover = [], forcedReduce = 0, defaultReduce = 0
     if (state.actions.length) {
       let first = state.actions[0] as Reduce
@@ -295,7 +296,7 @@ class Builder {
     // FIXME temp kludge until whitespace is handled properly
     if (!tokenizers.length && tokenGroups.length) tokenizers.push(tokenGroups[0])
 
-    return new ParseState(state.id, actions, recover, defaultReduce, forcedReduce, tokenizers)
+    return new ParseState(state.id, actions, recover, defaultReduce, forcedReduce, tokenizers, skip)
   }
 
   substituteArgs(expr: Expression, args: readonly Expression[], params: readonly Identifier[]) {
