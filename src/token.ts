@@ -66,7 +66,7 @@ export class State {
   }
 
   findConflicts(): Conflict[] {
-    let conflicts: Conflict[] = [], cycles = this.cycleStates()
+    let conflicts: Conflict[] = [], cycleTerms = this.cycleTerms()
     function add(a: Term, b: Term) {
       if (a.id < b.id) [a, b] = [b, a]
       if (!conflicts.some(c => c.a == a && c.b == b)) conflicts.push(new Conflict(a, b))
@@ -76,24 +76,30 @@ export class State {
       for (let i = 0; i < state.accepting.length; i++)
         for (let j = i + 1; j < state.accepting.length; j++)
           add(state.accepting[i], state.accepting[j])
-      let inCycle = cycles.includes(state)
       state.reachable(s => {
-        if (s != state && (inCycle || cycles.includes(s)))
-          for (let term of s.accepting)
-            for (let orig of state.accepting)
-              if (term != orig) add(term, orig)
+        if (s != state) for (let term of s.accepting) {
+          let hasCycle = cycleTerms.includes(term)
+          for (let orig of state.accepting)
+            if (term != orig && (hasCycle || cycleTerms.includes(orig))) add(term, orig)
+        }
       })
     })
     return conflicts
   }
 
-  cycleStates(): State[] {
-    let result: State[] = []
+  cycleTerms(): Term[] {
+    let scanned: State[] = []
+    let result: Term[] = []
     ;(function explore(state: State, seen: State[]) {
       let found = seen.indexOf(state)
       if (found > -1) {
         for (let i = found; i < seen.length; i++) {
-          if (!result.includes(seen[i])) result.push(seen[i])
+          if (!scanned.includes(seen[i])) {
+            scanned.push(seen[i])
+            seen[i].reachable(s => {
+              for (let term of s.accepting) if (!result.includes(term)) result.push(term)
+            })
+          }
         }
       } else {
         seen.push(state)
