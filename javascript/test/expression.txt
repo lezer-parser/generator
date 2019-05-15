@@ -240,15 +240,15 @@ f`hi${there}`;
 
 ==>
 
-TemplateString(Template),
-TemplateString(Template),
-TemplateString(Template, BinaryExpression(Number, Operator, Number), Template, SequenceExpression(Number, Number), Template),
-TemplateString(Template),
-TemplateString(Template),
-TemplateString(Template, Variable, Template),
-TemplateString(Template),
-TemplateString(Template, TemplateString(Template, TemplateString(Template), Template), Template),
-TaggedTemplateExpression(Variable, TemplateString(Template, Variable, Template))
+TemplateString(Template, Template, Template),
+TemplateString(Template, Template, Template),
+TemplateString(Template, Template, BinaryExpression(Number, Operator, Number), Template, SequenceExpression(Number, Number), Template, Template),
+TemplateString(Template, Template, Template),
+TemplateString(Template, Template, Template),
+TemplateString(Template, Template, Variable, Template),
+TemplateString(Template, Template, Template),
+TemplateString(Template, Template, TemplateString(Template, Template, TemplateString(Template, Template, Template), Template), Template),
+TaggedTemplateExpression(Variable, TemplateString(Template, Template, Variable, Template))
 
 # Atoms
 

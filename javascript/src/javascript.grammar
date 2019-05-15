@@ -37,10 +37,10 @@ statement {
   tag.IfStatement<kw<"if"> parenExpression statement (!else kw<"else"> statement)?> |
   tag.SwitchStatement<kw<"switch"> parenExpression tag.Block<"{" switchItem* "}">> |
   tag.TryStatement<kw<"try"> Block (kw<"catch"> ("(" pattern ")")? Block)? (kw<"finally"> Block)?> |
-  tag.ReturnStatement<kw<"return"> (noInsertSemi expression)? semi> |
+  tag.ReturnStatement<kw<"return"> (noSemi expression)? semi> |
   tag.ThrowStatement<kw<"throw"> expression semi> |
-  tag.BreakStatement<kw<"break"> (noInsertSemi Label)? semi> |
-  tag.ContinueStatement<kw<"continue"> (noInsertSemi Label)? semi> |
+  tag.BreakStatement<kw<"break"> (noSemi Label)? semi> |
+  tag.ContinueStatement<kw<"continue"> (noSemi Label)? semi> |
   tag.DebuggerStatement<kw<"debugger"> semi> |
   Block |
   LabeledStatement |
@@ -99,9 +99,9 @@ ClassBody {
 }
 
 MethodDefinition {
-  kw<"static">?
-  ckw<"async">?
-  (ckw<"get"> | ckw<"set"> | Star)?
+  pkw<"static">?
+  pkw<"async">?
+  (pkw<"get"> | pkw<"set"> | Star)?
   PropertyName
   ParamList
   Block
@@ -181,7 +181,7 @@ ArrayExpression {
 propName { PropertyName | "[" expression "]" | Number | String }
 
 Property {
-  ckw<"async">? (ckw<"get"> | ckw<"set"> | Star)? propName ParamList Block |
+  pkw<"async">? (pkw<"get"> | pkw<"set"> | Star)? propName ParamList Block |
   propName ~destructure (":" expressionNoComma)? |
   "..." expressionNoComma
 }
@@ -210,7 +210,7 @@ UnaryExpression {
 
 BinaryExpression {
   expressionNoComma !exp op<"**"> expressionNoComma |
-  expressionNoComma !times (op<"/" | "%"> | tag.Operator<"*">) expressionNoComma |
+  expressionNoComma !times (divide | op<"%"> | tag.Operator<"*">) expressionNoComma |
   expressionNoComma !plus op<"+" | "-"> expressionNoComma |
   expressionNoComma !shift op<">>" ">"? | "<<"> expressionNoComma |
   expressionNoComma !rel (op<"<" "="? | ">" "="?> | kw<"in"> | kw<"instanceof">) expressionNoComma |
@@ -223,7 +223,7 @@ BinaryExpression {
 }
 
 AssignmentExpression {
-  (Variable | MemberExpression) !assign (op<([+\-/|&%^] | "*" "*"? | "<<" | ">>" ">"?) "=">) expressionNoComma |
+  (Variable | MemberExpression) !assign op<([+\-/|&%^] | "*" "*"? | "<<" | ">>" ">"?) "="> expressionNoComma |
   (Variable | MemberExpression | ArrayPattern | ObjectPattern) !assign op<"="> expressionNoComma
 }
 
@@ -239,9 +239,13 @@ ArrowFunction {
   ckw<"async">? (tag.ParamList<Definition> | ParamList) "=>" (Block | expression)
 }
 
-TemplateString {
-  "`" (templateContent | "{" expression "}")* "`"
+skip {} {
+  TemplateString {
+    templateStart (templateContent | templateExpr)* templateEnd
+  }
 }
+
+templateExpr { templateDollarBrace expression "}" }
 
 commaSep<content> {
   "" | content ("," content?)*
@@ -256,6 +260,8 @@ kw<word> { specialize<identifier, word, Keyword> }
 // Contextual keywords
 ckw<word> { extend<identifier, word, Keyword> }
 
+pkw<word> { extend<PropertyName, word, Keyword> }
+
 semi { ";" | insertSemi }
 
 boolean { specialize<identifier, "true", Boolean> | specialize<identifier, "false", Boolean> }
@@ -268,8 +274,6 @@ super { specialize<identifier, "super", Super> }
 
 Star { "*" }
 
-PropertyName { identifier }
-
 Variable { identifier ~arrow }
 
 Definition { identifier ~arrow }
@@ -278,8 +282,7 @@ Label { identifier }
 
 skip { whitespace | LineComment | BlockComment }
 
-
-external tokens noInsertSemicolon from "./semicolon" { noInsertSemi }
+external tokens noSemicolon from "./semicolon" { noSemi }
 
 external tokens postfix from "./semicolon" { postfixOp=Operator }
 
@@ -294,9 +297,23 @@ tokens {
 
   blockCommentAfterStar { "/" | "*" blockCommentAfterStar | [^/*] blockCommentRest }
 
+  divide=Operator { "/" }
+
+  precedence { BlockComment, LineComment, divide }
+
+  precedence { BlockComment, LineComment, RegExp }
+
   identifierChar { std.asciiLetter | [_$\u{a1}-\u{10ffff}] }
 
-  identifier { identifierChar (identifierChar | std.digit)* }
+  word { identifierChar (identifierChar | std.digit)* }
+
+  identifier { word }
+
+  PropertyName { word }
+
+  precedence { identifier, whitespace }
+
+  precedence { PropertyName, whitespace }
 
   Number {
     (std.digit+ ("." std.digit*)? | "." std.digit+) (("e" | "E") ("+" | "-")? std.digit+)? |
@@ -310,9 +327,7 @@ tokens {
     "'" ([^\\\n'] | "\\" _)* "'"?
   }
 
-  templateContent { ([^`$\\] | "\\" _) templateContent | "$" templateDollar }
-
-  templateDollar { ([^`${\\] | "\\" _) templateContent | "$" templateDollar }
+  templateStart=Template { "`" }
 
   op<expr>=Operator { expr }
 
@@ -320,3 +335,9 @@ tokens {
 }
 
 external tokens insertSemicolon from "./semicolon" { insertSemi }
+
+external tokens template from "./template" {
+  templateContent=Template,
+  templateDollarBrace,
+  templateEnd=Template
+}
