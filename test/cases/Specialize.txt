@@ -3,14 +3,12 @@ program { (statement ";")+ }
 statement {
   tag.Decl<kw<"let"> Identifier "=" Number> |
   tag.Print<kw<"print"> Number> |
-  tag.Exit<kwSpec<"exit">> |
+  tag.Exit<kw<"exit">> |
   tag.Async<kwExt<"async"> Number> |
   Identifier
 }
 
-kw<word> { replace<Identifier, word> }
-
-kwSpec<word> { specialize<Identifier, word> }
+kw<word> { specialize<Identifier, word> }
 
 kwExt<word> { extend<Identifier, word> }
 
@@ -24,7 +22,7 @@ tokens {
 
 ---
 
-let exit = 10;
+let async = 10;
 exit;
 
 ==> Decl(Identifier, Number),Exit

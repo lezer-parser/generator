@@ -7,7 +7,7 @@ import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {Parser, ParseState, REDUCE_DEPTH_SIZE, GOTO_STAY, Tokenizer, TokenGroup as LezerTokenGroup, ExternalTokenizer,
-        TERM_TAGGED, SPECIALIZE, REPLACE, EXTEND} from "lezer"
+        TERM_TAGGED, SPECIALIZE, EXTEND} from "lezer"
 
 const none: readonly any[] = []
 
@@ -49,7 +49,7 @@ class Parts {
 
 function p(...terms: Term[]) { return new Parts(terms, null) }
 
-const reserved = ["specialize", "replace", "extend", "skip"] // FIXME update
+const reserved = ["specialize", "extend", "skip"] // FIXME update
 
 function isTag(name: string) {
   let ch0 = name[0]
@@ -171,8 +171,8 @@ class Builder {
       specialized.push(this.terms.terminals.find(t => t.name == name)!.id)
       let table: {[value: string]: number} = {}
       for (let {value, term, type} of this.specialized[name]) {
-        let code = type == "specialize" ? SPECIALIZE : type == "replace" ? REPLACE : EXTEND
-        table[value] = (term.id << 2) | code
+        let code = type == "specialize" ? SPECIALIZE : EXTEND
+        table[value] = (term.id << 1) | code
       }
       specializations.push(table)
     }
@@ -379,7 +379,7 @@ class Builder {
       if (!ns)
         this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
       return ns.resolve(expr, this)
-    } else if (expr.id.name == "specialize" || expr.id.name == "replace" || expr.id.name == "extend") {
+    } else if (expr.id.name == "specialize" || expr.id.name == "extend") {
       return [p(this.resolveSpecialization(expr, expr.id.name))]
     } else if (expr.id.name == "program") {
       return this.raise(`The 'program' rule can't be referenced in other expressions`, expr.start)
