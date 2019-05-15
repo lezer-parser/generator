@@ -299,6 +299,8 @@ class Builder {
       let defaultPos = positions.reduce((a, b) => a.pos - b.pos || b.rule.parts.length - a.rule.parts.length < 0 ? b : a)
       if (!defaultPos.rule.name.program)
         forcedReduce = (defaultPos.rule.name.id << REDUCE_DEPTH_SIZE) | (defaultPos.pos + 1)
+      else if (positions.some(p => p.rule.name.program && p.pos == p.rule.parts.length))
+        forcedReduce = -1
     }
 
     let external: ExternalTokenSet[] = []
