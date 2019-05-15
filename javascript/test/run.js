@@ -17,20 +17,45 @@ function compressAST(ast, file) {
   return result
 }
 
+const newline = [10, 13, 8232, 8233]
+const space = [9, 11, 12, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8239, 8287, 12288]
+
+// FIXME this should technically enter block comments
+function newlineBefore(input, pos) {
+  for (let i = pos - 1; i >= 0; i--) {
+    let prev = input.peek(i)
+    if (newline.includes(prev)) return true
+    if (!space.includes(prev)) break
+  }
+  return false
+}
+
+const slash = "/".charCodeAt(0)
+
+// FIXME also doesn't do block comments yet
+function newlineAfter(input, pos) {
+  for (let i = pos; i < input.length; i++) {
+    let next = input.peek(i)
+    if (newline.includes(next)) return true
+    if (next == slash && input.peek(i + 1) == slash) return true
+    if (!space.includes(next)) break
+  }
+  return false
+}
+
 function externalTokenizer(name, terms) {
-  const newline = /[\n\u2028\u2029]/, brace = "}".charCodeAt(0), semicolon = ";".charCodeAt(0)
+  const brace = "}".charCodeAt(0), semicolon = ";".charCodeAt(0)
   if (name == "insertSemicolon") {
     return new ExternalTokenizer((input, stack) => {
       let start = input.pos, next = input.next()
-      if ((next == brace || next == -1 || newline.test(input.read(stack.pos, input.pos - 1))) && stack.canShift(terms.insertSemi))
+      if ((next == brace || next == -1 || newlineBefore(input, start)) && stack.canShift(terms.insertSemi))
         input.accept(terms.insertSemi, start)
     })
   } else if (name == "noSemicolon") {
     return new ExternalTokenizer((input, stack) => {
       let start = input.pos, next = input.next()
       if (next != brace && next != semicolon && next != -1 &&
-          !newline.test(input.read(stack.pos, input.pos - 1)) &&
-          stack.canShift(terms.noSemi))
+          !(newlineAfter(input, start) || newlineBefore(input, start)) && stack.canShift(terms.noSemi))
         input.accept(terms.noSemi, start)
     })
   } else if (name == "postfix") {
@@ -38,7 +63,7 @@ function externalTokenizer(name, terms) {
     return new ExternalTokenizer((input, stack) => {
       let next = input.next()
       if ((next == plus || next == minus) && next == input.next() &&
-          !newline.test(input.read(stack.pos, input.pos - 2)) && stack.canShift(terms.postfixOp))
+          !newlineBefore(input, input.pos - 2) && stack.canShift(terms.postfixOp))
         input.accept(terms.postfixOp)
     })
   } else if (name == "template") {

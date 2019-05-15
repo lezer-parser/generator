@@ -57,16 +57,16 @@ ExportDeclaration {
 }
 
 ExportGroup {
-  "{" commaSep<Variable (kw<"as"> Variable)?> "}"
+  "{" commaSep<Variable (kw<"as"> tag.Variable<word>)?> "}"
 }
 
 ImportDeclaration {
-  kw<"import"> (Star kw<"as"> Definition | commaSep<Definition | ImportGroup>) kw<"from"> String semi |
+  kw<"import"> (Star kw<"as"> tag.Definition<word> | commaSep<Definition | ImportGroup>) kw<"from"> String semi |
   kw<"import"> String semi
 }
 
 ImportGroup {
-  "{" commaSep<Definition | Variable kw<"as"> Definition> "}"
+  "{" commaSep<Definition | Variable kw<"as"> tag.Definition<word>> "}"
 }
 
 LabeledStatement {
@@ -255,12 +255,13 @@ commaSep1<content> {
   content ("," content)*
 }
 
-kw<word> { specialize<identifier, word, Keyword> }
+kw<term> { specialize<identifier, term, Keyword> }
 
 // Contextual keywords
-ckw<word> { extend<identifier, word, Keyword> }
+ckw<term> { extend<identifier, term, Keyword> }
 
-pkw<word> { extend<PropertyName, word, Keyword> }
+// Contextual keyword in property context
+pkw<term> { extend<word, term, Keyword> }
 
 semi { ";" | insertSemi }
 
@@ -279,6 +280,8 @@ Variable { identifier ~arrow }
 Definition { identifier ~arrow }
 
 Label { identifier }
+
+PropertyName { word }
 
 skip { whitespace | LineComment | BlockComment }
 
@@ -309,11 +312,9 @@ tokens {
 
   identifier { word }
 
-  PropertyName { word }
-
   precedence { identifier, whitespace }
 
-  precedence { PropertyName, whitespace }
+  precedence { word, whitespace }
 
   Number {
     (std.digit+ ("." std.digit*)? | "." std.digit+) (("e" | "E") ("+" | "-")? std.digit+)? |

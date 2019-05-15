@@ -166,7 +166,7 @@ LabeledStatement(Label, ForStatement(Keyword, Block(IfStatement(Keyword, Variabl
 # Classes
 
 class Foo {
-  static one(a) { return(a); };
+  static one(a) { return a; };
   two(b) { return b; }
   finally() {}
 }
@@ -262,4 +262,4 @@ Comment,
 Variable,
 Comment,
 Variable,
-BinaryExpression(Variable, Comment, Operator, Variable)
+BinaryExpression(Variable(Comment), Operator, Variable)
