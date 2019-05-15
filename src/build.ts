@@ -279,12 +279,15 @@ class Builder {
   finishState(state: LRState, tokenGroups: Tokenizer[], externalTokenGroups: TempExternalTokenizer[],
               skip: readonly (number[])[]): ParseState {
     let actions = [], recover = [], forcedReduce = 0, defaultReduce = 0
+    let skipActions = skip[state.skipID]
     if (state.actions.length) {
       let first = state.actions[0] as Reduce
       if (state.actions.every(a => a instanceof Reduce && a.rule == first.rule))
         defaultReduce = reduce(first.rule)
     }
     for (let action of state.actions) {
+      for (let i = 0; i < skipActions.length; i += 2) if (skipActions[i] == action.term.id)
+        this.raise(`Use of token ${action.term.name} conflicts with skip rule`)
       let value = action instanceof Shift ? -action.target.id : reduce(action.rule)
       if (value != defaultReduce) actions.push(action.term.id, value)
     }
@@ -311,7 +314,7 @@ class Builder {
     // FIXME temp kludge until whitespace is handled properly
     if (!tokenizers.length && tokenGroups.length) tokenizers.push(tokenGroups[0])
 
-    return new ParseState(state.id, actions, recover, defaultReduce, forcedReduce, tokenizers, skip[state.skipID])
+    return new ParseState(state.id, actions, recover, defaultReduce, forcedReduce, tokenizers, skipActions)
   }
 
   substituteArgs(expr: Expression, args: readonly Expression[], params: readonly Identifier[]) {
@@ -378,7 +381,10 @@ class Builder {
       return ns.resolve(expr, this)
     } else if (expr.id.name == "specialize" || expr.id.name == "replace" || expr.id.name == "extend") {
       return [p(this.resolveSpecialization(expr, expr.id.name))]
+    } else if (expr.id.name == "program") {
+      return this.raise(`The 'program' rule can't be referenced in other expressions`, expr.start)
     } else {
+      
       for (let built of this.built) if (built.matches(expr)) return [p(built.term)]
 
       let found = this.tokens.getToken(expr)
