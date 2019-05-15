@@ -257,7 +257,7 @@ function parseExprSequence(input: Input) {
       markers[markers.length - 1] =
         markers[markers.length - 1].concat(new ConflictMarker(localStart, parseIdent(input), markerType))
     }
-    if (exprs.length && endOfSequence(input)) break
+    if (endOfSequence(input)) break
     exprs.push(parseExprSuffix(input))
     markers.push(none)
   } while (!endOfSequence(input))

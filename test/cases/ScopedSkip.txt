@@ -1,0 +1,24 @@
+program { A+ }
+
+skip { spaces }
+
+skip { dashes } {
+  A { "x" | "(" "b" ")" }
+}
+
+tokens {
+  spaces { " "+ }
+  dashes { "-"+ }
+}
+
+---
+
+x (---b---) (b)
+
+==> A, A, A
+
+---
+
+( b )
+
+==> A(⚠, ⚠)

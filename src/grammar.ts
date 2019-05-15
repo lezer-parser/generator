@@ -121,7 +121,8 @@ export class Rule {
 
   constructor(readonly name: Term,
               readonly parts: readonly Term[],
-              readonly conflicts: readonly Conflicts[]) {}
+              readonly conflicts: readonly Conflicts[],
+              readonly skipID: number) {}
 
   cmp(rule: Rule) {
     return this.id - rule.id
@@ -129,6 +130,7 @@ export class Rule {
 
   cmpNoName(rule: Rule) {
     return this.parts.length - rule.parts.length ||
+      this.skipID - rule.skipID ||
       this.parts.reduce((r, s, i) => r || s.cmp(rule.parts[i]), 0) ||
       cmpSet(this.conflicts, rule.conflicts, (a, b) => a.cmp(b))
   }

@@ -91,7 +91,9 @@ class Builder {
   ruleNames: {[name: string]: Identifier | null} = Object.create(null)
   namespaces: {[name: string]: Namespace} = Object.create(null)
   namedTerms: {[name: string]: Term} = Object.create(null)
-  mainSkip: Term[] = []
+  astRules: {skipID: number, rule: RuleDeclaration}[] = []
+  skipSets: Term[][] = [[]]
+  currentSkip: number[] = []
 
   constructor(text: string, readonly options: BuildOptions) {
     this.input = new Input(text, options.fileName)
@@ -102,27 +104,25 @@ class Builder {
 
     this.defineNamespace("tag", new TagNamespace)
 
-    for (let rule of this.ast.rules) this.unique(rule.id)
+    for (let rule of this.ast.rules) this.astRules.push({skipID: 0, rule})
+    for (let i = 0; i < this.ast.scopedSkip.length; i++) {
+      for (let rule of this.ast.scopedSkip[i].rules) this.astRules.push({skipID: i + 1, rule})
+    }
 
-    for (let rule of this.ast.rules) {
+    for (let {rule} of this.astRules) {
+      this.unique(rule.id)
       if (this.namespaces[rule.id.name])
         this.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
-      if (rule.id.name == "program") {
-        if (rule.params.length) this.raise(`'program' rules should not take parameters`, rule.id.start)
-        this.buildRule(rule, [])
-      }
     }
 
-    if (this.ast.mainSkip) {
-      for (let choice of this.normalizeExpr(this.ast.mainSkip)) {
-        if (choice.terms.length != 1 || !choice.terms[0].terminal || choice.conflicts)
-          this.raise(`Each alternative in a 'skip' rule should hold a single terminal`, this.ast.mainSkip.start)
-        this.mainSkip.push(choice.terms[0])
-      }
-    }
+    if (this.ast.mainSkip) this.skipSets[0] = this.normalizeTokens(this.ast.mainSkip)
+    for (let scoped of this.ast.scopedSkip) this.skipSets.push(this.normalizeTokens(scoped.expr))
 
-    if (!this.rules.length)
-      this.raise(`Missing 'program' rule declaration`)
+    let program = this.astRules.find(r => r.rule.id.name == "program")
+    if (!program) return this.raise(`Missing 'program' rule declaration`)
+    if (program.rule.params.length) this.raise(`'program' rules should not take parameters`, program.rule.id.start)
+    this.buildRule(program.rule, [], program.skipID)
+
     for (let name in this.ruleNames) {
       let value = this.ruleNames[name]
       if (value) this.warn(`Unused rule '${value.name}'`, value.start)
@@ -183,8 +183,11 @@ class Builder {
     let tokenData = this.tokens.tokenizer(tokenMasks, tokenPrec)
     let groupObjects = tokenGroups.map(g => new LezerTokenGroup(tokenData, g.id))
     let externalTokenizers = this.externalTokens.map(ext => new TempExternalTokenizer(ext, terms))
-    let skip: number[] = []
-    for (let token of this.mainSkip) skip.push(token.id, GOTO_STAY)
+    let skip = this.skipSets.map(set => {
+      let result = []
+      for (let token of set) result.push(token.id, GOTO_STAY)
+      return result
+    })
     let states = table.map(s => this.finishState(s, groupObjects, externalTokenizers, skip))
 
     let {taggedGoto, untaggedGoto} = computeGotoTables(table)
@@ -262,7 +265,19 @@ class Builder {
     }
   }
 
-  finishState(state: LRState, tokenGroups: Tokenizer[], externalTokenGroups: TempExternalTokenizer[], skip: number[]): ParseState {
+  normalizeTokens(expr: Expression) {
+    if (expr instanceof SequenceExpression && expr.exprs.length == 0) return []
+    let result: Term[] = []
+    for (let choice of this.normalizeExpr(expr)) {
+      if (choice.terms.length != 1 || !choice.terms[0].terminal || choice.conflicts)
+        this.raise(`Each alternative in a 'skip' rule should hold a single terminal`, expr.start)
+      result.push(choice.terms[0])
+    }
+    return result
+  }
+
+  finishState(state: LRState, tokenGroups: Tokenizer[], externalTokenGroups: TempExternalTokenizer[],
+              skip: readonly (number[])[]): ParseState {
     let actions = [], recover = [], forcedReduce = 0, defaultReduce = 0
     if (state.actions.length) {
       let first = state.actions[0] as Reduce
@@ -279,7 +294,8 @@ class Builder {
     let positions = state.set.filter(p => p.pos > 0)
     if (positions.length) {
       let defaultPos = positions.reduce((a, b) => a.pos - b.pos || b.rule.parts.length - a.rule.parts.length < 0 ? b : a)
-      forcedReduce = (defaultPos.rule.name.id << REDUCE_DEPTH_SIZE) | (defaultPos.pos + 1)
+      if (!defaultPos.rule.name.program)
+        forcedReduce = (defaultPos.rule.name.id << REDUCE_DEPTH_SIZE) | (defaultPos.pos + 1)
     }
 
     let external: ExternalTokenSet[] = []
@@ -295,7 +311,7 @@ class Builder {
     // FIXME temp kludge until whitespace is handled properly
     if (!tokenizers.length && tokenGroups.length) tokenizers.push(tokenGroups[0])
 
-    return new ParseState(state.id, actions, recover, defaultReduce, forcedReduce, tokenizers, skip)
+    return new ParseState(state.id, actions, recover, defaultReduce, forcedReduce, tokenizers, skip[state.skipID])
   }
 
   substituteArgs(expr: Expression, args: readonly Expression[], params: readonly Identifier[]) {
@@ -348,8 +364,9 @@ class Builder {
   }
 
   defineRule(name: Term, choices: Parts[]) {
+    let skipID = this.currentSkip[this.currentSkip.length - 1]
     for (let choice of choices)
-      this.rules.push(new Rule(name, choice.terms, choice.ensureConflicts()))
+      this.rules.push(new Rule(name, choice.terms, choice.ensureConflicts(), skipID))
     return name
   }
 
@@ -371,12 +388,12 @@ class Builder {
         if (found) return [p(found)]
       }
 
-      let known = this.ast.rules.find(r => r.id.name == expr.id.name)
+      let known = this.astRules.find(r => r.rule.id.name == expr.id.name)
       if (!known)
         return this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
-      if (known.params.length != expr.args.length)
+      if (known.rule.params.length != expr.args.length)
         this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
-      return [p(this.buildRule(known, expr.args))]
+      return [p(this.buildRule(known.rule, expr.args, known.skipID))]
     }
   }
 
@@ -443,14 +460,17 @@ class Builder {
     }
   }
 
-  buildRule(rule: RuleDeclaration, args: readonly Expression[]): Term {
+  buildRule(rule: RuleDeclaration, args: readonly Expression[], skipID: number): Term {
     let expr = this.substituteArgs(rule.expr, args, rule.params)
     this.used(rule.id.name)
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
                             rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
     if (args.length == 0) this.namedTerms[rule.id.name] = name
     this.built.push(new BuiltRule(rule.id.name, args, name))
-    return this.defineRule(name, this.normalizeExpr(expr))
+    this.currentSkip.push(skipID)
+    let result = this.defineRule(name, this.normalizeExpr(expr))
+    this.currentSkip.pop()
+    return result
   }
 
   resolveSpecialization(expr: NamedExpression, type: string) {
@@ -740,18 +760,15 @@ class TokenSet {
       return !this.precededBy(a, b) && !this.precededBy(b, a)
     })
 
-    for (let {a, b} of conflicts) {
-      if (this.b.mainSkip.includes(a)) this.b.raise(`Token '${b}' conflicts with skipped token '${a}'.`)
-      if (this.b.mainSkip.includes(b)) this.b.raise(`Token '${a}' conflicts with skipped token '${b}'.`)
-    }
-
     let groups: TokenGroup[] = []
     for (let state of states) {
       // Find potentially-conflicting terms (in terms) and the things
       // they conflict with (in conflicts), and raise an error if
       // there's a token conflict directly in this state.
       let terms: Term[] = [], hasTerms = false, incompatible: Term[] = []
-      for (let {term} of state.actions) {
+      let skip = this.b.skipSets[state.skipID]
+      for (let i = 0; i < state.actions.length + skip.length; i++) {
+        let term = i < state.actions.length ? state.actions[i].term : skip[i - state.actions.length]
         let orig = this.b.tokenOrigins[term.name]
         if (orig instanceof Term) {
           if (terms.includes(orig)) continue
@@ -916,6 +933,7 @@ function inlineRules(rules: readonly Rule[]): readonly Rule[] {
     for (let i = 0; i < rules.length; i++) {
       let rule = rules[i]
       if (!rule.name.interesting && !rule.parts.includes(rule.name) && rule.parts.length < 3 &&
+          (rule.parts.length == 1 || rules.every(other => other.skipID == rule.skipID || !other.parts.includes(rule.name))) &&
           !rule.parts.some(p => !!inlinable[p.name]) &&
           !rules.some((r, j) => j != i && r.name == rule.name))
         found = inlinable[rule.name.name] = rule
@@ -943,7 +961,7 @@ function inlineRules(rules: readonly Rule[]): readonly Rule[] {
           conflicts.push(rule.conflicts[i + 1])
         }
       }
-      newRules.push(new Rule(rule.name, parts, conflicts))
+      newRules.push(new Rule(rule.name, parts, conflicts, rule.skipID))
     }
     rules = newRules
   }
@@ -973,7 +991,7 @@ function mergeRules(rules: readonly Rule[]): readonly Rule[] {
   let newRules = []
   for (let rule of rules) if (!merged[rule.name.name]) {
     newRules.push(rule.parts.every(p => !merged[p.name]) ? rule :
-                  new Rule(rule.name, rule.parts.map(p => merged[p.name] || p), rule.conflicts))
+                  new Rule(rule.name, rule.parts.map(p => merged[p.name] || p), rule.conflicts, rule.skipID))
   }
   return newRules
 }

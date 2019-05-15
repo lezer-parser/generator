@@ -131,7 +131,7 @@ export class Reduce {
   map() { return this }
 }
 
-const ACCEPTING = 1 /*FIXME unused*/, AMBIGUOUS = 2 // FIXME maybe store per terminal
+const AMBIGUOUS = 1 // FIXME maybe store per terminal
 
 function hashPositions(set: readonly Pos[]) {
   let h = 5381
@@ -146,10 +146,13 @@ export class State {
   recover: Shift[] = []
   tokenGroup: number = -1
 
-  constructor(readonly id: number, readonly set: readonly Pos[], public flags = 0, public hash = hashPositions(set)) {}
+  constructor(readonly id: number,
+              readonly set: readonly Pos[],
+              public flags = 0,
+              readonly skipID: number,
+              public hash = hashPositions(set)) {}
 
   get ambiguous() { return (this.flags & AMBIGUOUS) > 0 }
-  get accepting() { return (this.flags & ACCEPTING) > 0 }
 
   toString() {
     let actions = this.actions.map(t => t.term + "=" + t).join(",") +
@@ -298,59 +301,59 @@ class Core {
 export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[]}) {
   let states: State[] = []
   let cores: {[hash: number]: Core[]} = {}
-  function getState(core: readonly Pos[]) {
+  function getState(core: readonly Pos[], skipID: number) {
     if (core.length == 0) return null
     let coreHash = hashPositions(core), byHash = cores[coreHash]
-    if (byHash) for (let known of byHash) if (eqSet(core, known.set))
+    if (byHash) for (let known of byHash) if (eqSet(core, known.set)) {
+      if (known.state.skipID != skipID) throw new Error("Inconsistent skip sets after " + known.set[0].trail())
       return known.state
+    }
 
     let set = closure(core, first)
     let hash = hashPositions(set), found
     for (let state of states) if (state.hash == hash && state.hasSet(set)) found = state
     if (!found) {
-      found = new State(states.length, set, 0, hash)
+      found = new State(states.length, set, 0, skipID, hash)
       states.push(found)
     }
     ;(cores[coreHash] || (cores[coreHash] = [])).push(new Core(core, found))
     return found
   }
-  getState(terms.nonTerminals.find(nt => nt.name == "program")!.rules
-           .map(rule => new Pos(rule, 0, [terms.eof], none, null)))
+  getState(terms.nonTerminals.find(nt => nt.program)!.rules
+           .map(rule => new Pos(rule, 0, [terms.eof], none, null)), 0)
 
   for (let filled = 0; filled < states.length; filled++) {
     let state = states[filled]
-    let byTerm: Term[] = [], byTermPos: Pos[][] = [], atEnd: Pos[] = []
+    let byTerm: Term[] = [], byTermPos: Pos[][] = [], atEnd: Pos[] = [], skipIDs: number[] = []
     for (let pos of state.set) {
       if (pos.pos == pos.rule.parts.length) {
-        atEnd.push(pos)
+        if (!pos.rule.name.program) atEnd.push(pos)
       } else {
         let next = pos.rule.parts[pos.pos]
         let index = byTerm.indexOf(next)
+        let skipID = pos.pos == pos.rule.parts.lenght - 1 ? state.skipID : pos.rule.skipID
         if (index < 0) {
           byTerm.push(next)
           byTermPos.push([pos.advance()])
+          skipIDs.push(skipID)
         } else {
+          if (skipIDs[index] != skipID) new Error("Inconsistent skip sets after " + pos.trail())
           byTermPos[index].push(pos.advance())
         }
       }
     }
     for (let i = 0; i < byTerm.length; i++) {
-      let term = byTerm[i]
+      let term = byTerm[i], skipID = skipIDs[i]
       if (term.terminal) {
         let set = applyCut(byTermPos[i])
-        let next = getState(set)
+        let next = getState(set, skipID)
         if (next) state.addAction(new Shift(term, next), set.map(p => p.reverse()))
       } else {
-        let goto = getState(byTermPos[i])
+        let goto = getState(byTermPos[i], skipID)
         if (goto) state.goto.push(new Shift(term, goto))
       }
     }
-    let program = state.set.findIndex(pos => pos.pos == 0 && pos.rule.name.program)
-    if (program > -1) {
-      let accepting = new State(states.length, none, ACCEPTING)
-      states.push(accepting)
-      state.goto.push(new Shift(state.set[program].rule.name, accepting))
-    }
+
     for (let pos of atEnd) for (let ahead of pos.ahead)
       state.addAction(new Reduce(ahead, pos.rule), [pos])
   }
@@ -388,7 +391,7 @@ function markConflicts(mapping: number[], newID: number, oldStates: readonly Sta
   for (let i = 0; i < mapping.length; i++) if (mapping[i] == newID) {
     for (let j = 0; j < mapping.length; j++) if (j != i && mapping[j] == newID) {
       // Create a dummy state to determine whether there's a conflict
-      let state = new State(0, none)
+      let state = new State(0, oldStates[i].set, 0, 0, 0)
       mergeState(mapping, newStates, oldStates[i], state)
       if (!mergeState(mapping, newStates, oldStates[j], state)) conflicts.push(i, j)
     }
@@ -413,11 +416,12 @@ function collapseAutomaton(states: readonly State[]): State[] {
       let newID = newStates.findIndex((s, index) => {
         return s.set.length == set.length && s.set.every((p, i) => p.eqSimple(set[i])) &&
           s.tokenGroup == state.tokenGroup &&
+          s.skipID == state.skipID &&
           !hasConflict(i, index, mapping, conflicts)
       })
       if (newID < 0) {
         newID = newStates.length
-        let newState = new State(newID, set, state.flags, 0)
+        let newState = new State(newID, set, state.flags, state.skipID, 0)
         newState.tokenGroup = state.tokenGroup
         newStates.push(newState)
       } else {
