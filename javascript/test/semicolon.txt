@@ -59,3 +59,14 @@ Variable,
 BreakStatement(Keyword, Label),
 BreakStatement(Keyword),
 Variable
+
+# Cut return regardless of whitespace
+
+{ return }
+
+return // foo
+;
+
+==>
+
+Block(ReturnStatement(Keyword)), ReturnStatement(Keyword, Comment)

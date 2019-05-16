@@ -30,18 +30,7 @@ function newlineBefore(input, pos) {
   return false
 }
 
-const slash = "/".charCodeAt(0)
-
-// FIXME also doesn't do block comments yet
-function newlineAfter(input, pos) {
-  for (let i = pos; i < input.length; i++) {
-    let next = input.peek(i)
-    if (newline.includes(next)) return true
-    if (next == slash && input.peek(i + 1) == slash) return true
-    if (!space.includes(next)) break
-  }
-  return false
-}
+const slash = "/".charCodeAt(0), star = "*".charCodeAt(0)
 
 function externalTokenizer(name, terms) {
   const brace = "}".charCodeAt(0), semicolon = ";".charCodeAt(0)
@@ -54,8 +43,13 @@ function externalTokenizer(name, terms) {
   } else if (name == "noSemicolon") {
     return new ExternalTokenizer((input, stack) => {
       let start = input.pos, next = input.next()
-      if (next != brace && next != semicolon && next != -1 &&
-          !(newlineAfter(input, start) || newlineBefore(input, start)) && stack.canShift(terms.noSemi))
+      if (space.includes(next) || newline.includes(next)) return
+      if (next == slash) {
+        let after = input.next()
+        if (after == slash || after == star) return
+      }
+      if (next != brace && next != semicolon && next != -1 && !newlineBefore(input, start) &&
+          stack.canShift(terms.noSemi))
         input.accept(terms.noSemi, start)
     })
   } else if (name == "postfix") {
