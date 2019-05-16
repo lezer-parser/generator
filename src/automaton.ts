@@ -331,7 +331,7 @@ export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[
       } else {
         let next = pos.rule.parts[pos.pos]
         let index = byTerm.indexOf(next)
-        let skipID = pos.pos == pos.rule.parts.lenght - 1 ? state.skipID : pos.rule.skipID
+        let skipID = pos.pos == pos.rule.parts.length - 1 ? state.skipID : pos.rule.skipID
         if (index < 0) {
           byTerm.push(next)
           byTermPos.push([pos.advance()])
