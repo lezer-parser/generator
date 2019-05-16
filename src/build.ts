@@ -707,7 +707,7 @@ class TokenSet {
       this.b.raise(`Grammar contains zero-length tokens (in '${startState.accepting[0].name}')`,
                    this.rules.find(r => r.id.name == startState.accepting[0].name)!.start)
     if (/\btokens\b/.test(verbose)) console.log(startState.toString())
-    return startState.toArrays(tokenMasks, precedence)
+    return startState.toArray(tokenMasks, precedence)
   }
 
   takePrecedences() {

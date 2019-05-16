@@ -1,6 +1,6 @@
 import {Term, union} from "./grammar"
 
-export const MAX_CHAR = 0xffff
+export const MAX_CHAR = 0xfffe
 
 export class Edge {
   constructor(readonly from: number, readonly to: number = from + 1, readonly target: State) {}
@@ -131,27 +131,34 @@ export class State {
     return out + "}"
   }
 
-  // Tokenizer data is represented using arrays of numbers. The array
-  // for a state starts with the state's mask (the logical or of all
-  // the masks of the terminals that can be reached from it), which is
-  // used for abandoning a scan when it can't reach any applicable
-  // tokens.
+  // Tokenizer data is represented as a single flat array. This
+  // contains regions for each tokenizer state. Region offsets are
+  // used to identify states.
   //
-  // Next follows the number of accepting tokens for this state,
-  // followed by term id, token mask pairs for each of those.
-  //
-  // After that follow the edges going out of the state, consisting of
-  // from, to, state id triplets.
-  toArrays(groupMasks: {[id: number]: number}, precedence: readonly number[]) {
-    let arrays: number[][] = []
+  // Each state is laid out as:
+  //  - Token group mask
+  //  - Offset of the end of the accepting data
+  //  - Offset of the end of the state
+  //  - Pairs of token masks and term ids that indicate the accepting
+  //    states, sorted by precedence
+  //  - Triples for the edges: each with a low and high bound and the
+  //    offset of the next state.
+  toArray(groupMasks: {[id: number]: number}, precedence: readonly number[]) {
+    let offsets: number[] = [] // Used to 'link' the states after building the arrays
+    let data: number[] = []
     this.reachable(state => {
-      let array = [state.stateMask(groupMasks), state.accepting.length]
+      let start = data.length
+      let acceptEnd = start + 3 + state.accepting.length * 2
+      let end = acceptEnd + state.edges.length * 3
+      offsets[state.id] = start
+      data.push(state.stateMask(groupMasks), acceptEnd, end)
       state.accepting.sort((a, b) => precedence.indexOf(a.id) - precedence.indexOf(b.id))
-      for (let term of state.accepting) array.push(term.id, groupMasks[term.id] || 0xffff)
-      for (let edge of state.edges) array.push(edge.from, edge.to, edge.target.id)
-      arrays.push(array)
+      for (let term of state.accepting) data.push(term.id, groupMasks[term.id] || 0xffff)
+      for (let edge of state.edges) data.push(edge.from, edge.to, -edge.target.id - 1)
     })
-    return arrays
+    // Replace negative numbers with resolved state offsets
+    for (let i = 0; i < data.length; i++) if (data[i] < 0) data[i] = offsets[-data[i] - 1]
+    return Uint16Array.from(data)
   }
 
   stateMask(groupMasks: {[id: number]: number}) {
