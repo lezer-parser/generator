@@ -1,0 +1,22 @@
+program { Statement+ }
+
+Statement {
+  Variable ";" |
+  Variable Variable ";"
+}
+
+Variable { identifier }
+
+skip { space | Comment }
+
+tokens {
+  space { std.whitespace+ }
+  Comment { "'" [^']* "'" }
+  identifier { "x" }
+}
+
+---
+
+x'c';'c' x 'c' x 'c'; 'c'
+
+==> Statement(Variable, Comment), Comment, Statement(Variable, Comment, Variable, Comment), Comment
