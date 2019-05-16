@@ -262,4 +262,4 @@ Comment,
 Variable,
 Comment,
 Variable,
-BinaryExpression(Variable(Comment), Operator, Variable)
+BinaryExpression(Variable, Comment, Operator, Variable)
