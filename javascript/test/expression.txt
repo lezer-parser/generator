@@ -104,6 +104,17 @@ ArrowFunction(ParamList(Definition, Definition), Number),
 ArrowFunction(ParamList(Definition, Definition), Block(ReturnStatement(Keyword, Variable))),
 ArrowFunction(Keyword, ParamList, Number)
 
+# Long potential arrow function
+
+(assign = [to, from], from = assign[0], to = assign[1]);
+
+==>
+
+SequenceExpression(
+  AssignmentExpression(Variable, Operator, ArrayExpression(Variable, Variable)),
+  AssignmentExpression(Variable, Operator, MemberExpression(Variable, Number)),
+  AssignmentExpression(Variable, Operator, MemberExpression(Variable, Number)))
+
 # Ternary operator
 
 condition ? case1 : case2;
