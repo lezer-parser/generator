@@ -50,23 +50,23 @@ statement {
 }
 
 ExportDeclaration {
-  kw<"export"> Star kw<"from"> String semi |
+  kw<"export"> Star ckw<"from"> String semi |
   kw<"export"> kw<"default"> (FunctionDeclaration | ClassDeclaration | expression semi) |
   kw<"export"> declaration |
-  kw<"export"> ExportGroup (kw<"from"> String)? semi
+  kw<"export"> ExportGroup (ckw<"from"> String)? semi
 }
 
 ExportGroup {
-  "{" commaSep<Variable (kw<"as"> tag.Variable<word>)?> "}"
+  "{" commaSep<Variable (ckw<"as"> tag.Variable<word>)?> "}"
 }
 
 ImportDeclaration {
-  kw<"import"> (Star kw<"as"> tag.Definition<word> | commaSep<Definition | ImportGroup>) kw<"from"> String semi |
+  kw<"import"> (Star ckw<"as"> tag.Definition<word> | commaSep<Definition | ImportGroup>) ckw<"from"> String semi |
   kw<"import"> String semi
 }
 
 ImportGroup {
-  "{" commaSep<Definition | Variable kw<"as"> tag.Definition<word>> "}"
+  "{" commaSep<Definition | Variable ckw<"as"> tag.Definition<word>> "}"
 }
 
 LabeledStatement {
