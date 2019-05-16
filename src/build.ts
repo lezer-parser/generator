@@ -7,7 +7,7 @@ import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {Parser, ParseState, REDUCE_DEPTH_SIZE, GOTO_STAY, Tokenizer, TokenGroup as LezerTokenGroup, ExternalTokenizer,
-        TERM_TAGGED, SPECIALIZE, EXTEND} from "lezer"
+        SPECIALIZE, EXTEND} from "lezer"
 
 const none: readonly any[] = []
 
@@ -190,11 +190,7 @@ class Builder {
     })
     let states = table.map(s => this.finishState(s, groupObjects, externalTokenizers, skip))
 
-    let {taggedGoto, untaggedGoto} = computeGotoTables(table)
-
-
-    return new Parser(states, tags, repeatInfo,
-                      taggedGoto, untaggedGoto,
+    return new Parser(states, tags, repeatInfo, computeGotoTable(table),
                       specialized, specializations,
                       // FIXME maybe order ids to express precedence at some point
                       tokenPrec,
@@ -515,30 +511,34 @@ function reduce(rule: Rule) {
   return (rule.name.id << REDUCE_DEPTH_SIZE) | (rule.parts.length + 1)
 }
 
-function computeGotoTables(states: readonly LRState[]) {
+function computeGotoTable(states: readonly LRState[]) {
   let goto: {[term: number]: {[to: number]: number[]}} = {}
+  let maxTerm = 0
   for (let state of states)
     for (let entry of state.goto) {
+      maxTerm = Math.max(entry.term.id, maxTerm)
       let set = goto[entry.term.id] || (goto[entry.term.id] = {})
       ;(set[entry.target.id] || (set[entry.target.id] = [])).push(state.id)
     }
-  let taggedGoto: number[][] = [[]] // Empty spot for TERM_ERROR
-  let untaggedGoto: number[][] = []
-  for (let term in goto) {
-    let entries = goto[term], max = -1
+  let data: number[] = [], index: number[] = []
+  for (let term = 0; term <= maxTerm; term++) {
+    let entries = goto[term]
+    if (!entries) {
+      index.push(0)
+      continue
+    }
+    index.push(data.length + maxTerm + 1) // Offset of the data, taking index size into account
+    let biggest = -1
+    for (let target in entries) if (biggest < 0 || entries[target].length > entries[biggest].length)
+      biggest = +target
     for (let target in entries) {
-      let sources = entries[target]
-      if (max < 0 || sources.length > entries[max].length) max = +target
+      let value = +target
+      if (value != biggest) for (let source of entries[target]) data.push(source, value)
     }
-    let assoc: number[] = []
-    for (let target in entries) if (+target != max) {
-      for (let source of entries[target]) assoc.push(+source, +target)
-    }
-    assoc.push(-1, max)
-    let table = +term & TERM_TAGGED ? taggedGoto : untaggedGoto
-    table[+term >> 1] = assoc
+    data.push(0xffff, biggest) // FIXME need some reserved state value. Or make this cheap to output, which is also doable
   }
-  return {taggedGoto, untaggedGoto}
+
+  return Uint16Array.from(index.concat(data))
 }
 
 class TokenGroup {
