@@ -158,6 +158,7 @@ export class State {
     })
     // Replace negative numbers with resolved state offsets
     for (let i = 0; i < data.length; i++) if (data[i] < 0) data[i] = offsets[-data[i] - 1]
+    if (data.length > 2**16) throw new Error("Tokenizer tables too big to represent with 16-bit offsets.")
     return Uint16Array.from(data)
   }
 
