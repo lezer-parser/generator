@@ -6,6 +6,7 @@ import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
+import {encodeArray} from "./encode"
 import {Parser, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer,
         REDUCE_DEPTH_SIZE, SPECIALIZE, EXTEND, TERM_ERR} from "lezer"
 
@@ -49,7 +50,7 @@ class Parts {
 
 function p(...terms: Term[]) { return new Parts(terms, null) }
 
-const reserved = ["specialize", "extend", "skip"] // FIXME update
+const reserved = ["specialize", "extend", "skip"]
 
 function isTag(name: string) {
   let ch0 = name[0]
@@ -1000,8 +1001,45 @@ export function buildParser(text: string, options: BuildOptions = {}): Parser {
   return new Builder(text, options).getParser()
 }
 
-/*
-export function buildParserFile(text: string, options: BuildOptions = {}): string {
-  return new Builder(text, options).getParserString()
+function flattenStates(states: readonly ParseState[]): number[] {
+  let data = []
+  for (let state of states) {
+    data.push(state.actions, state.recover, state.skip, state.tokenizerMask, state.defaultReduce, state.forcedReduce)
+  }
+  return data
 }
-*/
+
+export function buildParserFile(text: string, options: BuildOptions = {}): string {
+  let parser = new Builder(text, options).getParser()
+  let mod = options.moduleStyle || "cjs"
+
+  let head = mod == "cjs" ? `const {Parser, TokenGroup} = require("lezer")\n`
+    : `import {Parser, TokenGroup} from "lezer"\n`
+  let tokenData = null
+  parser.tokenizers.forEach((tok, i) => {
+    if (tok instanceof TempExternalTokenizer) {
+      let varID = `tok${i}`, {source, id} = tok.set.ast
+      if (mod == "cjs") head += `const {${id.name}: ${varID}} = require(${JSON.stringify(source)})\n`
+      else head += `import {${id.name} as ${varID}} from ${JSON.stringify(source)}\n`
+    } else {
+      tokenData = (tok as LezerTokenGroup).data
+    }
+  })
+
+  let parserStr = `Parser.deserialize(
+  ${encodeArray(flattenStates(parser.states), 0xffffffff)},
+  ${encodeArray(parser.data)},
+  ${encodeArray(parser.goto)},
+  ${JSON.stringify(parser.tags)},
+  ${encodeArray(tokenData || [])},
+  [${parser.tokenizers.map((tok, i) => {
+    if (tok instanceof TempExternalTokenizer) return `tok${i}`
+    else return (tok as LezerTokenGroup).id
+  })}],
+  ${parser.repeatTable}, ${parser.repeatCount},
+  ${parser.specializeTable},
+  ${JSON.stringify(parser.specializations)},
+  ${parser.tokenPrecTable}
+)`
+  return head + (mod == "cjs" ? `export default ${parserStr}\n` : `module.exports = ${parserStr}\n`)
+}

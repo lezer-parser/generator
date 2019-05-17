@@ -1,6 +1,6 @@
 import {buildParserFile} from ".."
 
-let file = null, moduleStyle = "CommonJS", includeNames = false
+let file = undefined, moduleStyle = "CommonJS", includeNames = false
 
 for (let i = 2; i < process.argv.length; i++) {
   let arg = process.argv[i]
