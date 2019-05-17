@@ -124,7 +124,9 @@ export class Shift {
 export class Reduce {
   constructor(readonly term: Term, readonly rule: Rule) {}
 
-  eq(other: Shift | Reduce): boolean { return other instanceof Reduce && other.rule == this.rule }
+  eq(other: Shift | Reduce): boolean {
+    return other instanceof Reduce && other.rule.name == this.rule.name && other.rule.parts.length == this.rule.parts.length
+  }
 
   toString() { return `${this.rule.name.name}(${this.rule.parts.length})` }
 
@@ -145,6 +147,7 @@ export class State {
   goto: Shift[] = []
   recover: Shift[] = []
   tokenGroup: number = -1
+  _defaultReduce: Rule | null | undefined = undefined
 
   constructor(readonly id: number,
               readonly set: readonly Pos[],
@@ -210,6 +213,23 @@ export class State {
 
   hasSet(set: readonly Pos[]) {
     return eqSet(this.set, set)
+  }
+
+  get defaultReduce() {
+    if (this._defaultReduce === undefined) {
+      this._defaultReduce = null
+      if (this.actions.length) {
+        let first = this.actions[0]
+        if (first instanceof Reduce && this.actions.every(a => a.eq(first)))
+          this._defaultReduce = first.rule
+      }
+    }
+    return this._defaultReduce
+  }
+
+  sameDefaultReduce(rule: Rule) {
+    let mine = this.defaultReduce
+    return mine && mine.name == rule.name && mine.parts.length == rule.parts.length
   }
 }
 
@@ -376,6 +396,7 @@ function applyCut(set: readonly Pos[]): readonly Pos[] {
 }
 
 function mergeState(mapping: number[], newStates: State[], state: State, target: State): boolean {
+  if (state.defaultReduce) return true
   for (let j = 0; j < state.actions.length; j++)
     if (target.addActionInner(state.actions[j].map(mapping, newStates), state.actionPositions[j]))
       return false
@@ -412,9 +433,10 @@ function collapseAutomaton(states: readonly State[]): State[] {
   for (;;) {
     let newStates: State[] = [], mapping: number[] = []
     for (let i = 0; i < states.length; i++) {
-      let state = states[i], set = state.set
+      let state = states[i], {set, defaultReduce} = state
       let newID = newStates.findIndex((s, index) => {
-        return s.set.length == set.length && s.set.every((p, i) => p.eqSimple(set[i])) &&
+        return (defaultReduce ? s.sameDefaultReduce(defaultReduce) :
+                s.set.length == set.length && s.set.every((p, i) => p.eqSimple(set[i]))) &&
           s.tokenGroup == state.tokenGroup &&
           s.skipID == state.skipID &&
           !hasConflict(i, index, mapping, conflicts)
@@ -423,6 +445,7 @@ function collapseAutomaton(states: readonly State[]): State[] {
         newID = newStates.length
         let newState = new State(newID, set, state.flags, state.skipID, 0)
         newState.tokenGroup = state.tokenGroup
+        newState._defaultReduce = state.defaultReduce
         newStates.push(newState)
       } else {
         newStates[newID].flags |= state.flags

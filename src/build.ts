@@ -194,7 +194,6 @@ class Builder {
 
     let data = new StateDataBuilder
     let states = table.map(s => this.finishState(s, tokenizers, data))
-    // FIXME check if we generate states that contain the same info multiple times
 
     let repeatTable = data.storeArray(repeatInfo)
     let precTable = data.storeArray(tokenPrec.concat(TERM_ERR))
@@ -225,16 +224,12 @@ class Builder {
 
   finishState(state: LRState, tokenizers: (LezerTokenGroup | TempExternalTokenizer)[],
               data: StateDataBuilder) {
-    let actions = [], recover = [], forcedReduce = 0, defaultReduce = 0
-    let skip = this.skipSets[state.skipID].map(term => term.id)
+    let actions = [], recover = [], forcedReduce = 0
+    let defaultReduce = state.defaultReduce ? reduce(state.defaultReduce) : 0
+    let skip = defaultReduce ? [] : this.skipSets[state.skipID].map(term => term.id)
     skip.push(TERM_ERR)
 
-    if (state.actions.length) {
-      let first = state.actions[0] as Reduce
-      if (state.actions.every(a => a instanceof Reduce && a.rule == first.rule))
-        defaultReduce = reduce(first.rule)
-    }
-    for (let action of state.actions) {
+    if (defaultReduce == 0) for (let action of state.actions) {
       if (skip.includes(action.term.id))
         this.raise(`Use of token ${action.term.name} conflicts with skip rule`)
       if (action instanceof Shift)
