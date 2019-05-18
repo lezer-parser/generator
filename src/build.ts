@@ -5,7 +5,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDecl
 import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
-import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
+import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift} from "./automaton"
 import {encodeArray} from "./encode"
 import {Parser, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer,
         REDUCE_DEPTH_SIZE, SPECIALIZE, EXTEND, TERM_ERR} from "lezer"

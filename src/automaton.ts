@@ -114,18 +114,31 @@ function sameSet<T>(a: readonly T[], b: readonly T[]) {
 export class Shift {
   constructor(readonly term: Term, readonly target: State) {}
 
-  eq(other: Shift | Reduce): boolean { return other instanceof Shift && other.target == this.target }
+  eq(other: Shift | Reduce): boolean { return other instanceof Shift && this.term == other.term && other.target.id == this.target.id }
+
+  cmp(other: Shift | Reduce): number { return other instanceof Reduce ? -1 : this.term.id - other.term.id || this.target.id - other.target.id }
 
   toString() { return "s" + this.target.id }
 
-  map(mapping: number[], states: State[]) { return new Shift(this.term, states[mapping[this.target.id]]) }
+  map(mapping: number[], states: State[]) {
+    let mapped = mapping[this.target.id]
+    return mapped == this.target.id ? this : new Shift(this.term, states[mapped])
+  }
 }
 
 export class Reduce {
   constructor(readonly term: Term, readonly rule: Rule) {}
 
+
+
   eq(other: Shift | Reduce): boolean {
-    return other instanceof Reduce && other.rule.name == this.rule.name && other.rule.parts.length == this.rule.parts.length
+    return other instanceof Reduce && this.term == other.term &&
+      other.rule.name == this.rule.name && other.rule.parts.length == this.rule.parts.length
+  }
+
+  cmp(other: Shift | Reduce): number {
+    return other instanceof Shift ? 1 : this.term.id - other.term.id || this.rule.name.id - other.rule.name.id ||
+      this.rule.parts.length - other.rule.parts.length
   }
 
   toString() { return `${this.rule.name.name}(${this.rule.parts.length})` }
@@ -147,9 +160,9 @@ export class State {
   goto: Shift[] = []
   recover: Shift[] = []
   tokenGroup: number = -1
-  _defaultReduce: Rule | null | undefined = undefined
+  defaultReduce: Rule | null = null
 
-  constructor(readonly id: number,
+  constructor(public id: number,
               readonly set: readonly Pos[],
               public flags = 0,
               readonly skipID: number,
@@ -215,21 +228,29 @@ export class State {
     return eqSet(this.set, set)
   }
 
-  get defaultReduce() {
-    if (this._defaultReduce === undefined) {
-      this._defaultReduce = null
-      if (this.actions.length) {
-        let first = this.actions[0]
-        if (first instanceof Reduce && this.actions.every(a => a.eq(first)))
-          this._defaultReduce = first.rule
+  finish() {
+    if (this.actions.length) {
+      let first = this.actions[0]
+      if (first instanceof Reduce) {
+        let {rule} = first
+        if (this.actions.every(a => a instanceof Reduce && a.rule.name == rule.name && a.rule.parts.length == rule.parts.length))
+          this.defaultReduce = rule
       }
     }
-    return this._defaultReduce
+    this.actions.sort((a, b) => a.cmp(b))
+    this.goto.sort((a, b) => a.cmp(b))
+    this.recover.sort((a, b) => a.cmp(b))
   }
 
-  sameDefaultReduce(rule: Rule) {
-    let mine = this.defaultReduce
-    return mine && mine.name == rule.name && mine.parts.length == rule.parts.length
+  eq(other: State) {
+    let dThis = this.defaultReduce, dOther = other.defaultReduce
+    if (dThis || dOther)
+      return dThis && dOther ? dThis.name == dOther.name && dThis.parts.length == dOther.parts.length : false
+    return this.skipID == other.skipID &&
+      this.tokenGroup == other.tokenGroup &&
+      eqSet(this.actions, other.actions) &&
+      eqSet(this.goto, other.goto) &&
+      eqSet(this.recover, other.recover)
   }
 }
 
@@ -378,6 +399,7 @@ export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[
       state.addAction(new Reduce(ahead, pos.rule), [pos])
   }
 
+  for (let state of states) state.finish()
   return states
 }
 
@@ -428,24 +450,24 @@ function hasConflict(id: number, newID: number, mapping: number[], conflicts: nu
 }
 
 // Collapse an LR(1) automaton to an LALR-like automaton
-function collapseAutomaton(states: readonly State[]): State[] {
+function collapseAutomaton(states: readonly State[]): readonly State[] {
   let conflicts: number[] = []
   for (;;) {
     let newStates: State[] = [], mapping: number[] = []
     for (let i = 0; i < states.length; i++) {
-      let state = states[i], {set, defaultReduce} = state
+      let state = states[i], {set} = state
       let newID = newStates.findIndex((s, index) => {
-        return (defaultReduce ? s.sameDefaultReduce(defaultReduce) :
-                s.set.length == set.length && s.set.every((p, i) => p.eqSimple(set[i]))) &&
+        return state.set.length == s.set.length &&
+          state.set.every((p, i) => p.eqSimple(s.set[i])) &&
           s.tokenGroup == state.tokenGroup &&
           s.skipID == state.skipID &&
           !hasConflict(i, index, mapping, conflicts)
       })
       if (newID < 0) {
         newID = newStates.length
-        let newState = new State(newID, set, state.flags, state.skipID, 0)
+        let newState = new State(newID, set, state.flags, state.skipID, state.hash)
         newState.tokenGroup = state.tokenGroup
-        newState._defaultReduce = state.defaultReduce
+        newState.defaultReduce = state.defaultReduce
         newStates.push(newState)
       } else {
         newStates[newID].flags |= state.flags
@@ -461,13 +483,45 @@ function collapseAutomaton(states: readonly State[]): State[] {
         markConflicts(mapping, newID, states, newStates, conflicts)
       }
     }
-    if (!conflicting.length) return newStates
+    if (!conflicting.length) return mergeIdentical(newStates)
+  }
+}
+
+function mergeIdentical(states: readonly State[]): readonly State[] {
+  // Resolve alwaysReduce and sort actions
+  for (let state of states) state.finish()
+  for (;;) {
+    let mapping: number[] = [], didMerge = false
+    let newStates: State[] = []
+    // Find states that either have the same alwaysReduce or the same
+    // actions, and merge them.
+    for (let i = 0; i < states.length; i++) {
+      let state = states[i]
+      let match = newStates.findIndex(s => state.eq(s))
+      if (match < 0) {
+        mapping[i] = newStates.length
+        newStates.push(state)
+      } else {
+        mapping[i] = match
+        didMerge = true
+      }
+    }
+    if (!didMerge) return states
+    // Make sure actions point at merged state objects
+    for (let state of newStates) if (!state.defaultReduce) {
+      state.actions = state.actions.map(a => a.map(mapping, newStates))
+      state.recover = state.recover.map(a => a.map(mapping, newStates))
+      state.goto = state.goto.map(a => a.map(mapping, newStates))
+    }
+    // Renumber ids
+    for (let i = 0; i < newStates.length; i++) newStates[i].id = i
+    states = newStates
   }
 }
 
 const none: readonly any[] = []
 
-function addRecoveryRules(table: State[], first: {[name: string]: Term[]}) {
+function addRecoveryRules(table: readonly State[], first: {[name: string]: Term[]}) {
   for (let state of table) {
     for (let pos of state.set) if (pos.pos > 0) {
       for (let i = pos.pos + 1; i < pos.rule.parts.length; i++) {
