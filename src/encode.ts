@@ -12,11 +12,11 @@
 //
 // - The digits in a number are ordered from high to low significance.
 
-const BIG_VAL = 0xffff, BIG_VAL_CODE = "~".charCodeAt(0)
+const BIG_VAL = 0xffff, BIG_VAL_CODE = 126
 
-const START = " ".charCodeAt(0), GAP1 = '"'.charCodeAt(0), GAP2 = "\\".charCodeAt(0)
+const START = 32, GAP1 = 34 /* '"' */, GAP2 = 92 /* "\\" */
 
-const BASE = 46
+const BASE = 46 // (126 - 32 - 2) / 2
 
 function digitToChar(digit: number) {
   let ch = digit + START
@@ -66,5 +66,3 @@ export function decode<T extends {[i: number]: number} = Uint16Array>(input: str
   }
   return array!
 }
-
-  
