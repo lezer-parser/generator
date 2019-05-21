@@ -44,25 +44,3 @@ export function encodeArray(values: {length: number, readonly [i: number]: numbe
   result += '"'
   return result
 }
-
-export function decode<T extends {[i: number]: number} = Uint16Array>(input: string, Type: {new (n: number): T} = Uint16Array as any): T {
-  let array: T | null = null
-  for (let pos = 0, out = 0; pos < input.length;) {
-    let value = 0
-    for (;;) {
-      let next = input.charCodeAt(pos++), stop = false
-      if (pos > input.length) throw new Error("AH")
-      if (next == BIG_VAL_CODE) { value = BIG_VAL; break }
-      if (next >= GAP2) next--
-      if (next >= GAP1) next--
-      let digit = next - START
-      if (digit >= BASE) { digit -= BASE; stop = true }
-      value += digit
-      if (stop) break
-      value *= BASE
-    }
-    if (array) array[out++] = value
-    else array = new Type(value)
-  }
-  return array!
-}
