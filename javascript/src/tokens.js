@@ -1,7 +1,8 @@
-// Hand-written tokenizers for JavaScript tokens that can't be
-// expressed by lezer's built-in tokenizer.
+/* Hand-written tokenizers for JavaScript tokens that can't be
+   expressed by lezer's built-in tokenizer. */
 
-import {insertSemi, noSemi, postfixOp, templateContent, templateDollarBrace, templateEnd} from "parser.terms.js"
+import {ExternalTokenizer} from "lezer"
+import {insertSemi, noSemi, postfixOp, templateContent, templateDollarBrace, templateEnd} from "./parser.terms.js"
 
 const newline = [10, 13, 8232, 8233]
 const space = [9, 11, 12, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8239, 8287, 12288]
@@ -21,7 +22,7 @@ function newlineBefore(input, pos) {
 
 export const insertSemicolon = new ExternalTokenizer((input, stack) => {
   let start = input.pos, next = input.next()
-  if ((next == brace || next == -1 || newlineBefore(input, start)) && stack.canShift(insertSemi))
+  if ((next == braceR || next == -1 || newlineBefore(input, start)) && stack.canShift(insertSemi))
     input.accept(insertSemi, start)
 })
 
@@ -32,7 +33,7 @@ export const noSemicolon = new ExternalTokenizer((input, stack) => {
     let after = input.next()
     if (after == slash || after == star) return
   }
-  if (next != brace && next != semicolon && next != -1 && !newlineBefore(input, start) &&
+  if (next != braceR && next != semicolon && next != -1 && !newlineBefore(input, start) &&
       stack.canShift(noSemi))
     input.accept(noSemi, start)
 })
@@ -44,7 +45,7 @@ export const postfix = new ExternalTokenizer((input, stack) => {
     input.accept(postfixOp)
 })
 
-export const template = new ExternalTokenizer((input, stack) => {
+export const template = new ExternalTokenizer(input => {
   let start = input.pos, afterDollar = false
   for (;;) {
     let next = input.next()
@@ -55,7 +56,7 @@ export const template = new ExternalTokenizer((input, stack) => {
       if (input.pos == start + 1) input.accept(templateEnd)
       else input.accept(templateContent, input.pos - 1)
       break
-    } else if (next == brace && afterDollar) {
+    } else if (next == braceL && afterDollar) {
       if (input.pos == start + 2) input.accept(templateDollarBrace)
       else input.accept(templateContent, input.pos - 2)
       break
