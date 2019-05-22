@@ -53,9 +53,9 @@ export class TermSet {
   finish(rules: readonly Rule[]) {
     let tags: string[] = []
     let names: {[id: number]: string} = {}
-    let repeatInfo: number[] = []
+    let repeatInfo: number[] = [0 /* placeholder for TERM_EOF */]
 
-    let taggedID = -1, untaggedID = -2
+    let taggedID = -1, untaggedID = 0
     for (let term of this.nonTerminals) if (term.repeats && rules.some(r => r.name == term))
       term.id = (untaggedID += 2)
     for (let term of this.nonTerminals) if (term.id < 0 && (term.error || rules.some(r => r.name == term)))
