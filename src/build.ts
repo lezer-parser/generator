@@ -1019,6 +1019,7 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   head += mod == "cjs" ? `const {Parser} = require("lezer")\n`
     : `import {Parser} from "lezer"\n`
   let tokenData = null, imports: {[source: string]: string[]} = {}
+  // FIXME check for name clashes with tokenizer names (and Parser, possible other things we define)
   for (let tok of parser.tokenizers) {
     if (tok instanceof TempExternalTokenizer) {
       let {source, id} = tok.set.ast
@@ -1035,6 +1036,7 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
       head += `import {${imports[source].join(", ")}} from ${source}\n`
   }
 
+  // FIXME put duplicated tags into a variable to further shrink size
   let parserStr = `Parser.deserialize(
   ${encodeArray(flattenStates(parser.states), 0xffffffff)},
   ${encodeArray(parser.data)},
@@ -1048,7 +1050,8 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   ${parser.repeatTable}, ${parser.repeatCount},
   ${parser.specializeTable},
   ${JSON.stringify(parser.specializations)},
-  ${parser.tokenPrecTable}
+  ${parser.tokenPrecTable}${options.includeNames ? `,
+  ${JSON.stringify(parser.termNames)}` : ''}
 )`
 
   let terms: string[] = []
@@ -1061,6 +1064,6 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
     terms.push(`${id} = ${builder.termTable[name]}`)
   }
 
-  return {parser: head + (mod == "cjs" ? `export default ${parserStr}\n` : `module.exports = ${parserStr}\n`),
+  return {parser: head + (mod == "cjs" ? `module.exports = ${parserStr}\n` : `export default ${parserStr}\n`),
           terms: `${gen}export const\n  ${terms.join(",\n  ")}\n`}
 }
