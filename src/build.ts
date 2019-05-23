@@ -1019,16 +1019,30 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   head += mod == "cjs" ? `const {Parser} = require("lezer")\n`
     : `import {Parser} from "lezer"\n`
   let tokenData = null, imports: {[source: string]: string[]} = {}
-  // FIXME check for name clashes with tokenizer names (and Parser, possible other things we define)
-  for (let tok of parser.tokenizers) {
-    if (tok instanceof TempExternalTokenizer) {
-      let {source, id} = tok.set.ast
-      let src = JSON.stringify(source)
-      ;(imports[src] || (imports[src] = [])).push(id.name)
-    } else {
-      tokenData = (tok as LezerTokenGroup).data
+  let defined = Object.create(null)
+  defined.Parser = true
+  let getName = (prefix: string) => {
+    for (let i = 0;; i++) {
+      let id = prefix + (i ? "_" + i : "")
+      if (!defined[id]) return id
     }
   }
+
+  let tokenizers = parser.tokenizers.map(tok => {
+    if (tok instanceof TempExternalTokenizer) {
+      let {source, id: {name}} = tok.set.ast
+      let src = JSON.stringify(source), varName = name
+      if (name in defined) {
+        varName = getName("tok")
+        name += ` as ${varName}`
+      }
+      ;(imports[src] || (imports[src] = [])).push(name)
+      return varName
+    } else {
+      tokenData = (tok as LezerTokenGroup).data
+      return (tok as LezerTokenGroup).id
+    }
+  })
   for (let source in imports) {
     if (mod == "cjs")
       head += `const {${imports[source].join(", ")}} = require(${source})\n`
@@ -1036,17 +1050,26 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
       head += `import {${imports[source].join(", ")}} from ${source}\n`
   }
 
-  // FIXME put duplicated tags into a variable to further shrink size
+  let tagNames: {[tag: string]: null | string} = Object.create(null)
+  let tagDefs: string[] = []
+  for (let tag of parser.tags) {
+    if (!(tag in tagNames)) {
+      tagNames[tag] = null
+    } else if (tagNames[tag] == null) {
+      let name = getName(tag)
+      tagNames[tag] = name
+      tagDefs.push(`${name} = ${JSON.stringify(tag)}`)
+    }
+  }
+  if (tagDefs.length) head += `const ${tagDefs.join(", ")}\n`
+
   let parserStr = `Parser.deserialize(
   ${encodeArray(flattenStates(parser.states), 0xffffffff)},
   ${encodeArray(parser.data)},
   ${encodeArray(parser.goto)},
-  ${JSON.stringify(parser.tags)},
+  [${parser.tags.map(t => tagNames[t] || JSON.stringify(t)).join(",")}],
   ${encodeArray(tokenData || [])},
-  [${parser.tokenizers.map(tok => {
-    if (tok instanceof TempExternalTokenizer) return tok.set.ast.id.name
-    else return (tok as LezerTokenGroup).id
-  })}],
+  [${tokenizers.join(", ")}],
   ${parser.repeatTable}, ${parser.repeatCount},
   ${parser.specializeTable},
   ${JSON.stringify(parser.specializations)},
