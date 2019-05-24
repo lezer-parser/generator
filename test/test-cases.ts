@@ -5,7 +5,7 @@ const ist = require("ist")
 let fs = require("fs"), path = require("path")
 let caseDir = path.join(__dirname, "cases")
 
-function compressAST(ast: string, file: string) {
+function compressAST(ast: string, file: string, dropQuoted = true) {
   let token = /\s*($|[(),]|"(?:\\.|[^"])*"|[\p{Alphabetic}\d_$⚠]+)/gyu
   let result = ""
   for (;;) {
@@ -15,6 +15,15 @@ function compressAST(ast: string, file: string) {
     result += m[1]
   }
   return result
+}
+
+function dropQuoted(ast: string) {
+  ast = ast.replace(/"([^"\\]|\\.)*?"/g, "")
+  for (;;) {
+    let len = ast.length
+    ast = ast.replace(/,(?=[\),]|$)|^,|\(\)/, "").replace(/\(,/, "(")
+    if (len == ast.length) return ast
+  }
 }
 
 function externalTokenizer(name: string, terms: {[name: string]: number}) {
@@ -55,6 +64,7 @@ describe("Cases", () => {
       let strict = expected.indexOf("⚠") < 0, parser = force()
       let result = parser.parse(new StringStream(text.trim()), {strict})
       let parsed = result.toString(parser)
+      if (!/"/.test(expected)) parsed = dropQuoted(parsed)
       if (parsed != expected) {
         if (parsed.length > 76) {
           let mis = 0

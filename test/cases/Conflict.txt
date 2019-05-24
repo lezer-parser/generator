@@ -2,9 +2,9 @@ program { expr+ }
 
 expr { ArrowExpr | ParenExpr | Identifier }
 
-ParenExpr { "(" expr ")" }
+ParenExpr { i<"("> expr i<")"> }
 
-ArrowExpr { "(" ParamName ")" "=>" expr }
+ArrowExpr { i<"("> ParamName i<")"> i<"=>"> expr }
 
 Identifier { word ~arrow }
 
@@ -13,6 +13,8 @@ ParamName { word ~arrow }
 skip { whitespace }
 
 tokens {
+  i<expr> { expr }
+
   whitespace { std.whitespace+ }
 
   word { std.asciiLetter+ }

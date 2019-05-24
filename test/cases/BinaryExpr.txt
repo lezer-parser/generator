@@ -23,7 +23,7 @@ tokens {
 
 (x+y)/x
 
-==> BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),MultOp,Symbol)
+==> BinaryExpr("(",BinaryExpr(Symbol,AddOp,Symbol),")",MultOp,Symbol)
 
 ---
 

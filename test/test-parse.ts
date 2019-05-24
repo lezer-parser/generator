@@ -29,15 +29,16 @@ describe("parsing", () => {
     precedence { call }
 
     program { statement* }
-    statement { Conditional | Loop | Block | expression ";" }
+    statement { Conditional | Loop | Block | expression p<";"> }
     Conditional { kw<"if"> expression statement }
-    Block { "{" statement* "}" }
+    Block { p<"{"> statement* p<"}"> }
     Loop { kw<"while"> expression statement }
-    expression { CallExpression | Number | Variable | "!" expression }
-    CallExpression { expression !call "(" expression* ")" }
+    expression { CallExpression | Number | Variable | p<"!"> expression }
+    CallExpression { expression !call p<"("> expression* p<")"> }
 
     kw<value> { specialize<Variable, value> }
     tokens {
+      p<x> { x }
       Number { std.digit+ }
       Variable { std.asciiLetter+ }
       whitespace { std.whitespace+ }
@@ -90,8 +91,9 @@ describe("parsing", () => {
 describe("sequences", () => {
   let p1 = p(`
     program { (X | Y)+ }
-    X { "x" }
-    Y { "y" ";"* }`)
+    X { t<"x"> }
+    Y { t<"y"> t<";">* }
+    tokens { t<x> { x } }`)
 
   function depth(tree: SyntaxTree): number {
     return tree instanceof Tree ? tree.children.reduce((d, c) => Math.max(d, depth(c) + 1), 1) : 1
