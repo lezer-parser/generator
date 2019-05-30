@@ -1,5 +1,5 @@
 import {buildParser} from ".."
-import {Parser, StringStream, SyntaxTree, Tree} from "lezer"
+import {Parser, StringStream, Tree, SyntaxTree} from "lezer"
 const ist = require("ist")
 
 function p(text: string): () => Parser {
@@ -7,7 +7,7 @@ function p(text: string): () => Parser {
   return () => value || (value = buildParser(text))
 }
 
-function shared(a: SyntaxTree, b: SyntaxTree) {
+function shared(a: Tree, b: Tree) {
   let inA = [], shared = 0
   ;(function register(t: SyntaxTree) {
     inA.push(t)
@@ -20,7 +20,7 @@ function shared(a: SyntaxTree, b: SyntaxTree) {
   return Math.round(100 * shared / b.length)
 }
 
-function change(tree: SyntaxTree, ...changes: ([number, number] | [number, number, number, number])[]) {
+function change(tree: Tree, ...changes: ([number, number] | [number, number, number, number])[]) {
   return tree.unchanged(changes.map(([fromA, toA, fromB = fromA, toB = toA]) => ({fromA, toA, fromB, toB})))
 }
 
@@ -45,10 +45,10 @@ describe("parsing", () => {
     }
     skip { whitespace }`)
 
-  function qq(parser: Parser, ast: SyntaxTree) {
+  function qq(parser: Parser, ast: Tree) {
     return function(tag: string, offset = 1): {start: number, end: number} {
       let result = null
-      ast.iterate(0, ast.length, 0, (term, start, end) => {
+      ast.iterate(0, ast.length, (term, start, end) => {
         if (parser.getTag(term) == tag && --offset == 0) result = {start, end}
       })
       if (result) return result
@@ -134,7 +134,7 @@ describe("sequences", () => {
     let parser = p1()
     let ast = parser.parse(new StringStream(doc), {bufferLength: 10})
     let i = 0
-    ast.iterate(0, ast.length, 0, (term, start, end) => {
+    ast.iterate(0, ast.length, (term, start, end) => {
       let tag = parser.getTag(term)
       if (i == 100) {
         ist(tag, "Y")
