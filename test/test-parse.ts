@@ -47,9 +47,11 @@ describe("parsing", () => {
 
   function qq(parser: Parser, ast: SyntaxTree) {
     return function(tag: string, offset = 1): {start: number, end: number} {
-      for (let cur = ast.cursor(parser); cur.next();) if (cur.tag == tag) {
-        if (--offset == 0) return cur
-      }
+      let result = null
+      ast.iterate(0, ast.length, 0, (term, start, end) => {
+        if (parser.getTag(term) == tag && --offset == 0) result = {start, end}
+      })
+      if (result) return result
       throw new Error("Couldn't find " + tag)
     }
   }
@@ -129,17 +131,21 @@ describe("sequences", () => {
 
   it("assigns the right positions to sequences", () => {
     let doc = "x".repeat(100) + "y;;;;;;;;;" + "x".repeat(90)
-    let ast = p1().parse(new StringStream(doc), {bufferLength: 10})
-    for (let cursor = ast.cursor(p1()), i = 0; cursor.next(); i++) {
+    let parser = p1()
+    let ast = parser.parse(new StringStream(doc), {bufferLength: 10})
+    let i = 0
+    ast.iterate(0, ast.length, 0, (term, start, end) => {
+      let tag = parser.getTag(term)
       if (i == 100) {
-        ist(cursor.tag, "Y")
-        ist(cursor.start, 100)
-        ist(cursor.end, 110)
+        ist(tag, "Y")
+        ist(start, 100)
+        ist(end, 110)
       } else {
-        ist(cursor.tag, "X")
-        ist(cursor.end, cursor.start + 1)
-        ist(cursor.start, i < 100 ? i : i + 9)
+        ist(tag, "X")
+        ist(end, start + 1)
+        ist(start, i < 100 ? i : i + 9)
       }
-    }
+      i++
+    })
   })
 })
