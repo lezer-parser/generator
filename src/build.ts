@@ -196,12 +196,17 @@ class Builder {
     let data = new StateDataBuilder
     let states = table.map(s => this.finishState(s, tokenizers, data))
 
+    let skipTags: number[] = []
+    for (let set of this.skipSets) for (let term of set) if (term.tag) addToSet(skipTags, term.id)
+    skipTags.push(TERM_ERR)
+
     let repeatTable = data.storeArray(repeatInfo)
     let precTable = data.storeArray(tokenPrec.concat(TERM_ERR))
     let specTable = data.storeArray(specialized)
+    let skipTable = data.storeArray(skipTags)
     return new Parser(states, data.finish(), computeGotoTable(table), tags, tokenizers,
                       repeatTable, repeatInfo.length,
-                      specTable, specializations, precTable, names)
+                      specTable, specializations, precTable, skipTable, names)
   }
 
   makeTerminal(name: string, tag: string | null) {
