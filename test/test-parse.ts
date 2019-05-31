@@ -1,4 +1,4 @@
-import {buildParser} from ".."
+ import {buildParser} from ".."
 import {Parser, StringStream, Tree, SyntaxTree} from "lezer"
 const ist = require("ist")
 
@@ -90,34 +90,48 @@ describe("parsing", () => {
   })
 
   it("can resolve positions", () => {
-    let doc = "while 111 { one; two(three 20); }"
-    let parser = p1(), ast = parser.parse(new StringStream(doc))
-    let cx111 = ast.resolve(7)
-    ist(cx111.depth, 2)
-    ist(parser.getTag(cx111.type), "Number")
-    ist(cx111.start, 6)
-    ist(cx111.end, 9)
-    ist(parser.getTag(cx111.parent!.type), "Loop")
-    ist(cx111.parent!.start, 0)
-    ist(cx111.parent!.end, 33)
-    let cxThree = ast.resolve(22)
-    ist(cxThree.depth, 4)
-    ist(parser.getTag(cxThree.type), "Variable")
-    ist(cxThree.start, 21)
-    ist(cxThree.end, 26)
-    let cxCall = cxThree.parent!
-    ist(parser.getTag(cxCall.type), "CallExpression")
-    ist(cxCall.start, 17)
-    ist(cxCall.end, 30)
-    ist(cxCall.children.map(c => parser.getTag(c.type)).join(","), "Variable,Variable,Number")
-    let branch = cxThree.resolve(18)
-    ist(branch.depth, 4)
-    ist(parser.getTag(branch.type), "Variable")
-    ist(branch.start, 17)
-    ist(branch.end, 20)
-    // Always resolve to the uppermost context for a position
-    ist(ast.resolve(6).depth, 1)
-    ist(ast.resolve(9).depth, 1)
+    let doc = "while 111 { one; two(three 20); }", parser = p1()
+    for (let i = 0; i < 2; i++) {
+      let ast = parser.parse(new StringStream(doc), {strict: true, bufferLength: i ? 2 : 1024})
+
+      let cx111 = ast.resolve(7)
+      ist(cx111.depth, 2)
+      ist(parser.getTag(cx111.type), "Number")
+      ist(cx111.start, 6)
+      ist(cx111.end, 9)
+      ist(parser.getTag(cx111.parent!.type), "Loop")
+      ist(cx111.parent!.start, 0)
+      ist(cx111.parent!.end, 33)
+
+      let cxThree = ast.resolve(22)
+      ist(cxThree.depth, 4)
+      ist(parser.getTag(cxThree.type), "Variable")
+      ist(cxThree.start, 21)
+      ist(cxThree.end, 26)
+
+      let cxCall = cxThree.parent!
+      ist(parser.getTag(cxCall.type), "CallExpression")
+      ist(cxCall.start, 17)
+      ist(cxCall.end, 30)
+      ist(cxCall.children.map(c => parser.getTag(c.type)).join(","), "Variable,Variable,Number")
+
+      let branch = cxThree.resolve(18)
+      ist(branch.depth, 4)
+      ist(parser.getTag(branch.type), "Variable")
+      ist(branch.start, 17)
+      ist(branch.end, 20)
+
+      // Always resolve to the uppermost context for a position
+      ist(ast.resolve(6).depth, 1)
+      ist(ast.resolve(9).depth, 1)
+
+      ist(cxCall.childBefore(cxCall.start), null)
+      ist(cxCall.childAfter(cxCall.end), null)
+      ist(parser.getTag(cxCall.childBefore(27)!.type), "Variable")
+      ist(parser.getTag(cxCall.childAfter(26)!.type), "Number")
+      ist(parser.getTag(cxCall.childBefore(28)!.type), "Number")
+      ist(parser.getTag(cxCall.childAfter(28)!.type), "Number")
+    }
   })
 })
 
