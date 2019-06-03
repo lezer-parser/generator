@@ -514,18 +514,17 @@ function computeGotoTable(states: readonly LRState[]) {
   for (let term = 0; term <= maxTerm; term++) {
     let entries = goto[term]
     if (!entries) {
-      index.push(0)
+      index.push(1)
       continue
     }
     index.push(data.length + maxTerm + 1) // Offset of the data, taking index size into account
-    let biggest = -1
-    for (let target in entries) if (biggest < 0 || entries[target].length > entries[biggest].length)
-      biggest = +target
-    for (let target in entries) {
-      let value = +target
-      if (value != biggest) for (let source of entries[target]) data.push(source, value)
+    let keys = Object.keys(entries)
+    for (let target of keys) {
+      let list = entries[target as any]
+      data.push((target == keys[keys.length - 1] ? 1 : 0) + (list.length << 1))
+      data.push(+target)
+      for (let source of list) data.push(source)
     }
-    data.push(0xffff, biggest) // FIXME need some reserved state value. Or make this cheap to output, which is also doable
   }
 
   return Uint16Array.from(index.concat(data))
