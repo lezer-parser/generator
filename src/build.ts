@@ -1078,7 +1078,8 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   ${parser.repeatTable}, ${parser.repeatCount},
   ${parser.specializeTable},
   ${JSON.stringify(parser.specializations)},
-  ${parser.tokenPrecTable}${options.includeNames ? `,
+  ${parser.tokenPrecTable},
+  ${parser.skippedNodes}${options.includeNames ? `,
   ${JSON.stringify(parser.termNames)}` : ''}
 )`
 
