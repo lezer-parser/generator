@@ -156,7 +156,7 @@ describe("sequences", () => {
     ist(d, 6, "<=")
     ist(d, 4, ">=")
     ist(b, 5, ">=")
-    ist(b, 10, "<")
+    ist(b, 10, "<=")
   })
 
   it("caches parts of sequences", () => {
