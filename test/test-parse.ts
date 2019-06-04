@@ -1,5 +1,5 @@
  import {buildParser} from ".."
-import {Parser, StringStream, Tree, SyntaxTree} from "lezer"
+import {Parser, StringStream, Tree} from "lezer"
 const ist = require("ist")
 
 function p(text: string): () => Parser {
@@ -9,11 +9,11 @@ function p(text: string): () => Parser {
 
 function shared(a: Tree, b: Tree) {
   let inA = [], shared = 0
-  ;(function register(t: SyntaxTree) {
+  ;(function register(t: any) {
     inA.push(t)
     if (t instanceof Tree) t.children.forEach(register)
   })(a)
-  ;(function scan(t: SyntaxTree) {
+  ;(function scan(t: any) {
     if (inA.includes(t)) shared += t.length
     else if (t instanceof Tree) t.children.forEach(scan)
   })(b)
@@ -113,7 +113,6 @@ describe("parsing", () => {
       ist(parser.getTag(cxCall.type), "CallExpression")
       ist(cxCall.start, 17)
       ist(cxCall.end, 30)
-      ist(cxCall.children.map(c => parser.getTag(c.type)).join(","), "Variable,Variable,Number")
 
       let branch = cxThree.resolve(18)
       ist(branch.depth, 4)
@@ -142,11 +141,11 @@ describe("sequences", () => {
     Y { t<"y"> t<";">* }
     tokens { t<x> { x } }`)
 
-  function depth(tree: SyntaxTree): number {
+  function depth(tree: any): number {
     return tree instanceof Tree ? tree.children.reduce((d, c) => Math.max(d, depth(c) + 1), 1) : 1
   }
 
-  function breadth(tree: SyntaxTree): number {
+  function breadth(tree: any): number {
     return tree instanceof Tree ? tree.children.reduce((b, c) => Math.max(b, breadth(c)), tree.children.length) : 0
   }
 
