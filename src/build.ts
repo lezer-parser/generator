@@ -517,7 +517,7 @@ function computeGotoTable(states: readonly LRState[]) {
       index.push(1)
       continue
     }
-    index.push(data.length + maxTerm + 1) // Offset of the data, taking index size into account
+    index.push(data.length + maxTerm + 2) // Offset of the data, taking index size into account
     let keys = Object.keys(entries)
     for (let target of keys) {
       let list = entries[target as any]
@@ -527,7 +527,7 @@ function computeGotoTable(states: readonly LRState[]) {
     }
   }
 
-  return Uint16Array.from(index.concat(data))
+  return Uint16Array.from([maxTerm + 1, ...index, ...data])
 }
 
 class TokenGroup {
