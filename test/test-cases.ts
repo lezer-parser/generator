@@ -63,7 +63,7 @@ describe("Cases", () => {
       let expected = compressAST(ast, file)
       let strict = expected.indexOf("⚠") < 0, parser = force()
       let result = parser.parse(new StringStream(text.trim()), {strict})
-      let parsed = result.toString(parser)
+      let parsed = result.toString(parser.tags)
       if (!/"/.test(expected)) parsed = dropQuoted(parsed)
       if (parsed != expected) {
         if (parsed.length > 76) {

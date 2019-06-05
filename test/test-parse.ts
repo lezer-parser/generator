@@ -1,4 +1,4 @@
- import {buildParser} from ".."
+import {buildParser} from ".."
 import {Parser, StringStream, Tree} from "lezer"
 const ist = require("ist")
 
@@ -49,7 +49,7 @@ describe("parsing", () => {
     return function(tag: string, offset = 1): {start: number, end: number} {
       let result = null
       ast.iterate(0, ast.length, (term, start, end) => {
-        if (parser.getTag(term) == tag && --offset == 0) result = {start, end}
+        if (parser.tags.get(term) == tag && --offset == 0) result = {start, end}
       })
       if (result) return result
       throw new Error("Couldn't find " + tag)
@@ -61,11 +61,11 @@ describe("parsing", () => {
     let ast = p1().parse(new StringStream(doc), {bufferLength: 2})
     let expected = "Conditional(Variable,Block(CallExpression(Variable,Number),Variable))," +
       "Loop(Variable,Block(Conditional(Number,CallExpression(Variable,Variable,Number,Number,Number))))"
-    ist(ast.toString(p1()), expected)
+    ist(ast.toString(p1().tags), expected)
     ist(ast.length, 70)
     let pos = doc.indexOf("false"), doc2 = doc.slice(0, pos) + "x" + doc.slice(pos + 5)
     let ast2 = p1().parse(new StringStream(doc2), {bufferLength: 2, cache: change(ast, [pos, pos + 5, pos, pos + 1])})
-    ist(ast2.toString(p1()), expected)
+    ist(ast2.toString(p1().tags), expected)
     ist(shared(ast, ast2), 75, ">")
     ist(ast2.length, 66)
   })
@@ -96,27 +96,27 @@ describe("parsing", () => {
 
       let cx111 = ast.resolve(7)
       ist(cx111.depth, 2)
-      ist(parser.getTag(cx111.type), "Number")
+      ist(parser.tags.get(cx111.type), "Number")
       ist(cx111.start, 6)
       ist(cx111.end, 9)
-      ist(parser.getTag(cx111.parent!.type), "Loop")
+      ist(parser.tags.get(cx111.parent!.type), "Loop")
       ist(cx111.parent!.start, 0)
       ist(cx111.parent!.end, 33)
 
       let cxThree = ast.resolve(22)
       ist(cxThree.depth, 4)
-      ist(parser.getTag(cxThree.type), "Variable")
+      ist(parser.tags.get(cxThree.type), "Variable")
       ist(cxThree.start, 21)
       ist(cxThree.end, 26)
 
       let cxCall = cxThree.parent!
-      ist(parser.getTag(cxCall.type), "CallExpression")
+      ist(parser.tags.get(cxCall.type), "CallExpression")
       ist(cxCall.start, 17)
       ist(cxCall.end, 30)
 
       let branch = cxThree.resolve(18)
       ist(branch.depth, 4)
-      ist(parser.getTag(branch.type), "Variable")
+      ist(parser.tags.get(branch.type), "Variable")
       ist(branch.start, 17)
       ist(branch.end, 20)
 
@@ -126,10 +126,10 @@ describe("parsing", () => {
 
       ist(cxCall.childBefore(cxCall.start), null)
       ist(cxCall.childAfter(cxCall.end), null)
-      ist(parser.getTag(cxCall.childBefore(27)!.type), "Variable")
-      ist(parser.getTag(cxCall.childAfter(26)!.type), "Number")
-      ist(parser.getTag(cxCall.childBefore(28)!.type), "Number")
-      ist(parser.getTag(cxCall.childAfter(28)!.type), "Number")
+      ist(parser.tags.get(cxCall.childBefore(27)!.type), "Variable")
+      ist(parser.tags.get(cxCall.childAfter(26)!.type), "Number")
+      ist(parser.tags.get(cxCall.childBefore(28)!.type), "Number")
+      ist(parser.tags.get(cxCall.childAfter(28)!.type), "Number")
     }
   })
 })
@@ -179,7 +179,7 @@ describe("sequences", () => {
     let ast = parser.parse(new StringStream(doc), {bufferLength: 10})
     let i = 0
     ast.iterate(0, ast.length, (term, start, end) => {
-      let tag = parser.getTag(term)
+      let tag = parser.tags.get(term)
       if (i == 100) {
         ist(tag, "Y")
         ist(start, 100)

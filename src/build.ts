@@ -7,7 +7,7 @@ import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift} from "./automaton"
 import {encodeArray} from "./encode"
-import {Parser, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer,
+import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer,
         REDUCE_DEPTH_SIZE, ACCEPTING, SPECIALIZE, EXTEND, TERM_ERR} from "lezer"
 
 const none: readonly any[] = []
@@ -204,7 +204,7 @@ class Builder {
     let precTable = data.storeArray(tokenPrec.concat(TERM_ERR))
     let specTable = data.storeArray(specialized)
     let skipTable = data.storeArray(skipTags)
-    return new Parser(states, data.finish(), computeGotoTable(table), tags, tokenizers,
+    return new Parser(states, data.finish(), computeGotoTable(table), new TagMap(tags), tokenizers,
                       repeatTable, repeatInfo.length,
                       specTable, specializations, precTable, skipTable, names)
   }
@@ -1056,12 +1056,12 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
 
   let tagNames: {[tag: string]: null | string} = Object.create(null)
   let tagDefs: string[] = []
-  for (let tag of parser.tags) {
-    if (!(tag in tagNames)) {
-      tagNames[tag] = null
-    } else if (tagNames[tag] == null) {
-      let name = getName(tag)
-      tagNames[tag] = name
+  for (let tag of parser.tags.content) {
+    if (!(tag! in tagNames)) {
+      tagNames[tag!] = null
+    } else if (tagNames[tag!] == null) {
+      let name = getName(tag!)
+      tagNames[tag!] = name
       tagDefs.push(`${name} = ${JSON.stringify(tag)}`)
     }
   }
@@ -1071,7 +1071,7 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   ${encodeArray(flattenStates(parser.states), 0xffffffff)},
   ${encodeArray(parser.data)},
   ${encodeArray(parser.goto)},
-  [${parser.tags.map(t => tagNames[t] || JSON.stringify(t)).join(",")}],
+  [${parser.tags.content.map(t => tagNames[t!] || JSON.stringify(t)).join(",")}],
   ${encodeArray(tokenData || [])},
   [${tokenizers.join(", ")}],
   ${parser.repeatTable}, ${parser.repeatCount},
