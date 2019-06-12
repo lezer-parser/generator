@@ -3,9 +3,9 @@ import nodeResolve from "rollup-plugin-node-resolve"
 import commonjs from "rollup-plugin-commonjs"
 
 export default {
-  input: "bin/lezer.ts",
+  input: "bin/lezer-generator.ts",
   output: {
-    file: "dist/lezer.js",
+    file: "dist/lezer-generator.js",
     format: "cjs",
     paths: {"..": "./index.js"}
   },

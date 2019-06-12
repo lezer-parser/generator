@@ -26,6 +26,6 @@
     "test": "mocha -r ts-node/register/transpile-only test/test-*.ts"
   },
   "bin": {
-    "lezer": "./dist/lezer.js"
+    "lezer-generator": "./bin/lezer-generator"
   }
 }
