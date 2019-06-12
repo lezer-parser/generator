@@ -89,49 +89,97 @@ describe("parsing", () => {
     ist(bug.start, 29); ist(bug.end, 32)
   })
 
-  it("can resolve positions", () => {
-    let doc = "while 111 { one; two(three 20); }", parser = p1()
-    for (let i = 0; i < 2; i++) {
-      let ast = parser.parse(new StringStream(doc), {strict: true, bufferLength: i ? 2 : 1024})
+  let resolveDoc = "while 111 { one; two(three 20); }"
 
-      let cx111 = ast.resolve(7)
-      ist(cx111.depth, 2)
-      ist(parser.tags.get(cx111.type), "Number")
-      ist(cx111.start, 6)
-      ist(cx111.end, 9)
-      ist(parser.tags.get(cx111.parent!.type), "Loop")
-      ist(cx111.parent!.start, 0)
-      ist(cx111.parent!.end, 33)
+  function testResolve(bufferLength: number) {
+    let parser = p1()
+    let ast = parser.parse(new StringStream(resolveDoc), {strict: true, bufferLength})
 
-      let cxThree = ast.resolve(22)
-      ist(cxThree.depth, 4)
-      ist(parser.tags.get(cxThree.type), "Variable")
-      ist(cxThree.start, 21)
-      ist(cxThree.end, 26)
+    let cx111 = ast.resolve(7)
+    ist(cx111.depth, 2)
+    ist(parser.tags.get(cx111.type), "Number")
+    ist(cx111.start, 6)
+    ist(cx111.end, 9)
+    ist(parser.tags.get(cx111.parent!.type), "Loop")
+    ist(cx111.parent!.start, 0)
+    ist(cx111.parent!.end, 33)
 
-      let cxCall = cxThree.parent!
-      ist(parser.tags.get(cxCall.type), "CallExpression")
-      ist(cxCall.start, 17)
-      ist(cxCall.end, 30)
+    let cxThree = ast.resolve(22)
+    ist(cxThree.depth, 4)
+    ist(parser.tags.get(cxThree.type), "Variable")
+    ist(cxThree.start, 21)
+    ist(cxThree.end, 26)
 
-      let branch = cxThree.resolve(18)
-      ist(branch.depth, 4)
-      ist(parser.tags.get(branch.type), "Variable")
-      ist(branch.start, 17)
-      ist(branch.end, 20)
+    let cxCall = cxThree.parent!
+    ist(parser.tags.get(cxCall.type), "CallExpression")
+    ist(cxCall.start, 17)
+    ist(cxCall.end, 30)
 
-      // Always resolve to the uppermost context for a position
-      ist(ast.resolve(6).depth, 1)
-      ist(ast.resolve(9).depth, 1)
+    let branch = cxThree.resolve(18)
+    ist(branch.depth, 4)
+    ist(parser.tags.get(branch.type), "Variable")
+    ist(branch.start, 17)
+    ist(branch.end, 20)
 
-      ist(cxCall.childBefore(cxCall.start), null)
-      ist(cxCall.childAfter(cxCall.end), null)
-      ist(parser.tags.get(cxCall.childBefore(27)!.type), "Variable")
-      ist(parser.tags.get(cxCall.childAfter(26)!.type), "Number")
-      ist(parser.tags.get(cxCall.childBefore(28)!.type), "Number")
-      ist(parser.tags.get(cxCall.childAfter(28)!.type), "Number")
-    }
-  })
+    // Always resolve to the uppermost context for a position
+    ist(ast.resolve(6).depth, 1)
+    ist(ast.resolve(9).depth, 1)
+
+    ist(cxCall.childBefore(cxCall.start), null)
+    ist(cxCall.childAfter(cxCall.end), null)
+    ist(parser.tags.get(cxCall.childBefore(27)!.type), "Variable")
+    ist(parser.tags.get(cxCall.childAfter(26)!.type), "Number")
+    ist(parser.tags.get(cxCall.childBefore(28)!.type), "Number")
+    ist(parser.tags.get(cxCall.childAfter(28)!.type), "Number")
+  }
+
+  it("can resolve positions in buffers", () => testResolve(1024))
+
+  it("can resolve positions in trees", () => testResolve(2))
+
+  let iterDoc = "while 1 { a; b; c(d e); } while 2 { f; }"
+  let iterSeq = ["Loop", 0, "Number", 6, "/Number", 7, "Block", 8, "Variable", 10, "/Variable", 11,
+                 "Variable", 13, "/Variable", 14, "CallExpression", 16, "Variable", 16, "/Variable", 17,
+                 "Variable", 18, "/Variable", 19, "Variable", 20, "/Variable", 21, "/CallExpression", 22,
+                 "/Block", 25, "/Loop", 25, "Loop", 26, "Number", 32, "/Number", 33, "Block", 34, "Variable", 36,
+                 "/Variable", 37, "/Block", 40, "/Loop", 40]
+  // Node boundaries seen when iterating range 13-19 ("b; c(d")
+  let partialSeq = ["Loop", 0, "Block", 8, "Variable", 13, "/Variable", 14, "CallExpression", 16, "Variable", 16,
+                    "/Variable", 17, "Variable", 18, "/Variable", 19, "/CallExpression", 22, "/Block", 25, "/Loop", 25]
+
+  function testIter(bufferLength: number, partial: boolean) {
+    let parser = p1(), output: any[] = []
+    let ast = parser.parse(new StringStream(iterDoc), {strict: true, bufferLength})
+    ast.iterate(partial ? 13 : 0, partial ? 19 : ast.length,
+                (open, start) => { output.push(parser.tags.get(open), start) },
+                (close, _, end) => { output.push("/" + parser.tags.get(close), end) })
+    ist(output.join(), (partial ? partialSeq : iterSeq).join())
+  }
+
+  it("supports forward iteration in buffers", () => testIter(1024, false))
+
+  it("supports forward iteration in trees", () => testIter(2, false))
+
+  it("supports partial forward iteration in buffers", () => testIter(1024, true))
+
+  it("supports partial forward iteration in trees", () => testIter(2, true))
+
+  function testIterRev(bufferLength: number, partial: boolean) {
+    let parser = p1(), output: any[] = []
+    let ast = parser.parse(new StringStream(iterDoc), {strict: true, bufferLength})
+    ast.iterate(partial ? 19 : ast.length, partial ? 13 : 0,
+                (close, _, end) => { output.push(end, "/" + parser.tags.get(close)) },
+                (open, start) => { output.push(start, parser.tags.get(open)) })
+    ist(output.reverse().join(), (partial ? partialSeq : iterSeq).join())
+  }
+
+  it("supports reverse iteration in buffers", () => testIterRev(1024, false))
+
+  it("supports reverse iteration in trees", () => testIterRev(2, false))
+
+  it("supports partial reverse iteration in buffers", () => testIterRev(1024, true))
+
+  it("supports partial reverse iteration in trees", () => testIterRev(2, true))
 })
 
 describe("sequences", () => {
