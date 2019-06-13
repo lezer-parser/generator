@@ -180,6 +180,21 @@ describe("parsing", () => {
   it("supports partial reverse iteration in buffers", () => testIterRev(1024, true))
 
   it("supports partial reverse iteration in trees", () => testIterRev(2, true))
+
+  it("doesn't incorrectly reuse nodes", () => {
+    let parser = p(`
+precedence { times left, plus left }
+program { expr+ }
+expr { BinOp | Var }
+BinOp { expr !plus "+" expr | expr !times "*" expr }
+skip { space }
+tokens { space { " "+ } Var { "x" } }
+`)()
+    let ast = parser.parse(new StringStream("x + x + x"), {strict: true, bufferLength: 2})
+    ist(ast.toString(parser.tags), 'BinOp(BinOp(Var,"+",Var),"+",Var)')
+    let ast2 = parser.parse(new StringStream("x * x + x + x"), {strict: true, bufferLength: 2, cache: change(ast, [0, 0, 0, 4])})
+    ist(ast2.toString(parser.tags), 'BinOp(BinOp(BinOp(Var,"*",Var),"+",Var),"+",Var)')
+  })
 })
 
 describe("sequences", () => {
