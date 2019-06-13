@@ -8,7 +8,7 @@ import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift} from "./automaton"
 import {encodeArray} from "./encode"
 import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer,
-        REDUCE_DEPTH_SIZE, ACCEPTING, SPECIALIZE, EXTEND, TERM_ERR} from "lezer"
+        REDUCE_DEPTH_SHIFT, REDUCE_FLAG, REDUCE_TERM_MASK, REDUCE_REPEAT_FLAG, ACCEPTING, SPECIALIZE, EXTEND, TERM_ERR} from "lezer"
 
 const none: readonly any[] = []
 
@@ -229,17 +229,19 @@ class Builder {
   finishState(state: LRState, tokenizers: (LezerTokenGroup | TempExternalTokenizer)[],
               data: StateDataBuilder) {
     let actions = [], recover = [], forcedReduce = 0
-    let defaultReduce = state.defaultReduce ? reduce(state.defaultReduce) : 0
+    let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce) : 0
     let skip = defaultReduce ? [] : this.skipSets[state.skipID].map(term => term.id)
     skip.push(TERM_ERR)
 
     if (defaultReduce == 0) for (let action of state.actions) {
       if (skip.includes(action.term.id))
         this.raise(`Use of token ${action.term.name} conflicts with skip rule`)
-      if (action instanceof Shift)
-        actions.push(action.term.id, 0, action.target.id)
-      else
-        actions.push(action.term.id, action.rule.parts.length + 1, action.rule.name.id)
+      if (action instanceof Shift) {
+        actions.push(action.term.id, action.target.id, 0)
+      } else {
+        let code = reduceAction(action.rule)
+        actions.push(action.term.id, code & REDUCE_TERM_MASK, code >> 16)
+      }
     }
     actions.push(TERM_ERR)
 
@@ -251,7 +253,7 @@ class Builder {
     if (positions.length) {
       let defaultPos = positions.reduce((a, b) => a.pos - b.pos || b.rule.parts.length - a.rule.parts.length < 0 ? b : a)
       if (!defaultPos.rule.name.program)
-        forcedReduce = (defaultPos.rule.name.id << REDUCE_DEPTH_SIZE) | (defaultPos.pos + 1)
+        forcedReduce = reduceAction(defaultPos.rule, defaultPos.pos)
       else if (positions.some(p => p.rule.name.program && p.pos == p.rule.parts.length))
         forcedReduce = ACCEPTING
     }
@@ -470,6 +472,10 @@ class Builder {
   }
 }
 
+function reduceAction(rule: Rule, depth = rule.parts.length) {
+  return rule.name.id | REDUCE_FLAG | (rule.name.repeated ? REDUCE_REPEAT_FLAG : 0) | (depth << REDUCE_DEPTH_SHIFT)
+}
+
 class StateDataBuilder {
   data: number[] = []
 
@@ -493,10 +499,6 @@ class StateDataBuilder {
   finish() {
     return Uint16Array.from(this.data)
   }
-}
-
-function reduce(rule: Rule) {
-  return (rule.name.id << REDUCE_DEPTH_SIZE) | (rule.parts.length + 1)
 }
 
 function computeGotoTable(states: readonly LRState[]) {
