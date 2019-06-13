@@ -1,4 +1,4 @@
-import {Term, TermSet, Rule, PREC_REPEAT, cmpSet, Conflicts, union} from "./grammar"
+import {Term, TermSet, Rule, cmpSet, Conflicts, union} from "./grammar"
 import {hash, hashString} from "./hash"
 
 export class Pos {
@@ -146,8 +146,6 @@ export class Reduce {
   map() { return this }
 }
 
-const AMBIGUOUS = 1 // FIXME maybe store per terminal
-
 function hashPositions(set: readonly Pos[]) {
   let h = 5381
   for (let pos of set) h = hash(h, pos.hash)
@@ -168,8 +166,6 @@ export class State {
               readonly skipID: number,
               public hash = hashPositions(set)) {}
 
-  get ambiguous() { return (this.flags & AMBIGUOUS) > 0 }
-
   toString() {
     let actions = this.actions.map(t => t.term + "=" + t).join(",") +
       (this.goto.length ? " | " + this.goto.map(g => g.term + "=" + g).join(",") : "")
@@ -182,7 +178,6 @@ export class State {
       if (action.term == value.term) {
         if (action.eq(value)) return null
         let conflicts = Pos.conflictsAt(positions, this.set)
-        if (conflicts.precedence != PREC_REPEAT) this.flags |= AMBIGUOUS
         let actionConflicts = Pos.conflictsAt(this.actionPositions[i], this.set)
         let diff = conflicts.precedence - actionConflicts.precedence
         if (diff > 0) { // Drop the existing action

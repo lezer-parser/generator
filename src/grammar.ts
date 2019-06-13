@@ -12,15 +12,15 @@ export class Term {
 
   constructor(readonly name: string,
               private flags: number,
-              readonly tag: string | null,
-              readonly repeats: Term | null = null) {}
+              readonly tag: string | null) {}
   toString() { return this.name }
   get terminal() { return (this.flags & TERMINAL) > 0 }
   get eof() { return (this.flags & EOF) > 0 }
   get error() { return (this.flags & ERROR) > 0 }
   get program() { return (this.flags & PROGRAM) > 0 }
-  get interesting() { return this.flags > 0 || this.tag != null || this.repeats != null }
+  get interesting() { return this.flags > 0 || this.tag != null }
   set repeated(value: boolean) { this.flags = value ? this.flags | REPEATED : this.flags & ~REPEATED }
+  get repeated() { return (this.flags & REPEATED) > 0 }
   cmp(other: Term) { return this.hash - other.hash }
 }
 
@@ -35,8 +35,8 @@ export class TermSet {
     this.error = this.term("⚠", "⚠", ERROR)
   }
 
-  term(name: string, tag: string | null, flags: number = 0, repeats?: Term) {
-    let term = new Term(name, flags, tag, repeats)
+  term(name: string, tag: string | null, flags: number = 0) {
+    let term = new Term(name, flags, tag)
     ;(term.terminal ? this.terminals : this.nonTerminals).push(term)
     return term
   }
@@ -45,19 +45,19 @@ export class TermSet {
     return this.term(name, tag, TERMINAL)
   }
 
-  makeNonTerminal(name: string, tag: string | null, repeats?: Term) {
+  makeNonTerminal(name: string, tag: string | null) {
     // FIXME maybe don't hard-code the start symbol name—some grammars don't even parse "programs" (JSON, Markdown)
-    return this.term(name, tag, name == "program" ? PROGRAM : 0, repeats)
+    return this.term(name, tag, name == "program" ? PROGRAM : 0)
   }
 
   finish(rules: readonly Rule[]) {
     let tags: string[] = []
     let names: {[id: number]: string} = {}
-    let repeatInfo: number[] = [0 /* placeholder for TERM_EOF */]
 
     let taggedID = -1, untaggedID = 0
-    for (let term of this.nonTerminals) if (term.repeats && rules.some(r => r.name == term))
+    for (let term of this.nonTerminals) if (term.repeated && rules.some(r => r.name == term))
       term.id = (untaggedID += 2)
+    let maxRepeated = untaggedID
     for (let term of this.nonTerminals) if (term.id < 0 && (term.error || rules.some(r => r.name == term)))
       term.id = term.tag ? (taggedID += 2) : (untaggedID += 2)
     for (let term of this.terminals)
@@ -65,13 +65,12 @@ export class TermSet {
 
     for (let term of this.terminals.concat(this.nonTerminals)) if (term.id > -1) {
       if (term.tag) tags[term.id >> 1] = term.tag
-      if (term.repeats) repeatInfo.push(term.repeats.id)
       names[term.id] = term.name
     }
 
     this.nonTerminals = this.nonTerminals.filter(t => t.id > -1)
 
-    return {tags, names, repeatInfo}
+    return {tags, names, maxRepeated}
   }
 }
 

@@ -150,17 +150,17 @@ class Builder {
     this.namespaces[name] = value
   }
 
-  newName(base: string, tag: string | null | true = null, repeats?: Term): Term {
+  newName(base: string, tag: string | null | true = null): Term {
     for (let i = tag ? 0 : 1;; i++) {
       let name = i ? `${base}-${i}` : base
       if (!this.terms.nonTerminals.some(t => t.name == name))
-        return this.terms.makeNonTerminal(name, tag === true ? null : tag, repeats)
+        return this.terms.makeNonTerminal(name, tag === true ? null : tag)
     }
   }
 
   getParser() {
     let rules = simplifyRules(this.rules)
-    let {tags, names, repeatInfo} = this.terms.finish(rules)
+    let {tags, names, maxRepeated} = this.terms.finish(rules)
     for (let prop in this.namedTerms) this.termTable[prop] = this.namedTerms[prop].id
 
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
@@ -200,13 +200,11 @@ class Builder {
     for (let set of this.skipSets) for (let term of set) if (term.tag) addToSet(skipTags, term.id)
     skipTags.push(TERM_ERR)
 
-    let repeatTable = data.storeArray(repeatInfo)
     let precTable = data.storeArray(tokenPrec.concat(TERM_ERR))
     let specTable = data.storeArray(specialized)
     let skipTable = data.storeArray(skipTags)
     return new Parser(states, data.finish(), computeGotoTable(table), new TagMap(tags), tokenizers,
-                      repeatTable, repeatInfo.length,
-                      specTable, specializations, precTable, skipTable, names)
+                      maxRepeated, specTable, specializations, precTable, skipTable, names)
   }
 
   makeTerminal(name: string, tag: string | null) {
@@ -382,11 +380,11 @@ class Builder {
     let name = expr.expr instanceof SequenceExpression || expr.expr instanceof ChoiceExpression ? `(${expr.expr})${expr.kind}` : expr.toString()
     let inner = this.newName(name + "-inner", true)
     inner.repeated = true
-    let outer = this.newName(name, true, inner)
+    let outer = this.newName(name, true)
     this.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
     let top = this.normalizeExpr(expr.expr)
-    top.push(new Parts([inner, inner], [Conflicts.none, new Conflicts(PREC_REPEAT, none), Conflicts.none]))
+    top.push(new Parts([inner, inner], [Conflicts.none, new Conflicts(PREC_REPEAT - 1, none), new Conflicts(PREC_REPEAT, none)]))
     this.defineRule(inner, top)
     this.defineRule(outer, expr.kind == "+" ? [p(inner)] : [Parts.none, p(inner)])
 
@@ -1074,7 +1072,7 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   [${parser.tags.content.map(t => tagNames[t!] || JSON.stringify(t)).join(",")}],
   ${encodeArray(tokenData || [])},
   [${tokenizers.join(", ")}],
-  ${parser.repeatTable}, ${parser.repeatCount},
+  ${parser.maxRepeated},
   ${parser.specializeTable},
   ${JSON.stringify(parser.specializations)},
   ${parser.tokenPrecTable},
