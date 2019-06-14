@@ -55,9 +55,6 @@ export class TermSet {
     let names: {[id: number]: string} = {}
 
     let taggedID = -1, untaggedID = 0
-    for (let term of this.nonTerminals) if (term.repeated && rules.some(r => r.name == term))
-      term.id = (untaggedID += 2)
-    let maxRepeated = untaggedID
     for (let term of this.nonTerminals) if (term.id < 0 && (term.error || rules.some(r => r.name == term)))
       term.id = term.tag ? (taggedID += 2) : (untaggedID += 2)
     for (let term of this.terminals)
@@ -70,7 +67,7 @@ export class TermSet {
 
     this.nonTerminals = this.nonTerminals.filter(t => t.id > -1)
 
-    return {tags, names, maxRepeated}
+    return {tags, names}
   }
 }
 
@@ -136,5 +133,14 @@ export class Rule {
 
   toString() {
     return this.name + " -> " + this.parts.join(" ")
+  }
+
+  get isRepeatLeaf() {
+    return this.name.repeated && !(this.parts.length == 2 && this.parts[0] == this.name)
+  }
+
+  sameReduce(other: Rule) {
+    return this.name == other.name && this.parts.length == other.parts.length &&
+      this.isRepeatLeaf == other.isRepeatLeaf
   }
 }

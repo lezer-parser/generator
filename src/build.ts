@@ -160,7 +160,7 @@ class Builder {
 
   getParser() {
     let rules = simplifyRules(this.rules)
-    let {tags, names, maxRepeated} = this.terms.finish(rules)
+    let {tags, names} = this.terms.finish(rules)
     for (let prop in this.namedTerms) this.termTable[prop] = this.namedTerms[prop].id
 
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
@@ -204,7 +204,7 @@ class Builder {
     let specTable = data.storeArray(specialized)
     let skipTable = data.storeArray(skipTags)
     return new Parser(states, data.finish(), computeGotoTable(table), new TagMap(tags), tokenizers,
-                      maxRepeated, specTable, specializations, precTable, skipTable, names)
+                      specTable, specializations, precTable, skipTable, names)
   }
 
   makeTerminal(name: string, tag: string | null) {
@@ -380,15 +380,19 @@ class Builder {
     if (known) return p(known.term)
 
     let name = expr.expr instanceof SequenceExpression || expr.expr instanceof ChoiceExpression ? `(${expr.expr})${expr.kind}` : expr.toString()
-    let inner = this.newName(name + "-inner", true)
+    let inner = this.newName(name, true)
     inner.repeated = true
-    let outer = this.newName(name, true)
+
+    let outer = inner
+    if (expr.kind == "*") {
+      outer = this.newName(name + "-wrap", true)
+      this.defineRule(outer, [Parts.none, p(inner)])
+    }
     this.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
     let top = this.normalizeExpr(expr.expr)
     top.push(new Parts([inner, inner], [Conflicts.none, new Conflicts(PREC_REPEAT - 1, none), new Conflicts(PREC_REPEAT, none)]))
     this.defineRule(inner, top)
-    this.defineRule(outer, expr.kind == "+" ? [p(inner)] : [Parts.none, p(inner)])
 
     return p(outer)
   }
@@ -473,7 +477,9 @@ class Builder {
 }
 
 function reduceAction(rule: Rule, depth = rule.parts.length) {
-  return rule.name.id | REDUCE_FLAG | (rule.name.repeated ? REDUCE_REPEAT_FLAG : 0) | (depth << REDUCE_DEPTH_SHIFT)
+  return rule.name.id | REDUCE_FLAG |
+    (rule.isRepeatLeaf && depth == rule.parts.length ? REDUCE_REPEAT_FLAG : 0) |
+    (depth << REDUCE_DEPTH_SHIFT)
 }
 
 class StateDataBuilder {
@@ -1074,7 +1080,6 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   [${parser.tags.content.map(t => tagNames[t!] || JSON.stringify(t)).join(",")}],
   ${encodeArray(tokenData || [])},
   [${tokenizers.join(", ")}],
-  ${parser.maxRepeated},
   ${parser.specializeTable},
   ${JSON.stringify(parser.specializations)},
   ${parser.tokenPrecTable},

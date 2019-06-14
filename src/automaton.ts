@@ -129,11 +129,8 @@ export class Shift {
 export class Reduce {
   constructor(readonly term: Term, readonly rule: Rule) {}
 
-
-
   eq(other: Shift | Reduce): boolean {
-    return other instanceof Reduce && this.term == other.term &&
-      other.rule.name == this.rule.name && other.rule.parts.length == this.rule.parts.length
+    return other instanceof Reduce && this.term == other.term && other.rule.sameReduce(this.rule)
   }
 
   cmp(other: Shift | Reduce): number {
@@ -169,7 +166,9 @@ export class State {
   toString() {
     let actions = this.actions.map(t => t.term + "=" + t).join(",") +
       (this.goto.length ? " | " + this.goto.map(g => g.term + "=" + g).join(",") : "")
-    return this.id + ": " + this.set.filter(p => p.pos > 0).join() + (actions.length ? "\n  " + actions : "")
+    return this.id + ": " + this.set.filter(p => p.pos > 0).join() +
+      (actions.length ? "\n  " + actions :
+       this.defaultReduce ? `\n  always ${this.defaultReduce.name}(${this.defaultReduce.parts.length})` : "")
   }
 
   addActionInner(value: Shift | Reduce, positions: readonly Pos[]): Shift | Reduce | null {
@@ -240,7 +239,7 @@ export class State {
   eq(other: State) {
     let dThis = this.defaultReduce, dOther = other.defaultReduce
     if (dThis || dOther)
-      return dThis && dOther ? dThis.name == dOther.name && dThis.parts.length == dOther.parts.length : false
+      return dThis && dOther ? dThis.sameReduce(dOther) : false
     return this.skipID == other.skipID &&
       this.tokenGroup == other.tokenGroup &&
       eqSet(this.actions, other.actions) &&
