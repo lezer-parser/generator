@@ -1,0 +1,17 @@
+program { tag.Foo<"foo">+ }
+
+skip { " " | "<" skipContent* ">" }
+
+skipContent { tag.A<"a"> | tag.B<"b"> }
+
+---
+
+foo foo
+
+==> Foo,Foo
+
+---
+
+foo <aba> foo
+
+==> Foo,A,B,A,Foo

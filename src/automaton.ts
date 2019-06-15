@@ -168,8 +168,8 @@ export class State {
     let actions = this.actions.map(t => t.term + "=" + t).join(",") +
       (this.goto.length ? " | " + this.goto.map(g => g.term + "=" + g).join(",") : "")
     return this.id + ": " + this.set.filter(p => p.pos > 0).join() +
-      (actions.length ? "\n  " + actions :
-       this.defaultReduce ? `\n  always ${this.defaultReduce.name}(${this.defaultReduce.parts.length})` : "")
+      (this.defaultReduce ? `\n  always ${this.defaultReduce.name}(${this.defaultReduce.parts.length})`
+       : actions.length ? "\n  " + actions : "")
   }
 
   addActionInner(value: Shift | Reduce, positions: readonly Pos[]): Shift | Reduce | null {
@@ -228,7 +228,7 @@ export class State {
       let first = this.actions[0]
       if (first instanceof Reduce) {
         let {rule} = first
-        if (this.actions.every(a => a instanceof Reduce && a.rule.name == rule.name && a.rule.parts.length == rule.parts.length))
+        if (this.actions.every(a => a instanceof Reduce && a.rule.sameReduce(rule)))
           this.defaultReduce = rule
       }
     }
