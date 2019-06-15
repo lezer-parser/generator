@@ -156,11 +156,12 @@ export class State {
   recover: Shift[] = []
   tokenGroup: number = -1
   defaultReduce: Rule | null = null
+  partOfSkip: Term | null = null
 
   constructor(public id: number,
               readonly set: readonly Pos[],
               public flags = 0,
-              readonly skipID: number,
+              readonly skip: Term,
               public hash = hashPositions(set)) {}
 
   toString() {
@@ -240,7 +241,7 @@ export class State {
     let dThis = this.defaultReduce, dOther = other.defaultReduce
     if (dThis || dOther)
       return dThis && dOther ? dThis.sameReduce(dOther) : false
-    return this.skipID == other.skipID &&
+    return this.skip == other.skip &&
       this.tokenGroup == other.tokenGroup &&
       eqSet(this.actions, other.actions) &&
       eqSet(this.goto, other.goto) &&
@@ -333,14 +334,14 @@ class Core {
 }
 
 // Builds a full LR(1) automaton
-export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[]}) {
+export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[name: string]: Term[]}) {
   let states: State[] = []
   let cores: {[hash: number]: Core[]} = {}
-  function getState(core: readonly Pos[], skipID: number) {
+  function getState(core: readonly Pos[], skip: Term) {
     if (core.length == 0) return null
     let coreHash = hashPositions(core), byHash = cores[coreHash]
     if (byHash) for (let known of byHash) if (eqSet(core, known.set)) {
-      if (known.state.skipID != skipID) throw new Error("Inconsistent skip sets after " + known.set[0].trail())
+      if (known.state.skip != skip) throw new Error("Inconsistent skip sets after " + known.set[0].trail())
       return known.state
     }
 
@@ -348,43 +349,43 @@ export function buildFullAutomaton(terms: TermSet, first: {[name: string]: Term[
     let hash = hashPositions(set), found
     for (let state of states) if (state.hash == hash && state.hasSet(set)) found = state
     if (!found) {
-      found = new State(states.length, set, 0, skipID, hash)
+      found = new State(states.length, set, 0, skip, hash)
       states.push(found)
     }
     ;(cores[coreHash] || (cores[coreHash] = [])).push(new Core(core, found))
     return found
   }
-  getState(terms.nonTerminals.find(nt => nt.program)!.rules
-           .map(rule => new Pos(rule, 0, [terms.eof], none, null)), 0)
+  getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, null)),
+           startTerm.rules.length ? startTerm.rules[0].skip : terms.nonTerminals.find(t => t.name == "%noskip")!)
 
   for (let filled = 0; filled < states.length; filled++) {
     let state = states[filled]
-    let byTerm: Term[] = [], byTermPos: Pos[][] = [], atEnd: Pos[] = [], skipIDs: number[] = []
+    let byTerm: Term[] = [], byTermPos: Pos[][] = [], atEnd: Pos[] = [], skipTerms: Term[] = []
     for (let pos of state.set) {
       if (pos.pos == pos.rule.parts.length) {
         if (!pos.rule.name.program) atEnd.push(pos)
       } else {
         let next = pos.rule.parts[pos.pos]
         let index = byTerm.indexOf(next)
-        let skipID = pos.pos == pos.rule.parts.length - 1 ? state.skipID : pos.rule.skipID
+        let skip = pos.pos == pos.rule.parts.length - 1 ? state.skip : pos.rule.skip
         if (index < 0) {
           byTerm.push(next)
           byTermPos.push([pos.advance()])
-          skipIDs.push(skipID)
+          skipTerms.push(skip)
         } else {
-          if (skipIDs[index] != skipID) new Error("Inconsistent skip sets after " + pos.trail())
+          if (skipTerms[index] != skip) new Error("Inconsistent skip sets after " + pos.trail())
           byTermPos[index].push(pos.advance())
         }
       }
     }
     for (let i = 0; i < byTerm.length; i++) {
-      let term = byTerm[i], skipID = skipIDs[i]
+      let term = byTerm[i], skip = skipTerms[i]
       if (term.terminal) {
         let set = applyCut(byTermPos[i])
-        let next = getState(set, skipID)
+        let next = getState(set, skip)
         if (next) state.addAction(new Shift(term, next), set.map(p => p.reverse()))
       } else {
-        let goto = getState(byTermPos[i], skipID)
+        let goto = getState(byTermPos[i], skip)
         if (goto) state.goto.push(new Shift(term, goto))
       }
     }
@@ -428,7 +429,7 @@ function markConflicts(mapping: number[], newID: number, oldStates: readonly Sta
   for (let i = 0; i < mapping.length; i++) if (mapping[i] == newID) {
     for (let j = 0; j < mapping.length; j++) if (j != i && mapping[j] == newID) {
       // Create a dummy state to determine whether there's a conflict
-      let state = new State(0, oldStates[i].set, 0, 0, 0)
+      let state = new State(0, oldStates[i].set, 0, oldStates[i].skip, 0)
       mergeState(mapping, newStates, oldStates[i], state)
       if (!mergeState(mapping, newStates, oldStates[j], state)) conflicts.push(i, j)
     }
@@ -454,12 +455,12 @@ function collapseAutomaton(states: readonly State[]): readonly State[] {
         return state.set.length == s.set.length &&
           state.set.every((p, i) => p.eqSimple(s.set[i])) &&
           s.tokenGroup == state.tokenGroup &&
-          s.skipID == state.skipID &&
+          s.skip == state.skip &&
           !hasConflict(i, index, mapping, conflicts)
       })
       if (newID < 0) {
         newID = newStates.length
-        let newState = new State(newID, set, state.flags, state.skipID, state.hash)
+        let newState = new State(newID, set, state.flags, state.skip, state.hash)
         newState.tokenGroup = state.tokenGroup
         newState.defaultReduce = state.defaultReduce
         newStates.push(newState)
