@@ -1,4 +1,4 @@
-import {TERM_EOF} from "lezer"
+import {TERM_EOF, TERM_ERR, TERM_OTHER} from "lezer"
 
 const TERMINAL = 1, REPEATED = 2, PROGRAM = 4, ERROR = 8, EOF = 16
 
@@ -56,11 +56,13 @@ export class TermSet {
     let tags: string[] = []
     let names: {[id: number]: string} = {}
 
-    let taggedID = -1, untaggedID = 0
+    let taggedID = 1, untaggedID = 0
     for (let term of this.nonTerminals) if (term.id < 0 && (term.error || rules.some(r => r.name == term)))
-      term.id = term.tag ? (taggedID += 2) : (untaggedID += 2)
+      term.id = term.error ? TERM_ERR : term.tag ? (taggedID += 2) : (untaggedID += 2)
     for (let term of this.terminals)
       term.id = term.eof ? TERM_EOF : term.tag ? (taggedID += 2) : (untaggedID += 2)
+    if (taggedID >= TERM_OTHER) throw new Error("Too many tagged terms")
+    if (untaggedID >= TERM_OTHER) throw new Error("Too many untagged terms")
 
     for (let term of this.terminals.concat(this.nonTerminals)) if (term.id > -1) {
       if (term.tag) tags[term.id >> 1] = term.tag

@@ -1,0 +1,11 @@
+program { tag.Foo<"foo" "bar"?>+ }
+
+skip { " " | Bang }
+
+Bang { "!" "?"? }
+
+---
+
+foo !? ! foo
+
+==> Foo, Bang, Bang, Foo
