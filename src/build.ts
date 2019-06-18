@@ -86,6 +86,7 @@ class Builder {
   terms = new TermSet
   tokens: TokenSet
   externalTokens: ExternalTokenSet[]
+  nestedGrammars: NestedGrammar[] = []
   specialized: {[name: string]: {value: string, term: Term, type: string}[]} = Object.create(null)
   tokenOrigins: {[name: string]: Term | ExternalTokenSet} = Object.create(null)
   rules: Rule[] = []
@@ -108,6 +109,7 @@ class Builder {
     this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
 
     this.defineNamespace("tag", new TagNamespace)
+    this.defineNamespace("nest", new NestNamespace)
 
     this.noSkip = this.newName("%noskip", true)
     this.defineRule(this.noSkip, [])
@@ -633,6 +635,28 @@ class TagNamespace implements Namespace {
     let tag = expr.id.name
     let name = builder.newName(`tag.${tag}`, tag)
     return [p(builder.defineRule(name, builder.normalizeExpr(expr.args[0])))]
+  }
+}
+
+class NestedGrammar {
+  constructor(readonly placeholder: Term,
+              readonly extName: string,
+              readonly source: string,
+              readonly end: State) {}
+}
+
+class NestNamespace implements Namespace {
+  resolve(expr: NamedExpression, builder: Builder): Parts[] {
+    if (expr.args.length < 2 || expr.args.length > 3 || !(expr.args[0] instanceof Identifier))
+      builder.raise(`Invalid number of arguments to 'nest.${expr.id.name}'`, expr.start)
+    // FIXME build end token
+    let [grammar,, defaultExpr] = expr.args as [Identifier, Expression, Expression | undefined]
+    let extGrammar = builder.ast.grammars.find(g => g.id.name == grammar.name)
+    if (!extGrammar) return builder.raise(`No external grammar '${grammar.name}' defined`, grammar.start)
+    let term = builder.newName(expr.id.name, expr.id.name)
+    builder.defineRule(term, defaultExpr ? builder.normalizeExpr(defaultExpr) : [])
+    builder.nestedGrammars.push(new NestedGrammar(term, extGrammar.externalID.name, extGrammar.source, {} as State)) // FIXME
+    return [p(term)]
   }
 }
 
