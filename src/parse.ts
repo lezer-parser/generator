@@ -1,6 +1,6 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
         TokenPrecDeclaration, TokenDeclaration, ExternalTokenDeclaration,
-        Identifier, Expression,
+        ExternalGrammarDeclaration, Identifier, Expression,
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, AnyExpression, ConflictMarker} from "./node"
 
@@ -117,13 +117,18 @@ function parseTop(input: Input) {
   let mainSkip: Expression | null = null
   let scopedSkip: {expr: Expression, rules: readonly RuleDeclaration[]}[] = []
   let external: ExternalTokenDeclaration[] = []
+  let nested: ExternalGrammarDeclaration[] = []
 
   while (input.type != "eof") {
     if (input.type == "id" && input.value == "tokens") {
       if (tokens) input.raise(`Multiple tokens declaractions`, input.start)
       else tokens = parseTokens(input)
     } else if (input.type == "id" && input.value == "external") {
-      external.push(parseExternalTokens(input))
+      let start = input.start
+      input.next()
+      if (input.eat("id", "tokens")) external.push(parseExternalTokens(start, input))
+      else if (input.eat("id", "grammar")) nested.push(parseExternalGrammar(start, input))
+      else input.unexpected()
     } else if (input.type == "id" && input.value == "precedence") {
       if (prec) input.raise(`Multiple precedence declarations`, input.start)
       else prec = parsePrecedence(input)
@@ -145,7 +150,7 @@ function parseTop(input: Input) {
       rules.push(parseRule(input, false))
     }
   }
-  return new GrammarDeclaration(start, rules, tokens, external, prec, mainSkip, scopedSkip)
+  return new GrammarDeclaration(start, rules, tokens, external, prec, mainSkip, scopedSkip, nested)
 }
 
 function parseRule(input: Input, isToken: boolean) {
@@ -327,10 +332,7 @@ function parseTokenPrecedence(input: Input) {
   return new TokenPrecDeclaration(start, tokens)
 }
 
-function parseExternalTokens(input: Input) {
-  let start = input.start
-  input.next()
-  input.expect("id", "tokens")
+function parseExternalTokens(start: number, input: Input) {
   let id = parseIdent(input)
   input.expect("id", "from")
   let from = input.value
@@ -344,6 +346,15 @@ function parseExternalTokens(input: Input) {
     tokens.push({id, tag})
   }
   return new ExternalTokenDeclaration(start, id, from, tokens)
+}
+
+function parseExternalGrammar(start: number, input: Input) {
+  let externalID = parseIdent(input)
+  let id = input.eat("id", "as") ? parseIdent(input) : externalID
+  input.expect("id", "from")
+  let from = input.value
+  input.expect("string")
+  return new ExternalGrammarDeclaration(start, id, externalID, from)
 }
 
 function readString(string: string) {

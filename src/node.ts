@@ -9,7 +9,8 @@ export class GrammarDeclaration extends Node {
               readonly externalTokens: readonly ExternalTokenDeclaration[],
               readonly precedences: PrecDeclaration | null,
               readonly mainSkip: Expression | null,
-              readonly scopedSkip: readonly {expr: Expression, rules: readonly RuleDeclaration[]}[]) {
+              readonly scopedSkip: readonly {expr: Expression, rules: readonly RuleDeclaration[]}[],
+              readonly grammars: readonly ExternalGrammarDeclaration[]) {
     super(start)
   }
   toString() { return Object.values(this.rules).join("\n") }
@@ -59,6 +60,15 @@ export class ExternalTokenDeclaration extends Node {
               readonly id: Identifier,
               readonly source: string,
               readonly tokens: readonly {id: Identifier, tag: Identifier | null}[]) {
+    super(start)
+  }
+}
+
+export class ExternalGrammarDeclaration extends Node {
+  constructor(start: number,
+              readonly id: Identifier,
+              readonly externalID: Identifier,
+              readonly source: string) {
     super(start)
   }
 }
