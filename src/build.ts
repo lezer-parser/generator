@@ -262,7 +262,8 @@ class Builder {
     let precTable = data.storeArray(tokenPrec.concat(TERM_ERR))
     let specTable = data.storeArray(specialized)
     let skipTable = data.storeArray(skipTags)
-    return new Parser(states, data.finish(), computeGotoTable(table), new TagMap(tags), tokenizers,
+    let id = Parser.allocateID()
+    return new Parser(id, states, data.finish(), computeGotoTable(table), TagMap.single(id, tags), tokenizers,
                       specTable, specializations, precTable, firstSkipState, skipTable, names)
   }
 
@@ -1135,8 +1136,10 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   }
 
   let tagNames: {[tag: string]: null | string} = Object.create(null)
-  let tagDefs: string[] = []
-  for (let tag of parser.tags.content) {
+  let tagDefs: string[] = [], tagArray = []
+  for (let i = 1;; i += 2) {
+    let tag = parser.tags.get(i | parser.id)
+    if (tag == null) break
     if (!(tag! in tagNames)) {
       tagNames[tag!] = null
     } else if (tagNames[tag!] == null) {
@@ -1146,12 +1149,17 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
     }
   }
   if (tagDefs.length) head += `const ${tagDefs.join(", ")}\n`
+  for (let i = 1;; i += 2) {
+    let tag = parser.tags.get(i | parser.id)
+    if (tag == null) break
+    tagArray.push(tagNames[tag] || JSON.stringify(tag))
+  }
 
   let parserStr = `Parser.deserialize(
   ${encodeArray(flattenStates(parser.states), 0xffffffff)},
   ${encodeArray(parser.data)},
   ${encodeArray(parser.goto)},
-  [${parser.tags.content.map(t => tagNames[t!] || JSON.stringify(t)).join(",")}],
+  [${tagArray.join(",")}],
   ${encodeArray(tokenData || [])},
   [${tokenizers.join(", ")}],
   ${parser.specializeTable},
