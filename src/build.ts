@@ -8,8 +8,8 @@ import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {encodeArray} from "./encode"
 import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer,
-        REDUCE_DEPTH_SHIFT, REDUCE_FLAG, ACTION_VALUE_MASK, REDUCE_REPEAT_FLAG, ACCEPTING, SPECIALIZE, EXTEND,
-        TERM_ERR, TERM_OTHER, STAY_FLAG, GOTO_FLAG} from "lezer"
+        REDUCE_DEPTH_SHIFT, REDUCE_FLAG, ACTION_VALUE_MASK, REDUCE_REPEAT_FLAG, SPECIALIZE, EXTEND,
+        TERM_ERR, TERM_OTHER, STAY_FLAG, GOTO_FLAG, SKIPPED_FLAG, ACCEPTING_FLAG} from "lezer"
 
 const none: readonly any[] = []
 
@@ -114,6 +114,11 @@ class Builder {
     this.noSkip = this.newName("%noskip", true)
     this.defineRule(this.noSkip, [])
 
+    for (let grammar of this.ast.grammars) {
+      if (this.ast.grammars.some(g => g != grammar && g.id.name == grammar.id.name))
+        this.raise(`Duplicate external grammar name '${grammar.id.name}'`, grammar.id.start)
+    }
+
     let mainSkip = this.ast.mainSkip ? this.newName("%mainskip", true) : this.noSkip
     let scopedSkip: Term[] = []
     for (let rule of this.ast.rules) this.astRules.push({skip: mainSkip, rule})
@@ -206,6 +211,8 @@ class Builder {
       return states[0]
     })
 
+    this.addNestedGrammars(table)
+
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
     let specialized = [], specializations = []
     for (let name in this.specialized) {
@@ -255,7 +262,7 @@ class Builder {
         skip = skipData[index]
         skipState = skipStartStates[index]
       }
-      return this.finishState(s, tokenizers, data, skip, skipState)
+      return this.finishState(s, tokenizers, data, skip, skipState, s.id >= firstSkipState)
     })
 
     let skipTags = this.gatherSkippedTerms().filter(t => t.tag).map(t => t.id)
@@ -266,7 +273,19 @@ class Builder {
     let skipTable = data.storeArray(skipTags)
     let id = Parser.allocateID()
     return new Parser(id, states, data.finish(), computeGotoTable(table), TagMap.single(id, tags), tokenizers,
-                      specTable, specializations, precTable, firstSkipState, skipTable, names)
+                      specTable, specializations, precTable, skipTable, names)
+  }
+
+  addNestedGrammars(table: LRState[]) {
+    for (let state of table) {
+      let ext = -1
+      for (let i = 0; i < state.set.length; i++) {
+        let next = state.set[i].next, match = this.nestedGrammars.findIndex(n => n.placeholder == next)
+        if (i == 0) ext = match
+        else if (ext != match) this.raise(`Nested grammar in ambiguous position after ${state.set[i].trail()}`)
+      }
+      state.nested = ext
+    }
   }
 
   makeTerminal(name: string, tag: string | null) {
@@ -289,9 +308,10 @@ class Builder {
   }
 
   finishState(state: LRState, tokenizers: (LezerTokenGroup | TempExternalTokenizer)[],
-              data: StateDataBuilder, skipTable: number, skipState: LRState | null) {
+              data: StateDataBuilder, skipTable: number, skipState: LRState | null, isSkip: boolean) {
     let actions = [], recover = [], forcedReduce = 0
     let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, state.partOfSkip) : 0
+    let flags = isSkip ? SKIPPED_FLAG : 0
 
     let other = -1
     if (defaultReduce == 0) for (let action of state.actions) {
@@ -319,7 +339,7 @@ class Builder {
       if (!defaultPos.rule.name.program)
         forcedReduce = reduceAction(defaultPos.rule, state.partOfSkip, defaultPos.pos)
       else if (positions.some(p => p.rule.name.program && p.pos == p.rule.parts.length))
-        forcedReduce = ACCEPTING
+        flags |= ACCEPTING_FLAG
     }
 
     let external: ExternalTokenSet[] = []
@@ -335,7 +355,7 @@ class Builder {
         tokenizerMask |= (1 << i)
     }
 
-    return new ParseState(state.id,
+    return new ParseState(state.id, flags,
                           data.storeArray(actions),
                           data.storeArray(recover),
                           skipTable,
@@ -649,13 +669,14 @@ class NestNamespace implements Namespace {
   resolve(expr: NamedExpression, builder: Builder): Parts[] {
     if (expr.args.length < 2 || expr.args.length > 3 || !(expr.args[0] instanceof Identifier))
       builder.raise(`Invalid number of arguments to 'nest.${expr.id.name}'`, expr.start)
-    // FIXME build end token
-    let [grammar,, defaultExpr] = expr.args as [Identifier, Expression, Expression | undefined]
+    let [grammar, endExpr, defaultExpr] = expr.args as [Identifier, Expression, Expression | undefined]
     let extGrammar = builder.ast.grammars.find(g => g.id.name == grammar.name)
     if (!extGrammar) return builder.raise(`No external grammar '${grammar.name}' defined`, grammar.start)
     let term = builder.newName(expr.id.name, expr.id.name)
     builder.defineRule(term, defaultExpr ? builder.normalizeExpr(defaultExpr) : [])
-    builder.nestedGrammars.push(new NestedGrammar(term, extGrammar.externalID.name, extGrammar.source, {} as State)) // FIXME
+    let endStart = new State, endEnd = new State([builder.terms.eof])
+    builder.tokens.build(endExpr, endStart, endEnd, none)
+    builder.nestedGrammars.push(new NestedGrammar(term, extGrammar.externalID.name, extGrammar.source, endStart))
     return [p(term)]
   }
 }
@@ -1109,7 +1130,7 @@ export function buildParser(text: string, options: BuildOptions = {}): Parser {
 function flattenStates(states: readonly ParseState[]): number[] {
   let data = []
   for (let state of states) {
-    data.push(state.actions, state.recover, state.skip, state.tokenizerMask, state.defaultReduce, state.forcedReduce)
+    data.push(state.flags, state.actions, state.recover, state.skip, state.tokenizerMask, state.defaultReduce, state.forcedReduce)
   }
   return data
 }
@@ -1189,7 +1210,6 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   ${parser.specializeTable},
   ${JSON.stringify(parser.specializations)},
   ${parser.tokenPrecTable},
-  ${parser.firstSkipState},
   ${parser.skippedNodes}${options.includeNames ? `,
   ${JSON.stringify(parser.termNames)}` : ''}
 )`

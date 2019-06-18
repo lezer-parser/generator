@@ -157,6 +157,7 @@ export class State {
   tokenGroup: number = -1
   defaultReduce: Rule | null = null
   partOfSkip: Term | null = null
+  nested = -1
 
   constructor(public id: number,
               readonly set: readonly Pos[],
