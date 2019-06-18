@@ -269,7 +269,10 @@ class Builder {
     let skipTags = this.gatherSkippedTerms().filter(t => t.tag).map(t => t.id)
     skipTags.push(TERM_ERR)
 
-    let nested = this.nestedGrammars.map(g => tempNestedGrammar(this, g))
+    let nested = this.nestedGrammars.map(g => ({
+      grammar: tempNestedGrammar(this, g),
+      end: new LezerTokenGroup(g.end.compile().toArray({}, none), 0)
+    }))
 
     let precTable = data.storeArray(tokenPrec.concat(TERM_ERR))
     let specTable = data.storeArray(specialized)
@@ -1195,10 +1198,10 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
     }
   })
 
-  let nested = parser.nested.map(grammar => {
+  let nested = parser.nested.map(({grammar, end}) => {
     let spec: NestedGrammarSpec = (grammar as any).spec
     if (!spec) throw new Error("Spec-less nested grammar in parser")
-    return importName(spec.extName, spec.source, spec.name)
+    return `[${importName(spec.extName, spec.source, spec.name)}, ${encodeArray((end as LezerTokenGroup).data)}]`
   })
 
   for (let source in imports) {
