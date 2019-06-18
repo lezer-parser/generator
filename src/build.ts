@@ -7,9 +7,9 @@ import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {encodeArray} from "./encode"
-import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer,
+import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer, NestedGrammar, InputStream, Stack,
         REDUCE_DEPTH_SHIFT, REDUCE_FLAG, ACTION_VALUE_MASK, REDUCE_REPEAT_FLAG, SPECIALIZE, EXTEND,
-        TERM_ERR, TERM_OTHER, STAY_FLAG, GOTO_FLAG, SKIPPED_FLAG, ACCEPTING_FLAG} from "lezer"
+        TERM_ERR, TERM_OTHER, STAY_FLAG, GOTO_FLAG, SKIPPED_FLAG, ACCEPTING_FLAG, NEST_START_FLAG, NEST_SHIFT} from "lezer"
 
 const none: readonly any[] = []
 
@@ -78,6 +78,7 @@ export type BuildOptions = {
   includeNames?: boolean,
   moduleStyle?: string,
   externalTokenizer?: (name: string, terms: {[name: string]: number}) => ExternalTokenizer
+  nestedGrammar?: (name: string, terms: {[name: string]: number}) => NestedGrammar
 }
 
 class Builder {
@@ -86,7 +87,7 @@ class Builder {
   terms = new TermSet
   tokens: TokenSet
   externalTokens: ExternalTokenSet[]
-  nestedGrammars: NestedGrammar[] = []
+  nestedGrammars: NestedGrammarSpec[] = []
   specialized: {[name: string]: {value: string, term: Term, type: string}[]} = Object.create(null)
   tokenOrigins: {[name: string]: Term | ExternalTokenSet} = Object.create(null)
   rules: Rule[] = []
@@ -268,11 +269,14 @@ class Builder {
     let skipTags = this.gatherSkippedTerms().filter(t => t.tag).map(t => t.id)
     skipTags.push(TERM_ERR)
 
+    let nested = this.nestedGrammars.map(g => tempNestedGrammar(this, g))
+
     let precTable = data.storeArray(tokenPrec.concat(TERM_ERR))
     let specTable = data.storeArray(specialized)
     let skipTable = data.storeArray(skipTags)
     let id = Parser.allocateID()
-    return new Parser(id, states, data.finish(), computeGotoTable(table), TagMap.single(id, tags), tokenizers,
+    return new Parser(id, states, data.finish(), computeGotoTable(table), TagMap.single(id, tags),
+                      tokenizers, nested,
                       specTable, specializations, precTable, skipTable, names)
   }
 
@@ -311,7 +315,8 @@ class Builder {
               data: StateDataBuilder, skipTable: number, skipState: LRState | null, isSkip: boolean) {
     let actions = [], recover = [], forcedReduce = 0
     let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, state.partOfSkip) : 0
-    let flags = isSkip ? SKIPPED_FLAG : 0
+    let flags = (isSkip ? SKIPPED_FLAG : 0) |
+      (state.nested > -1 ? NEST_START_FLAG | (state.nested << NEST_SHIFT) : 0)
 
     let other = -1
     if (defaultReduce == 0) for (let action of state.actions) {
@@ -658,8 +663,9 @@ class TagNamespace implements Namespace {
   }
 }
 
-class NestedGrammar {
+class NestedGrammarSpec {
   constructor(readonly placeholder: Term,
+              readonly name: string,
               readonly extName: string,
               readonly source: string,
               readonly end: State) {}
@@ -676,7 +682,7 @@ class NestNamespace implements Namespace {
     builder.defineRule(term, defaultExpr ? builder.normalizeExpr(defaultExpr) : [])
     let endStart = new State, endEnd = new State([builder.terms.eof])
     builder.tokens.build(endExpr, endStart, endEnd, none)
-    builder.nestedGrammars.push(new NestedGrammar(term, extGrammar.externalID.name, extGrammar.source, endStart))
+    builder.nestedGrammars.push(new NestedGrammarSpec(term, extGrammar.id.name, extGrammar.externalID.name, extGrammar.source, endStart))
     return [p(term)]
   }
 }
@@ -1044,6 +1050,18 @@ class TempExternalTokenizer {
   get contextual() { return this.inner.contextual }
 }
 
+function tempNestedGrammar(b: Builder, grammar: NestedGrammarSpec): NestedGrammar {
+  let resolved: NestedGrammar | null = null
+  let result = function(input: InputStream, stack: Stack) {
+    if (!resolved) {
+      resolved = b.options.nestedGrammar ? b.options.nestedGrammar(grammar.name, b.termTable) : null
+      if (!resolved) throw new Error("Nested grammar '${grammar.name}' not provided")
+    }
+    return resolved instanceof Parser ? {parser: resolved} : resolved(input, stack)
+  }
+  ;(result as any).spec = grammar
+  return result
+}
 
 // FIXME maybe add a pass that, if there's a tagless token whole only
 // use is in a tagged single-term rule, move the tag to the token and
@@ -1157,22 +1175,32 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
       if (!defined[id]) return id
     }
   }
+  let importName = (name: string, source: string, prefix: string) => {
+    let src = JSON.stringify(source), varName = name
+    if (name in defined) {
+      varName = getName(prefix)
+      name += `${mod == "cjs" ? ":" : " as"} ${varName}`
+    }
+    ;(imports[src] || (imports[src] = [])).push(name)
+    return varName
+  }
 
   let tokenizers = parser.tokenizers.map(tok => {
     if (tok instanceof TempExternalTokenizer) {
       let {source, id: {name}} = tok.set.ast
-      let src = JSON.stringify(source), varName = name
-      if (name in defined) {
-        varName = getName("tok")
-        name += ` as ${varName}`
-      }
-      ;(imports[src] || (imports[src] = [])).push(name)
-      return varName
+      return importName(name, source, "tok")
     } else {
       tokenData = (tok as LezerTokenGroup).data
       return (tok as LezerTokenGroup).id
     }
   })
+
+  let nested = parser.nested.map(grammar => {
+    let spec: NestedGrammarSpec = (grammar as any).spec
+    if (!spec) throw new Error("Spec-less nested grammar in parser")
+    return importName(spec.extName, spec.source, spec.name)
+  })
+
   for (let source in imports) {
     if (mod == "cjs")
       head += `const {${imports[source].join(", ")}} = require(${source})\n`
@@ -1207,6 +1235,7 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   [${tagArray.join(",")}],
   ${encodeArray(tokenData || [])},
   [${tokenizers.join(", ")}],
+  [${nested.join(", ")}],
   ${parser.specializeTable},
   ${JSON.stringify(parser.specializations)},
   ${parser.tokenPrecTable},
