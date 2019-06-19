@@ -1,5 +1,5 @@
 import {buildParser, BuildOptions} from ".."
-import {Parser, StringStream, Tree, TagMap} from "lezer"
+import {Parser, InputStream, Tree, TagMap} from "lezer"
 const ist = require("ist")
 
 function p(text: string, options?: BuildOptions): () => Parser {
@@ -58,13 +58,13 @@ describe("parsing", () => {
 
   it("can parse incrementally", () => {
     let doc = "if true { print(1); hello; } while false { if 1 do(something 1 2 3); }"
-    let ast = p1().parse(new StringStream(doc), {bufferLength: 2})
+    let ast = p1().parse(doc, {bufferLength: 2})
     let expected = "Conditional(Variable,Block(CallExpression(Variable,Number),Variable))," +
       "Loop(Variable,Block(Conditional(Number,CallExpression(Variable,Variable,Number,Number,Number))))"
     ist(ast.toString(p1().tags), expected)
     ist(ast.length, 70)
     let pos = doc.indexOf("false"), doc2 = doc.slice(0, pos) + "x" + doc.slice(pos + 5)
-    let ast2 = p1().parse(new StringStream(doc2), {bufferLength: 2, cache: change(ast, [pos, pos + 5, pos, pos + 1])})
+    let ast2 = p1().parse(doc2, {bufferLength: 2, cache: change(ast, [pos, pos + 5, pos, pos + 1])})
     ist(ast2.toString(p1().tags), expected)
     ist(shared(ast, ast2), 60, ">")
     ist(ast2.length, 66)
@@ -72,7 +72,7 @@ describe("parsing", () => {
 
   it("assigns the correct node positions", () => {
     let doc = "if 1 { while 2 { foo(bar(baz bug)); } }"
-    let ast = p1().parse(new StringStream(doc), {bufferLength: 10, strict: true})
+    let ast = p1().parse(doc, {bufferLength: 10, strict: true})
     let q = qq(p1(), ast)
     ist(ast.length, 39)
     let cond = q("Conditional"), one = q("Number")
@@ -93,7 +93,7 @@ describe("parsing", () => {
 
   function testResolve(bufferLength: number) {
     let parser = p1()
-    let ast = parser.parse(new StringStream(resolveDoc), {strict: true, bufferLength})
+    let ast = parser.parse(resolveDoc, {strict: true, bufferLength})
 
     let cx111 = ast.resolve(7)
     ist(cx111.depth, 2)
@@ -149,7 +149,7 @@ describe("parsing", () => {
 
   function testIter(bufferLength: number, partial: boolean) {
     let parser = p1(), output: any[] = []
-    let ast = parser.parse(new StringStream(iterDoc), {strict: true, bufferLength})
+    let ast = parser.parse(iterDoc, {strict: true, bufferLength})
     ast.iterate(partial ? 13 : 0, partial ? 19 : ast.length,
                 (open, start) => { output.push(parser.tags.get(open), start) },
                 (close, _, end) => { output.push("/" + parser.tags.get(close), end) })
@@ -166,7 +166,7 @@ describe("parsing", () => {
 
   function testIterRev(bufferLength: number, partial: boolean) {
     let parser = p1(), output: any[] = []
-    let ast = parser.parse(new StringStream(iterDoc), {strict: true, bufferLength})
+    let ast = parser.parse(iterDoc, {strict: true, bufferLength})
     ast.iterate(partial ? 19 : ast.length, partial ? 13 : 0,
                 (close, _, end) => { output.push(end, "/" + parser.tags.get(close)) },
                 (open, start) => { output.push(start, parser.tags.get(open)) })
@@ -190,9 +190,9 @@ BinOp { expr !plus "+" expr | expr !times "*" expr }
 skip { space }
 tokens { space { " "+ } Var { "x" } }
 `)
-    let ast = parser.parse(new StringStream("x + x + x"), {strict: true, bufferLength: 2})
+    let ast = parser.parse("x + x + x", {strict: true, bufferLength: 2})
     ist(ast.toString(parser.tags), 'BinOp(BinOp(Var,"+",Var),"+",Var)')
-    let ast2 = parser.parse(new StringStream("x * x + x + x"), {strict: true, bufferLength: 2, cache: change(ast, [0, 0, 0, 4])})
+    let ast2 = parser.parse("x * x + x + x", {strict: true, bufferLength: 2, cache: change(ast, [0, 0, 0, 4])})
     ist(ast2.toString(parser.tags), 'BinOp(BinOp(BinOp(Var,"*",Var),"+",Var),"+",Var)')
   })
 })
@@ -213,7 +213,7 @@ describe("sequences", () => {
   }
 
   it("balances parsed sequences", () => {
-    let ast = p1().parse(new StringStream("x".repeat(1000)), {strict: true, bufferLength: 10})
+    let ast = p1().parse("x".repeat(1000), {strict: true, bufferLength: 10})
     let d = depth(ast), b = breadth(ast)
     ist(d, 6, "<=")
     ist(d, 4, ">=")
@@ -222,24 +222,24 @@ describe("sequences", () => {
   })
 
   it("caches parts of sequences", () => {
-    let doc = "x".repeat(1000), str = new StringStream(doc), p = p1()
-    let ast = p.parse(str, {bufferLength: 10})
-    let full = p.parse(str, {cache: ast, bufferLength: 10})
+    let doc = "x".repeat(1000), p = p1()
+    let ast = p.parse(doc, {bufferLength: 10})
+    let full = p.parse(doc, {cache: ast, bufferLength: 10})
     ist(shared(ast, full), 99, ">")
-    let front = p.parse(str, {cache: change(ast, [900, 1000]), bufferLength: 10})
+    let front = p.parse(doc, {cache: change(ast, [900, 1000]), bufferLength: 10})
     ist(shared(ast, front), 50, ">")
-    let back = p.parse(str, {cache: change(ast, [0, 100]), bufferLength: 10})
+    let back = p.parse(doc, {cache: change(ast, [0, 100]), bufferLength: 10})
     ist(shared(ast, back), 50, ">")
-    let middle = p.parse(str, {cache: change(ast, [0, 100], [900, 1000]), bufferLength: 10})
+    let middle = p.parse(doc, {cache: change(ast, [0, 100], [900, 1000]), bufferLength: 10})
     ist(shared(ast, middle), 50, ">")
-    let sides = p.parse(str, {cache: change(ast, [450, 550]), bufferLength: 10})
+    let sides = p.parse(doc, {cache: change(ast, [450, 550]), bufferLength: 10})
     ist(shared(ast, sides), 50, ">")
   })
 
   it("assigns the right positions to sequences", () => {
     let doc = "x".repeat(100) + "y;;;;;;;;;" + "x".repeat(90)
     let parser = p1()
-    let ast = parser.parse(new StringStream(doc), {bufferLength: 10})
+    let ast = parser.parse(doc, {bufferLength: 10})
     let i = 0
     ast.iterate(0, ast.length, (term, start, end) => {
       let tag = parser.tags.get(term)
@@ -258,7 +258,7 @@ describe("sequences", () => {
 })
 
 describe("nesting", () => {
-  it("nests grammars", () => {
+  it("can nest grammars", () => {
     let inner = buildParser(`
 program { expr+ }
 expr { tag.B<"(" expr+ ")"> | "." }`)
@@ -269,7 +269,39 @@ expr { "[[" nest.Foo<inner, "]]"> "]]" | "!" }
 `, {nestedGrammar() { return inner }})
 
     let tags = TagMap.combine([outer.tags, inner.tags])
-    let ast = outer.parse(new StringStream("![[((.).)]][[.]]"))
-    ist(ast.toString(tags), '"!","[[",Foo(B("(",B("(",".",")"),".",")")),"]]","[[",Foo("."),"]]"')
+    ist(outer.parse("![[((.).)]][[.]]").toString(tags),
+        '"!","[[",Foo(B("(",B("(",".",")"),".",")")),"]]","[[",Foo("."),"]]"')
+    ist(outer.parse("[[/\]]").toString(tags),
+        '"[[",Foo(⚠),"]]"')
+  })
+
+  it("supports conditional nesting and end token predicates", () => {
+    let inner = buildParser(`program { any } tokens { any { _+ } }`)
+    let outer = buildParser(`
+external grammar inner from "."
+program { Tag }
+Tag { Open nest.Text<inner, "</" name ">", Tag*> Close }
+Open { h<"<"> name h<">"> }
+Close { h<"</"> name h<">"> }
+tokens {
+  name { std.asciiLetter+ }
+  h<str> { str }
+}
+`, {nestedGrammar() { return nest }})
+
+    function nest(stream: InputStream) {
+      let tag = /<(\w+)>$/.exec(stream.read(Math.max(stream.pos - 50, 0), stream.pos))
+      if (!tag || !["textarea", "script", "style"].includes(tag[1])) return null
+      return {
+        parser: inner,
+        filterEnd(token: string) { return token == "</" + tag![1] + ">" }
+      }
+    }
+
+    let tags = TagMap.combine([outer.tags, inner.tags])
+    ist(outer.parse("<foo><bar></baz></foo>").toString(tags),
+        "Tag(Open,Tag(Open,Close),Close)")
+    ist(outer.parse("<textarea><bar></baz></textarea>").toString(tags),
+        "Tag(Open,Text,Close)")
   })
 })

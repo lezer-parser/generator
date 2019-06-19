@@ -1,6 +1,6 @@
 import {TERM_EOF, TERM_ERR, TERM_OTHER} from "lezer"
 
-const TERMINAL = 1, REPEATED = 2, PROGRAM = 4, ERROR = 8, EOF = 16
+const TERMINAL = 1, REPEATED = 2, PROGRAM = 4, ERROR = 8, EOF = 16, PRESERVE = 32
 
 let termHash = 0
 
@@ -21,6 +21,8 @@ export class Term {
   get interesting() { return this.flags > 0 || this.tag != null }
   set repeated(value: boolean) { this.flags = value ? this.flags | REPEATED : this.flags & ~REPEATED }
   get repeated() { return (this.flags & REPEATED) > 0 }
+  set preserve(value: boolean) { this.flags = value ? this.flags | PRESERVE : this.flags & ~PRESERVE }
+  get preserve() { return (this.flags & PRESERVE) > 0 }
   cmp(other: Term) { return this.hash - other.hash }
 }
 
@@ -32,7 +34,7 @@ export class TermSet {
 
   constructor() {
     this.eof = this.term("␄", null, TERMINAL | EOF)
-    this.error = this.term("⚠", "⚠", ERROR)
+    this.error = this.term("⚠", "⚠", ERROR | PRESERVE)
   }
 
   term(name: string, tag: string | null, flags: number = 0) {
@@ -57,8 +59,9 @@ export class TermSet {
     let names: {[id: number]: string} = {}
 
     let taggedID = 1, untaggedID = 0
-    for (let term of this.nonTerminals) if (term.id < 0 && (term.error || rules.some(r => r.name == term || r.parts.includes(term))))
-      term.id = term.error ? TERM_ERR : term.tag ? (taggedID += 2) : (untaggedID += 2)
+    for (let term of this.nonTerminals)
+      if (term.id < 0 && (term.preserve || rules.some(r => r.name == term || r.parts.includes(term))))
+        term.id = term.error ? TERM_ERR : term.tag ? (taggedID += 2) : (untaggedID += 2)
     for (let term of this.terminals)
       term.id = term.eof ? TERM_EOF : term.tag ? (taggedID += 2) : (untaggedID += 2)
     if (taggedID >= TERM_OTHER) throw new Error("Too many tagged terms")

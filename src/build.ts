@@ -185,7 +185,8 @@ class Builder {
   }
 
   getParser() {
-    let rules = simplifyRules(this.rules, this.skipRules.concat(this.terms.nonTerminals.find(t => t.program)!))
+    let rules = simplifyRules(this.rules, [...this.skipRules, ...this.nestedGrammars.map(g => g.placeholder),
+                                           this.terms.nonTerminals.find(t => t.program)!])
     let {tags, names} = this.terms.finish(rules)
     for (let prop in this.namedTerms) this.termTable[prop] = this.namedTerms[prop].id
 
@@ -272,7 +273,8 @@ class Builder {
     let nested = this.nestedGrammars.map(g => ({
       grammar: tempNestedGrammar(this, g),
       end: new LezerTokenGroup(g.end.compile().toArray({}, none), 0),
-      type: g.placeholder.id
+      type: g.type.id,
+      placeholder: g.placeholder.id
     }))
 
     let precTable = data.storeArray(tokenPrec.concat(TERM_ERR))
@@ -286,13 +288,15 @@ class Builder {
 
   addNestedGrammars(table: LRState[]) {
     for (let state of table) {
-      let ext = -1
-      for (let i = 0; i < state.set.length; i++) {
-        let next = state.set[i].next, match = this.nestedGrammars.findIndex(n => n.placeholder == next)
-        if (i == 0) ext = match
-        else if (ext != match) this.raise(`Nested grammar in ambiguous position after ${state.set[i].trail()}`)
+      let nest = state.set.filter(pos => this.nestedGrammars.some(g => g.placeholder == pos.next))
+      if (nest.length) {
+        let placeholder = nest[0].next
+        if (!nest.every(pos => pos.next == placeholder))
+          this.raise(`Multiple nested grammars possible after ${nest[0].trail()}`)
+        if (!state.set.every(pos => pos.next == placeholder || (pos.pos == 0 && state.set.some(p => p.next == pos.rule.name))))
+          this.raise(`Nested grammar in ambiguous position after ${nest[0].trail()} ` + state.set)
+        state.nested = this.nestedGrammars.findIndex(g => g.placeholder == placeholder)
       }
-      state.nested = ext
     }
   }
 
@@ -669,6 +673,7 @@ class TagNamespace implements Namespace {
 
 class NestedGrammarSpec {
   constructor(readonly placeholder: Term,
+              readonly type: Term,
               readonly name: string,
               readonly extName: string,
               readonly source: string,
@@ -684,13 +689,17 @@ class NestNamespace implements Namespace {
       builder.raise(`First argument to 'nest.${expr.id.name}' should be the grammar's name`, grammar.start)
     let extGrammar = builder.ast.grammars.find(g => g.id.name == grammar.id.name)
     if (!extGrammar) return builder.raise(`No external grammar '${grammar.id.name}' defined`, grammar.start)
+    let placeholder = builder.newName(expr.id.name + "-placeholder", true)
     let term = builder.newName(expr.id.name, expr.id.name)
-    builder.defineRule(term, defaultExpr ? builder.normalizeExpr(defaultExpr) : [])
+    term.preserve = true
+    builder.defineRule(placeholder, defaultExpr ? builder.normalizeExpr(defaultExpr) : [])
 
     let endStart = new State, endEnd = new State([builder.terms.eof])
     builder.tokens.build(endExpr, endStart, endEnd, none)
-    builder.nestedGrammars.push(new NestedGrammarSpec(term, extGrammar.id.name, extGrammar.externalID.name, extGrammar.source, endStart))
-    return [p(term)]
+    builder.nestedGrammars.push(new NestedGrammarSpec(placeholder, term,
+                                                      extGrammar.id.name, extGrammar.externalID.name, extGrammar.source,
+                                                      endStart))
+    return [p(placeholder)]
   }
 }
 
@@ -1205,7 +1214,7 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   let nested = parser.nested.map(({grammar, end}) => {
     let spec: NestedGrammarSpec = (grammar as any).spec
     if (!spec) throw new Error("Spec-less nested grammar in parser")
-    return `[${importName(spec.extName, spec.source, spec.name)}, ${encodeArray((end as LezerTokenGroup).data)}, ${spec.placeholder.id}]`
+    return `[${importName(spec.extName, spec.source, spec.name)}, ${encodeArray((end as LezerTokenGroup).data)}, ${spec.type.id}, ${spec.placeholder.id}]`
   })
 
   for (let source in imports) {
