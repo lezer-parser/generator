@@ -68,7 +68,7 @@ export class ExternalGrammarDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
               readonly externalID: Identifier,
-              readonly source: string) {
+              readonly source: string | null) {
     super(start)
   }
 }

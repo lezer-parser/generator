@@ -274,7 +274,7 @@ class Builder {
       name: g.name,
       grammar: tempNestedGrammar(this, g),
       end: new LezerTokenGroup(g.end.compile().toArray({}, none), 0),
-      type: g.type.id,
+      type: g.type ? g.type.id : -1,
       placeholder: g.placeholder.id
     }))
 
@@ -674,29 +674,43 @@ class TagNamespace implements Namespace {
 
 class NestedGrammarSpec {
   constructor(readonly placeholder: Term,
-              readonly type: Term,
+              readonly type: Term | null,
               readonly name: string,
               readonly extName: string,
-              readonly source: string,
+              readonly source: string | null,
               readonly end: State) {}
 }
 
 class NestNamespace implements Namespace {
   resolve(expr: NamedExpression, builder: Builder): Parts[] {
-    if (expr.args.length < 2 || expr.args.length > 3)
-      builder.raise(`Invalid number of arguments to 'nest.${expr.id.name}'`, expr.start)
-    let [grammar, endExpr, defaultExpr] = expr.args as [NamedExpression, Expression, Expression | undefined]
-    if (!(grammar instanceof NamedExpression) || grammar.args.length)
-      builder.raise(`First argument to 'nest.${expr.id.name}' should be the grammar's name`, grammar.start)
-    let extGrammar = builder.ast.grammars.find(g => g.id.name == grammar.id.name)
-    if (!extGrammar) return builder.raise(`No external grammar '${grammar.id.name}' defined`, grammar.start)
+    if (expr.args.length > 3)
+      builder.raise(`Too many arguments to 'nest.${expr.id.name}'`, expr.start)
+    let [tagExpr, endExpr, defaultExpr] = expr.args as [NamedExpression | undefined, Expression | undefined, Expression | undefined]
+    let tag = null
+    if (tagExpr && !(tagExpr instanceof SequenceExpression && tagExpr.exprs.length == 0)) {
+      if (!(tagExpr instanceof NamedExpression) || tagExpr.args.length)
+        builder.raise(`First argument to 'nest.${expr.id.name}' should be a plain tag name`, tagExpr.start)
+      tag = tagExpr.id.name
+    }
+    let extGrammar = builder.ast.grammars.find(g => g.id.name == expr.id.name)
+    if (!extGrammar) return builder.raise(`No external grammar '${expr.id.name}' defined`, expr.id.start)
     let placeholder = builder.newName(expr.id.name + "-placeholder", true)
-    let term = builder.newName(expr.id.name, expr.id.name)
-    term.preserve = true
+    let term = null
+    if (tag) {
+      term = builder.newName(tag, tag)
+      term.preserve = true
+    }
     builder.defineRule(placeholder, defaultExpr ? builder.normalizeExpr(defaultExpr) : [])
 
+    if (!endExpr && !(endExpr = findExprAfter(builder.ast, expr)))
+      return builder.raise(`No end token specified, and no token found directly after the nest expression`, expr.start)
     let endStart = new State, endEnd = new State([builder.terms.eof])
-    builder.tokens.build(endExpr, endStart, endEnd, none)
+    try {
+      builder.tokens.build(endExpr, endStart, endEnd, none)
+    } catch(e) {
+      if (!(e instanceof SyntaxError)) throw e
+      builder.raise(`End token '${endExpr}' for nested grammar is not a valid token expression`, endExpr.start)
+    }
     builder.nestedGrammars.push(new NestedGrammarSpec(placeholder, term,
                                                       extGrammar.id.name, extGrammar.externalID.name, extGrammar.source,
                                                       endStart))
@@ -704,6 +718,20 @@ class NestNamespace implements Namespace {
       builder.raise("Too many nested grammars used")
     return [p(placeholder)]
   }
+}
+
+function findExprAfter(ast: GrammarDeclaration, expr: Expression) {
+  let found: Expression | undefined
+  for (let rule of ast.rules) {
+    rule.expr.walk(cur => {
+      if (cur instanceof SequenceExpression) {
+        let index = cur.exprs.indexOf(expr)
+        if (index > -1 && index < cur.exprs.length - 1) found = cur.exprs[index + 1]
+      }
+      return cur
+    })
+  }
+  return found
 }
 
 class TokenArg {
@@ -1072,11 +1100,9 @@ class TempExternalTokenizer {
 function tempNestedGrammar(b: Builder, grammar: NestedGrammarSpec): NestedGrammar {
   let resolved: NestedGrammar | null = null
   let result = function(input: InputStream, stack: Stack) {
-    if (!resolved) {
+    if (!resolved && grammar.source)
       resolved = b.options.nestedGrammar ? b.options.nestedGrammar(grammar.name, b.termTable) : null
-      if (!resolved) throw new Error("Nested grammar '${grammar.name}' not provided")
-    }
-    return resolved instanceof Parser ? {parser: resolved} : resolved(input, stack)
+    return resolved instanceof Parser ? {parser: resolved} : resolved ? resolved(input, stack) : {}
   }
   ;(result as any).spec = grammar
   return result
@@ -1214,11 +1240,11 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
     }
   })
 
-  let nested = parser.nested.map(({grammar, end}) => {
+  let nested = parser.nested.map(({name, grammar, end, type, placeholder}) => {
     let spec: NestedGrammarSpec = (grammar as any).spec
     if (!spec) throw new Error("Spec-less nested grammar in parser")
-    return `[${JSON.stringify(spec.name)}, ${importName(spec.extName, spec.source, spec.name)},\
-${encodeArray((end as LezerTokenGroup).data)}, ${spec.type.id}, ${spec.placeholder.id}]`
+    return `[${JSON.stringify(name)}, ${spec.source ? importName(spec.extName, spec.source, spec.name) : "null"},\
+${encodeArray((end as LezerTokenGroup).data)}, ${type}, ${placeholder}]`
   })
 
   for (let source in imports) {

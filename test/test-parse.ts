@@ -1,5 +1,5 @@
 import {buildParser, BuildOptions} from ".."
-import {Parser, InputStream, Tree, TagMap} from "lezer"
+import {Parser, InputStream, Stack, Tree, TagMap} from "lezer"
 const ist = require("ist")
 
 function p(text: string, options?: BuildOptions): () => Parser {
@@ -284,7 +284,7 @@ expr { tag.B<"(" expr+ ")"> | "." }`)
     let outer = buildParser(`
 external grammar inner from "."
 program { expr+ }
-expr { "[[" nest.Foo<inner, "]]"> "]]" | "!" }
+expr { "[[" nest.inner<Foo> "]]" | "!" }
 `, {nestedGrammar() { return inner }})
 
     let tags = TagMap.combine([outer.tags, inner.tags])
@@ -299,7 +299,7 @@ expr { "[[" nest.Foo<inner, "]]"> "]]" | "!" }
     let outer = buildParser(`
 external grammar inner from "."
 program { Tag }
-Tag { Open nest.Text<inner, "</" name ">", Tag*> Close }
+Tag { Open nest.inner<Text, "</" name ">", Tag*> Close }
 Open { h<"<"> name h<">"> }
 Close { h<"</"> name h<">"> }
 tokens {
@@ -308,9 +308,9 @@ tokens {
 }
 `, {nestedGrammar() { return nest }})
 
-    function nest(stream: InputStream) {
-      let tag = /<(\w+)>$/.exec(stream.read(Math.max(stream.pos - 50, 0), stream.pos))
-      if (!tag || !["textarea", "script", "style"].includes(tag[1])) return null
+    function nest(stream: InputStream, stack: Stack) {
+      let tag = /<(\w+)>$/.exec(stream.read(stack.ruleStart, stream.pos))
+      if (!tag || !["textarea", "script", "style"].includes(tag[1])) return {stay: true}
       return {
         parser: inner,
         filterEnd(token: string) { return token == "</" + tag![1] + ">" }
@@ -327,10 +327,21 @@ tokens {
   it("allows updating the nested grammars for a parser", () => {
     let inner1 = buildParser(`program { tag.A<"x">+ }`)
     let inner2 = buildParser(`program { tag.B<"x">+ }`)
-    let outer = buildParser(`external grammar inner from "." program { "[" nest.N<inner, "]"> "]" }`,
+    let outer = buildParser(`external grammar inner from "." program { "[" nest.inner<N> "]" }`,
                             {nestedGrammar() { return inner1 }})
     let tags = TagMap.combine([outer.tags, inner1.tags, inner2.tags])
     ist(outer.parse("[x]").toString(tags), '"[",N(A("x")),"]"')
     ist(outer.withNested({inner: inner2}).parse("[x]").toString(tags), '"[",N(B("x")),"]"')
+  })
+
+  it("supports tag-less nesting", () => {
+    let inner = buildParser(`program { "x" }`)
+    let outer = buildParser(`external grammar x from "." program { "&" nest.x "&" }`, {nestedGrammar() { return inner }})
+    ist(outer.parse("&x&").toString(TagMap.combine([inner.tags, outer.tags])), '"&","x","&"')
+  })
+
+  it("skips ranges with missing nested parsers", () => {
+    let outer = buildParser(`external grammar inner program { "[" nest.inner<N> "]" }`)
+    ist(outer.parse("[lfkdsajfa]").toString(outer.tags), '"[",N,"]"')
   })
 })

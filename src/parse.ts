@@ -351,9 +351,8 @@ function parseExternalTokens(start: number, input: Input) {
 function parseExternalGrammar(start: number, input: Input) {
   let externalID = parseIdent(input)
   let id = input.eat("id", "as") ? parseIdent(input) : externalID
-  input.expect("id", "from")
-  let from = input.value
-  input.expect("string")
+  let from = input.eat("id", "from") ? input.value : null
+  if (from) input.expect("string")
   return new ExternalGrammarDeclaration(start, id, externalID, from)
 }
 
