@@ -57,7 +57,7 @@ export class TermSet {
     let names: {[id: number]: string} = {}
 
     let taggedID = 1, untaggedID = 0
-    for (let term of this.nonTerminals) if (term.id < 0 && (term.error || rules.some(r => r.name == term)))
+    for (let term of this.nonTerminals) if (term.id < 0 && (term.error || rules.some(r => r.name == term || r.parts.includes(term))))
       term.id = term.error ? TERM_ERR : term.tag ? (taggedID += 2) : (untaggedID += 2)
     for (let term of this.terminals)
       term.id = term.eof ? TERM_EOF : term.tag ? (taggedID += 2) : (untaggedID += 2)

@@ -271,7 +271,8 @@ class Builder {
 
     let nested = this.nestedGrammars.map(g => ({
       grammar: tempNestedGrammar(this, g),
-      end: new LezerTokenGroup(g.end.compile().toArray({}, none), 0)
+      end: new LezerTokenGroup(g.end.compile().toArray({}, none), 0),
+      type: g.placeholder.id
     }))
 
     let precTable = data.storeArray(tokenPrec.concat(TERM_ERR))
@@ -676,13 +677,16 @@ class NestedGrammarSpec {
 
 class NestNamespace implements Namespace {
   resolve(expr: NamedExpression, builder: Builder): Parts[] {
-    if (expr.args.length < 2 || expr.args.length > 3 || !(expr.args[0] instanceof Identifier))
+    if (expr.args.length < 2 || expr.args.length > 3)
       builder.raise(`Invalid number of arguments to 'nest.${expr.id.name}'`, expr.start)
-    let [grammar, endExpr, defaultExpr] = expr.args as [Identifier, Expression, Expression | undefined]
-    let extGrammar = builder.ast.grammars.find(g => g.id.name == grammar.name)
-    if (!extGrammar) return builder.raise(`No external grammar '${grammar.name}' defined`, grammar.start)
+    let [grammar, endExpr, defaultExpr] = expr.args as [NamedExpression, Expression, Expression | undefined]
+    if (!(grammar instanceof NamedExpression) || grammar.args.length)
+      builder.raise(`First argument to 'nest.${expr.id.name}' should be the grammar's name`, grammar.start)
+    let extGrammar = builder.ast.grammars.find(g => g.id.name == grammar.id.name)
+    if (!extGrammar) return builder.raise(`No external grammar '${grammar.id.name}' defined`, grammar.start)
     let term = builder.newName(expr.id.name, expr.id.name)
     builder.defineRule(term, defaultExpr ? builder.normalizeExpr(defaultExpr) : [])
+
     let endStart = new State, endEnd = new State([builder.terms.eof])
     builder.tokens.build(endExpr, endStart, endEnd, none)
     builder.nestedGrammars.push(new NestedGrammarSpec(term, extGrammar.id.name, extGrammar.externalID.name, extGrammar.source, endStart))
@@ -1201,7 +1205,7 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   let nested = parser.nested.map(({grammar, end}) => {
     let spec: NestedGrammarSpec = (grammar as any).spec
     if (!spec) throw new Error("Spec-less nested grammar in parser")
-    return `[${importName(spec.extName, spec.source, spec.name)}, ${encodeArray((end as LezerTokenGroup).data)}]`
+    return `[${importName(spec.extName, spec.source, spec.name)}, ${encodeArray((end as LezerTokenGroup).data)}, ${spec.placeholder.id}]`
   })
 
   for (let source in imports) {

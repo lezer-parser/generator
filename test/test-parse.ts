@@ -1,10 +1,10 @@
-import {buildParser} from ".."
-import {Parser, StringStream, Tree} from "lezer"
+import {buildParser, BuildOptions} from ".."
+import {Parser, StringStream, Tree, TagMap} from "lezer"
 const ist = require("ist")
 
-function p(text: string): () => Parser {
+function p(text: string, options?: BuildOptions): () => Parser {
   let value: Parser | null = null
-  return () => value || (value = buildParser(text))
+  return () => value || (value = buildParser(text, options))
 }
 
 function shared(a: Tree, b: Tree) {
@@ -182,14 +182,14 @@ describe("parsing", () => {
   it("supports partial reverse iteration in trees", () => testIterRev(2, true))
 
   it("doesn't incorrectly reuse nodes", () => {
-    let parser = p(`
+    let parser = buildParser(`
 precedence { times left, plus left }
 program { expr+ }
 expr { BinOp | Var }
 BinOp { expr !plus "+" expr | expr !times "*" expr }
 skip { space }
 tokens { space { " "+ } Var { "x" } }
-`)()
+`)
     let ast = parser.parse(new StringStream("x + x + x"), {strict: true, bufferLength: 2})
     ist(ast.toString(parser.tags), 'BinOp(BinOp(Var,"+",Var),"+",Var)')
     let ast2 = parser.parse(new StringStream("x * x + x + x"), {strict: true, bufferLength: 2, cache: change(ast, [0, 0, 0, 4])})
@@ -254,5 +254,22 @@ describe("sequences", () => {
       }
       i++
     })
+  })
+})
+
+describe("nesting", () => {
+  it("nests grammars", () => {
+    let inner = buildParser(`
+program { expr+ }
+expr { tag.B<"(" expr+ ")"> | "." }`)
+    let outer = buildParser(`
+external grammar inner from "."
+program { expr+ }
+expr { "[[" nest.Foo<inner, "]]"> "]]" | "!" }
+`, {nestedGrammar() { return inner }})
+
+    let tags = TagMap.combine([outer.tags, inner.tags])
+    let ast = outer.parse(new StringStream("![[((.).)]][[.]]"))
+    ist(ast.toString(tags), '"!","[[",Foo(B("(",B("(",".",")"),".",")")),"]]","[[",Foo("."),"]]"')
   })
 })
