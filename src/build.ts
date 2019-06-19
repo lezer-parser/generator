@@ -271,6 +271,7 @@ class Builder {
     skipTags.push(TERM_ERR)
 
     let nested = this.nestedGrammars.map(g => ({
+      name: g.name,
       grammar: tempNestedGrammar(this, g),
       end: new LezerTokenGroup(g.end.compile().toArray({}, none), 0),
       type: g.type.id,
@@ -699,6 +700,8 @@ class NestNamespace implements Namespace {
     builder.nestedGrammars.push(new NestedGrammarSpec(placeholder, term,
                                                       extGrammar.id.name, extGrammar.externalID.name, extGrammar.source,
                                                       endStart))
+    if (builder.nestedGrammars.length >= 2**(30 - NEST_SHIFT))
+      builder.raise("Too many nested grammars used")
     return [p(placeholder)]
   }
 }
@@ -1214,7 +1217,8 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
   let nested = parser.nested.map(({grammar, end}) => {
     let spec: NestedGrammarSpec = (grammar as any).spec
     if (!spec) throw new Error("Spec-less nested grammar in parser")
-    return `[${importName(spec.extName, spec.source, spec.name)}, ${encodeArray((end as LezerTokenGroup).data)}, ${spec.type.id}, ${spec.placeholder.id}]`
+    return `[${JSON.stringify(spec.name)}, ${importName(spec.extName, spec.source, spec.name)},\
+${encodeArray((end as LezerTokenGroup).data)}, ${spec.type.id}, ${spec.placeholder.id}]`
   })
 
   for (let source in imports) {

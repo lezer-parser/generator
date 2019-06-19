@@ -323,4 +323,14 @@ tokens {
     ist(outer.parse("<textarea><bar></baz></textarea>").toString(tags),
         "Tag(Open,Text,Close)")
   })
+
+  it("allows updating the nested grammars for a parser", () => {
+    let inner1 = buildParser(`program { tag.A<"x">+ }`)
+    let inner2 = buildParser(`program { tag.B<"x">+ }`)
+    let outer = buildParser(`external grammar inner from "." program { "[" nest.N<inner, "]"> "]" }`,
+                            {nestedGrammar() { return inner1 }})
+    let tags = TagMap.combine([outer.tags, inner1.tags, inner2.tags])
+    ist(outer.parse("[x]").toString(tags), '"[",N(A("x")),"]"')
+    ist(outer.withNested({inner: inner2}).parse("[x]").toString(tags), '"[",N(B("x")),"]"')
+  })
 })
