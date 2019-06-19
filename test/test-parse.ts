@@ -195,6 +195,25 @@ tokens { space { " "+ } Var { "x" } }
     let ast2 = parser.parse("x * x + x + x", {strict: true, bufferLength: 2, cache: change(ast, [0, 0, 0, 4])})
     ist(ast2.toString(parser.tags), 'BinOp(BinOp(BinOp(Var,"*",Var),"+",Var),"+",Var)')
   })
+
+  it("can cache skipped content", () => {
+    let comments = buildParser(`
+program { "x"+ }
+skip { space | Comment }
+skip {} {
+  Comment { commentStart (Comment | commentContent)* commentEnd }
+}
+tokens {
+  space { " "+ }
+  commentStart { "(" }
+  commentEnd { ")" }
+  commentContent { [^()]+ }
+}`)
+    let doc = "x  (one (two) (three " + "(y)".repeat(500) + ")) x"
+    let ast = comments.parse(doc, {bufferLength: 10, strict: true})
+    let ast2 = comments.parse(doc.slice(1), {cache: change(ast, [0, 1, 0, 0]), bufferLength: 10})
+    ist(shared(ast, ast2), 80, ">")
+  })
 })
 
 describe("sequences", () => {
