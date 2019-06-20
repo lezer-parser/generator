@@ -76,6 +76,7 @@ export type BuildOptions = {
   warn?: (message: string) => void,
   includeNames?: boolean,
   moduleStyle?: string,
+  exportName?: string,
   externalTokenizer?: (name: string, terms: {[name: string]: number}) => ExternalTokenizer
   nestedGrammar?: (name: string, terms: {[name: string]: number}) => NestedGrammar
 }
@@ -1297,6 +1298,7 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${type}, ${placeholder}]`
     terms.push(`${id} = ${builder.termTable[name]}`)
   }
 
-  return {parser: head + (mod == "cjs" ? `module.exports = ${parserStr}\n` : `export default ${parserStr}\n`),
+  let exportName = options.exportName || "parser"
+  return {parser: head + (mod == "cjs" ? `exports.${exportName} = ${parserStr}\n` : `export const ${exportName} = ${parserStr}\n`),
           terms: `${gen}export const\n  ${terms.join(",\n  ")}\n`}
 }
