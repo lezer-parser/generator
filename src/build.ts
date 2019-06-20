@@ -124,7 +124,10 @@ class Builder {
     let scopedSkip: Term[] = []
     for (let rule of this.ast.rules) this.astRules.push({skip: mainSkip, rule})
     for (let scoped of this.ast.scopedSkip) {
-      let skip = scoped.expr instanceof SequenceExpression && !scoped.expr.exprs.length ? this.noSkip : this.newName("%skip", true)
+      let skip = this.noSkip, found = this.ast.scopedSkip.findIndex((sc, i) => i < scopedSkip.length && sc.expr.eq(scoped.expr))
+      if (found > -1) skip = scopedSkip[found]
+      else if (this.ast.mainSkip && scoped.expr.eq(this.ast.mainSkip)) skip = mainSkip
+      else if (!isEmpty(scoped.expr)) skip = this.newName("%skip", true)
       scopedSkip.push(skip)
       for (let rule of scoped.rules) this.astRules.push({skip, rule})
     }
@@ -140,10 +143,12 @@ class Builder {
       this.skipRules.push(mainSkip)
       this.defineRule(mainSkip, this.normalizeExpr(this.ast.mainSkip!))
     }
-    // FIXME deduplicate?
-    for (let i = 0; i < this.ast.scopedSkip.length; i++) if (scopedSkip[i] != this.noSkip) {
-      this.skipRules.push(scopedSkip[i])
-      this.defineRule(scopedSkip[i], this.normalizeExpr(this.ast.scopedSkip[i].expr))
+    for (let i = 0; i < this.ast.scopedSkip.length; i++) {
+      let skip = scopedSkip[i]
+      if (skip != this.noSkip && skip != mainSkip && (i == 0 || scopedSkip.lastIndexOf(skip, i - 1) == -1)) {
+        this.skipRules.push(scopedSkip[i])
+        this.defineRule(scopedSkip[i], this.normalizeExpr(this.ast.scopedSkip[i].expr))
+      }
     }
     this.currentSkip.pop()
 
@@ -697,7 +702,7 @@ class NestNamespace implements Namespace {
       builder.raise(`Too many arguments to 'nest.${expr.id.name}'`, expr.start)
     let [tagExpr, endExpr, defaultExpr] = expr.args as [NamedExpression | undefined, Expression | undefined, Expression | undefined]
     let tag = null
-    if (tagExpr && !(tagExpr instanceof SequenceExpression && tagExpr.exprs.length == 0)) {
+    if (tagExpr && !isEmpty(tagExpr)) {
       if (!(tagExpr instanceof NamedExpression) || tagExpr.args.length)
         builder.raise(`First argument to 'nest.${expr.id.name}' should be a plain tag name`, tagExpr.start)
       tag = tagExpr.id.name
@@ -823,7 +828,7 @@ class TokenSet {
       this.buildRule(rule, expr, from, to, args)
     } else if (expr instanceof ChoiceExpression) {
       for (let choice of expr.exprs) this.build(choice, from, to, args)
-    } else if (expr instanceof SequenceExpression && !expr.exprs.length) {
+    } else if (isEmpty(expr)) {
       from.nullEdge(to)
     } else if (expr instanceof SequenceExpression) {
       let conflict = expr.markers.find(c => c.length > 0)
@@ -1063,6 +1068,10 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
   digit: [[48, 58]],
   whitespace: [[9, 14], [32, 33], [133, 134], [160, 161], [5760, 5761], [8192, 8203],
                [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]]
+}
+
+function isEmpty(expr: Expression) {
+  return expr instanceof SequenceExpression && expr.exprs.length == 0
 }
 
 class ExternalTokenSet {
