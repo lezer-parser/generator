@@ -7,9 +7,8 @@ import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {encodeArray} from "./encode"
-import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer, NestedGrammar, InputStream, Stack,
-        REDUCE_DEPTH_SHIFT, REDUCE_FLAG, ACTION_VALUE_MASK, REDUCE_REPEAT_FLAG, SPECIALIZE, EXTEND,
-        TERM_ERR, TERM_OTHER, STAY_FLAG, GOTO_FLAG, SKIPPED_FLAG, ACCEPTING_FLAG, NEST_START_FLAG, NEST_SHIFT} from "lezer"
+import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer, NestedGrammar, InputStream, Stack} from "lezer"
+import {Action, Specialize, StateFlag, Term as T} from "lezer/src/constants"
 
 const none: readonly any[] = []
 
@@ -221,12 +220,12 @@ class Builder {
       specialized.push(this.terms.terminals.find(t => t.name == name)!.id)
       let table: {[value: string]: number} = {}
       for (let {value, term, type} of this.specialized[name]) {
-        let code = type == "specialize" ? SPECIALIZE : EXTEND
+        let code = type == "specialize" ? Specialize.Specialize : Specialize.Extend
         table[value] = (term.id << 1) | code
       }
       specializations.push(table)
     }
-    specialized.push(TERM_ERR)
+    specialized.push(T.Err)
 
     let tokenData = this.tokens.tokenizer(tokenMasks, tokenPrec)
     let tokStart = (tokenizer: TempExternalTokenizer | LezerTokenGroup) => {
@@ -244,19 +243,19 @@ class Builder {
       if (state) {
         for (let action of state.actions as Shift[]) {
           if (isSimpleSkip(action, this.skipRules[i]))
-            actions.push(action.term.id, 0, STAY_FLAG >> 16)
+            actions.push(action.term.id, 0, Action.StayFlag >> 16)
           else
-            actions.push(action.term.id, state.id, GOTO_FLAG >> 16)
+            actions.push(action.term.id, state.id, Action.GotoFlag >> 16)
         }
         // No need to store simple skip actions in the skip start
         // state—they'll never be accessed, since the STAY_FLAG action
         // avoids state changes entirely.
         state.actions = state.actions.filter(a => !isSimpleSkip(a, this.skipRules[i]))
       }
-      actions.push(TERM_ERR)
+      actions.push(T.Err)
       return data.storeArray(actions)
     })
-    let noSkip = data.storeArray([TERM_ERR])
+    let noSkip = data.storeArray([T.Err])
     let states = table.map(s => {
       let skip = noSkip, skipState = null
       if (s.skip != this.noSkip) {
@@ -268,7 +267,7 @@ class Builder {
     })
 
     let skipTags = this.gatherSkippedTerms().filter(t => t.tag).map(t => t.id)
-    skipTags.push(TERM_ERR)
+    skipTags.push(T.Err)
 
     let nested = this.nestedGrammars.map(g => ({
       name: g.name,
@@ -278,7 +277,7 @@ class Builder {
       placeholder: g.placeholder.id
     }))
 
-    let precTable = data.storeArray(tokenPrec.concat(TERM_ERR))
+    let precTable = data.storeArray(tokenPrec.concat(T.Err))
     let specTable = data.storeArray(specialized)
     let skipTable = data.storeArray(skipTags)
     let id = Parser.allocateID()
@@ -324,8 +323,8 @@ class Builder {
               data: StateDataBuilder, skipTable: number, skipState: LRState | null, isSkip: boolean) {
     let actions = [], recover = [], forcedReduce = 0
     let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, state.partOfSkip) : 0
-    let flags = (isSkip ? SKIPPED_FLAG : 0) |
-      (state.nested > -1 ? NEST_START_FLAG | (state.nested << NEST_SHIFT) : 0)
+    let flags = (isSkip ? StateFlag.Skipped : 0) |
+      (state.nested > -1 ? StateFlag.StartNest | (state.nested << StateFlag.NestShift) : 0)
 
     let other = -1
     if (defaultReduce == 0) for (let action of state.actions) {
@@ -337,15 +336,15 @@ class Builder {
       } else {
         let code = reduceAction(action.rule, state.partOfSkip)
         if (state.partOfSkip && action.term.eof) other = code
-        else actions.push(action.term.id, code & ACTION_VALUE_MASK, code >> 16)
+        else actions.push(action.term.id, code & Action.ValueMask, code >> 16)
       }
     }
-    if (other > -1) actions.push(TERM_OTHER, other & ACTION_VALUE_MASK, other >> 16)
-    actions.push(TERM_ERR)
+    if (other > -1) actions.push(T.Other, other & Action.ValueMask, other >> 16)
+    actions.push(T.Err)
 
     for (let action of state.recover)
       recover.push(action.term.id, action.target.id)
-    recover.push(TERM_ERR)
+    recover.push(T.Err)
 
     let positions = state.set.filter(p => p.pos > 0)
     if (positions.length) {
@@ -353,7 +352,7 @@ class Builder {
       if (!defaultPos.rule.name.program)
         forcedReduce = reduceAction(defaultPos.rule, state.partOfSkip, defaultPos.pos)
       else if (positions.some(p => p.rule.name.program && p.pos == p.rule.parts.length))
-        flags |= ACCEPTING_FLAG
+        flags |= StateFlag.Accepting
     }
 
     let external: ExternalTokenSet[] = []
@@ -575,10 +574,10 @@ class Builder {
 }
 
 function reduceAction(rule: Rule, partOfSkip: Term | null, depth = rule.parts.length) {
-  return rule.name.id | REDUCE_FLAG |
-    (rule.isRepeatLeaf && depth == rule.parts.length ? REDUCE_REPEAT_FLAG : 0) |
-    (rule.name == partOfSkip ? STAY_FLAG : 0) |
-    (depth << REDUCE_DEPTH_SHIFT)
+  return rule.name.id | Action.ReduceFlag |
+    (rule.isRepeatLeaf && depth == rule.parts.length ? Action.RepeatFlag : 0) |
+    (rule.name == partOfSkip ? Action.StayFlag : 0) |
+    (depth << Action.ReduceDepthShift)
 }
 
 function isSimpleSkip(action: Shift | Reduce, skipRule: Term) {
@@ -714,7 +713,7 @@ class NestNamespace implements Namespace {
     builder.nestedGrammars.push(new NestedGrammarSpec(placeholder, term,
                                                       extGrammar.id.name, extGrammar.externalID.name, extGrammar.source,
                                                       endStart))
-    if (builder.nestedGrammars.length >= 2**(30 - NEST_SHIFT))
+    if (builder.nestedGrammars.length >= 2**(30 - StateFlag.NestShift))
       builder.raise("Too many nested grammars used")
     return [p(placeholder)]
   }

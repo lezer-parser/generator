@@ -1,6 +1,19 @@
-import {TERM_EOF, TERM_ERR, TERM_OTHER} from "lezer"
+import {Term as T} from "lezer/src/constants"
 
-const TERMINAL = 1, REPEATED = 2, PROGRAM = 4, ERROR = 8, EOF = 16, PRESERVE = 32
+const enum TermFlag {
+  // This term is a terminal
+  Terminal = 1,
+  // This is the inner term generated for a repetition operator
+  Repeated = 2,
+  // This is the top production
+  Program = 4,
+  // This is the error term
+  Error = 8,
+  // This represents end-of-file
+  Eof = 16,
+  // This should be preserved, even if it doesn't occur in any rule
+  Preserve = 32
+}
 
 let termHash = 0
 
@@ -14,15 +27,15 @@ export class Term {
               private flags: number,
               readonly tag: string | null) {}
   toString() { return this.name }
-  get terminal() { return (this.flags & TERMINAL) > 0 }
-  get eof() { return (this.flags & EOF) > 0 }
-  get error() { return (this.flags & ERROR) > 0 }
-  get program() { return (this.flags & PROGRAM) > 0 }
+  get terminal() { return (this.flags & TermFlag.Terminal) > 0 }
+  get eof() { return (this.flags & TermFlag.Eof) > 0 }
+  get error() { return (this.flags & TermFlag.Error) > 0 }
+  get program() { return (this.flags & TermFlag.Program) > 0 }
   get interesting() { return this.flags > 0 || this.tag != null }
-  set repeated(value: boolean) { this.flags = value ? this.flags | REPEATED : this.flags & ~REPEATED }
-  get repeated() { return (this.flags & REPEATED) > 0 }
-  set preserve(value: boolean) { this.flags = value ? this.flags | PRESERVE : this.flags & ~PRESERVE }
-  get preserve() { return (this.flags & PRESERVE) > 0 }
+  set repeated(value: boolean) { this.flags = value ? this.flags | TermFlag.Repeated : this.flags & ~TermFlag.Repeated }
+  get repeated() { return (this.flags & TermFlag.Repeated) > 0 }
+  set preserve(value: boolean) { this.flags = value ? this.flags | TermFlag.Preserve : this.flags & ~TermFlag.Preserve }
+  get preserve() { return (this.flags & TermFlag.Preserve) > 0 }
   cmp(other: Term) { return this.hash - other.hash }
 }
 
@@ -33,8 +46,8 @@ export class TermSet {
   error: Term
 
   constructor() {
-    this.eof = this.term("␄", null, TERMINAL | EOF)
-    this.error = this.term("⚠", "⚠", ERROR | PRESERVE)
+    this.eof = this.term("␄", null, TermFlag.Terminal | TermFlag.Eof)
+    this.error = this.term("⚠", "⚠", TermFlag.Error | TermFlag.Preserve)
   }
 
   term(name: string, tag: string | null, flags: number = 0) {
@@ -44,12 +57,12 @@ export class TermSet {
   }
 
   makeTerminal(name: string, tag: string | null) {
-    return this.term(name, tag, TERMINAL)
+    return this.term(name, tag, TermFlag.Terminal)
   }
 
   makeNonTerminal(name: string, tag: string | null) {
     // FIXME maybe don't hard-code the start symbol name—some grammars don't even parse "programs" (JSON, Markdown)
-    return this.term(name, tag, name == "program" ? PROGRAM : 0)
+    return this.term(name, tag, name == "program" ? TermFlag.Program : 0)
   }
 
   finish(rules: readonly Rule[]) {
@@ -61,11 +74,11 @@ export class TermSet {
     let taggedID = 1, untaggedID = 0
     for (let term of this.nonTerminals)
       if (term.id < 0 && (term.preserve || rules.some(r => r.name == term || r.parts.includes(term))))
-        term.id = term.error ? TERM_ERR : term.tag ? (taggedID += 2) : (untaggedID += 2)
+        term.id = term.error ? T.Err : term.tag ? (taggedID += 2) : (untaggedID += 2)
     for (let term of this.terminals)
-      term.id = term.eof ? TERM_EOF : term.tag ? (taggedID += 2) : (untaggedID += 2)
-    if (taggedID >= TERM_OTHER) throw new Error("Too many tagged terms")
-    if (untaggedID >= TERM_OTHER) throw new Error("Too many untagged terms")
+      term.id = term.eof ? T.Eof : term.tag ? (taggedID += 2) : (untaggedID += 2)
+    if (taggedID >= T.Other) throw new Error("Too many tagged terms")
+    if (untaggedID >= T.Other) throw new Error("Too many untagged terms")
 
     for (let term of this.terminals.concat(this.nonTerminals)) if (term.id > -1) {
       if (term.tag) tags[term.id >> 1] = term.tag
