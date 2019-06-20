@@ -1,6 +1,6 @@
 precedence { div left }
 
-program { expr }
+top { expr }
 
 expr { RegExp | Symbol | BinOp }
 

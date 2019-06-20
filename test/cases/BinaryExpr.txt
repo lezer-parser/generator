@@ -1,6 +1,6 @@
 precedence { mult left, plus left }
 
-program { expr }
+top { expr }
 
 expr {
   atom | BinaryExpr

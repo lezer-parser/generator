@@ -1,4 +1,4 @@
-program { (a | b | specialize<i, "ii", I>)+ }
+top { (a | b | specialize<i, "ii", I>)+ }
 
 a=A { "a" }
 

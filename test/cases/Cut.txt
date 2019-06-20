@@ -2,7 +2,7 @@ precedence {
   statement cut
 }
 
-program { statement* }
+top { statement* }
 
 statement {
   tag.Block<!statement "{" statement* "}"> |

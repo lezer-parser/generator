@@ -1,4 +1,4 @@
-program { expr* }
+top { expr* }
 
 expr { tag.Braced<braceOpen expr braceClose> | tag.X<"x" (dot tag.Y<"y">)?> }
 

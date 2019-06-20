@@ -1,4 +1,4 @@
-program { (Single | Open "." Close)+ }
+top { (Single | Open "." Close)+ }
 
 skip { spaces }
 

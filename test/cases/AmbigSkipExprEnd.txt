@@ -1,4 +1,4 @@
-program { tag.Foo<"foo" "bar"?>+ }
+top { tag.Foo<"foo" "bar"?>+ }
 
 skip { " " | Bang }
 

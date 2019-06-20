@@ -146,10 +146,10 @@ class Builder {
     }
     this.currentSkip.pop()
 
-    let program = this.astRules.find(r => r.rule.id.name == "program")
-    if (!program) return this.raise(`Missing 'program' rule declaration`)
-    if (program.rule.params.length) this.raise(`'program' rules should not take parameters`, program.rule.id.start)
-    this.buildRule(program.rule, [], program.skip)
+    let top = this.astRules.find(r => r.rule.id.name == "top")
+    if (!top) return this.raise(`Missing 'top' rule declaration`)
+    if (top.rule.params.length) this.raise(`'top' rules should not take parameters`, top.rule.id.start)
+    this.buildRule(top.rule, [], top.skip)
 
     for (let name in this.ruleNames) {
       let value = this.ruleNames[name]
@@ -184,8 +184,7 @@ class Builder {
   }
 
   getParser() {
-    let rules = simplifyRules(this.rules, [...this.skipRules, ...this.nestedGrammars.map(g => g.placeholder),
-                                           this.terms.nonTerminals.find(t => t.program)!])
+    let rules = simplifyRules(this.rules, [...this.skipRules, ...this.nestedGrammars.map(g => g.placeholder), this.terms.top])
     let {tags, names} = this.terms.finish(rules)
     for (let prop in this.namedTerms) this.termTable[prop] = this.namedTerms[prop].id
 
@@ -193,7 +192,7 @@ class Builder {
 
     let first = computeFirstSets(this.terms)
     let fullSkipAutomata = this.skipRules.map(name => name.rules.some(r => r.parts.length > 0) ? buildFullAutomaton(this.terms, name, first) : null)
-    let fullTable = buildFullAutomaton(this.terms, this.terms.nonTerminals.find(t => t.program)!, first)
+    let fullTable = buildFullAutomaton(this.terms, this.terms.top, first)
     let {tokenMasks, tokenGroups, tokenPrec} = this.tokens.buildTokenGroups(fullTable, fullSkipAutomata)
     let table = finishAutomaton(fullTable, first) as LRState[]
     let firstSkipState = table.length + 1
@@ -349,9 +348,9 @@ class Builder {
     let positions = state.set.filter(p => p.pos > 0)
     if (positions.length) {
       let defaultPos = positions.reduce((a, b) => a.pos - b.pos || b.rule.parts.length - a.rule.parts.length < 0 ? b : a)
-      if (!defaultPos.rule.name.program)
+      if (!defaultPos.rule.name.top)
         forcedReduce = reduceAction(defaultPos.rule, state.partOfSkip, defaultPos.pos)
-      else if (positions.some(p => p.rule.name.program && p.pos == p.rule.parts.length))
+      else if (positions.some(p => p.rule.name.top && p.pos == p.rule.parts.length))
         flags |= StateFlag.Accepting
     }
 
@@ -441,10 +440,9 @@ class Builder {
       return ns.resolve(expr, this)
     } else if (expr.id.name == "specialize" || expr.id.name == "extend") {
       return [p(this.resolveSpecialization(expr, expr.id.name))]
-    } else if (expr.id.name == "program") {
-      return this.raise(`The 'program' rule can't be referenced in other expressions`, expr.start)
+    } else if (expr.id.name == "top") {
+      return this.raise(`The 'top' rule can't be referenced in other expressions`, expr.start)
     } else {
-      
       for (let built of this.built) if (built.matches(expr)) return [p(built.term)]
 
       let found = this.tokens.getToken(expr)
@@ -533,8 +531,9 @@ class Builder {
   buildRule(rule: RuleDeclaration, args: readonly Expression[], skip: Term): Term {
     let expr = this.substituteArgs(rule.expr, args, rule.params)
     this.used(rule.id.name)
-    let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
-                            rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
+    let name = rule.id.name == "top" ? this.terms.top :
+      this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
+                   rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
     if (args.length == 0) this.namedTerms[rule.id.name] = name
     this.built.push(new BuiltRule(rule.id.name, args, name))
     this.currentSkip.push(skip)

@@ -1,4 +1,4 @@
-program { X }
+top { X }
 
 tokens {
   X { y }

@@ -1,4 +1,4 @@
-program { expr+ }
+top { expr+ }
 
 expr { ArrowExpr | ParenExpr | Identifier }
 

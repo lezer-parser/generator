@@ -1,4 +1,4 @@
-program { foo<bar> }
+top { foo<bar> }
 
 bar { bar "x" | "" }
 

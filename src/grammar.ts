@@ -6,7 +6,7 @@ const enum TermFlag {
   // This is the inner term generated for a repetition operator
   Repeated = 2,
   // This is the top production
-  Program = 4,
+  Top = 4,
   // This is the error term
   Error = 8,
   // This represents end-of-file
@@ -30,7 +30,7 @@ export class Term {
   get terminal() { return (this.flags & TermFlag.Terminal) > 0 }
   get eof() { return (this.flags & TermFlag.Eof) > 0 }
   get error() { return (this.flags & TermFlag.Error) > 0 }
-  get program() { return (this.flags & TermFlag.Program) > 0 }
+  get top() { return (this.flags & TermFlag.Top) > 0 }
   get interesting() { return this.flags > 0 || this.tag != null }
   set repeated(value: boolean) { this.flags = value ? this.flags | TermFlag.Repeated : this.flags & ~TermFlag.Repeated }
   get repeated() { return (this.flags & TermFlag.Repeated) > 0 }
@@ -44,10 +44,12 @@ export class TermSet {
   terminals: Term[] = []
   eof: Term
   error: Term
+  top: Term
 
   constructor() {
     this.eof = this.term("␄", null, TermFlag.Terminal | TermFlag.Eof)
     this.error = this.term("⚠", "⚠", TermFlag.Error | TermFlag.Preserve)
+    this.top = this.term("top", null, TermFlag.Top)
   }
 
   term(name: string, tag: string | null, flags: number = 0) {
@@ -61,8 +63,7 @@ export class TermSet {
   }
 
   makeNonTerminal(name: string, tag: string | null) {
-    // FIXME maybe don't hard-code the start symbol name—some grammars don't even parse "programs" (JSON, Markdown)
-    return this.term(name, tag, name == "program" ? TermFlag.Program : 0)
+    return this.term(name, tag, 0)
   }
 
   finish(rules: readonly Rule[]) {

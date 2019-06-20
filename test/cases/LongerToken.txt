@@ -1,4 +1,4 @@
-program { (tag.A<"foo"> | tag.B<"foobar"> | tag.C<"baz">)+ }
+top { (tag.A<"foo"> | tag.B<"foobar"> | tag.C<"baz">)+ }
 
 ---
 

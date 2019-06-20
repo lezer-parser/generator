@@ -1,4 +1,4 @@
-program { (Class | Block)* }
+top { (Class | Block)* }
 
 Class { "class" "{" "classitem"* "}" }
 

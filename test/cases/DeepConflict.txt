@@ -1,4 +1,4 @@
-program { A* }
+top { A* }
 
 A { B ~ambig "." | C ~ambig "." }
 

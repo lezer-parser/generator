@@ -28,7 +28,7 @@ describe("parsing", () => {
   let p1 = p(`
     precedence { call }
 
-    program { statement* }
+    top { statement* }
     statement { Conditional | Loop | Block | expression p<";"> }
     Conditional { kw<"if"> expression statement }
     Block { p<"{"> statement* p<"}"> }
@@ -184,7 +184,7 @@ describe("parsing", () => {
   it("doesn't incorrectly reuse nodes", () => {
     let parser = buildParser(`
 precedence { times left, plus left }
-program { expr+ }
+top { expr+ }
 expr { BinOp | Var }
 BinOp { expr !plus "+" expr | expr !times "*" expr }
 skip { space }
@@ -198,7 +198,7 @@ tokens { space { " "+ } Var { "x" } }
 
   it("can cache skipped content", () => {
     let comments = buildParser(`
-program { "x"+ }
+top { "x"+ }
 skip { space | Comment }
 skip {} {
   Comment { commentStart (Comment | commentContent)* commentEnd }
@@ -218,7 +218,7 @@ tokens {
 
 describe("sequences", () => {
   let p1 = p(`
-    program { (X | Y)+ }
+    top { (X | Y)+ }
     X { t<"x"> }
     Y { t<"y"> t<";">* }
     tokens { t<x> { x } }`)
@@ -279,11 +279,11 @@ describe("sequences", () => {
 describe("nesting", () => {
   it("can nest grammars", () => {
     let inner = buildParser(`
-program { expr+ }
+top { expr+ }
 expr { tag.B<"(" expr+ ")"> | "." }`)
     let outer = buildParser(`
 external grammar inner from "."
-program { expr+ }
+top { expr+ }
 expr { "[[" nest.inner<Foo> "]]" | "!" }
 `, {nestedGrammar() { return inner }})
 
@@ -295,10 +295,10 @@ expr { "[[" nest.inner<Foo> "]]" | "!" }
   })
 
   it("supports conditional nesting and end token predicates", () => {
-    let inner = buildParser(`program { any } tokens { any { _+ } }`)
+    let inner = buildParser(`top { any } tokens { any { _+ } }`)
     let outer = buildParser(`
 external grammar inner from "."
-program { Tag }
+top { Tag }
 Tag { Open nest.inner<Text, "</" name ">", Tag*> Close }
 Open { h<"<"> name h<">"> }
 Close { h<"</"> name h<">"> }
@@ -325,9 +325,9 @@ tokens {
   })
 
   it("allows updating the nested grammars for a parser", () => {
-    let inner1 = buildParser(`program { tag.A<"x">+ }`)
-    let inner2 = buildParser(`program { tag.B<"x">+ }`)
-    let outer = buildParser(`external grammar inner from "." program { "[" nest.inner<N> "]" }`,
+    let inner1 = buildParser(`top { tag.A<"x">+ }`)
+    let inner2 = buildParser(`top { tag.B<"x">+ }`)
+    let outer = buildParser(`external grammar inner from "." top { "[" nest.inner<N> "]" }`,
                             {nestedGrammar() { return inner1 }})
     let tags = TagMap.combine([outer.tags, inner1.tags, inner2.tags])
     ist(outer.parse("[x]").toString(tags), '"[",N(A("x")),"]"')
@@ -335,13 +335,13 @@ tokens {
   })
 
   it("supports tag-less nesting", () => {
-    let inner = buildParser(`program { "x" }`)
-    let outer = buildParser(`external grammar x from "." program { "&" nest.x "&" }`, {nestedGrammar() { return inner }})
+    let inner = buildParser(`top { "x" }`)
+    let outer = buildParser(`external grammar x from "." top { "&" nest.x "&" }`, {nestedGrammar() { return inner }})
     ist(outer.parse("&x&").toString(TagMap.combine([inner.tags, outer.tags])), '"&","x","&"')
   })
 
   it("skips ranges with missing nested parsers", () => {
-    let outer = buildParser(`external grammar inner program { "[" nest.inner<N> "]" }`)
+    let outer = buildParser(`external grammar inner top { "[" nest.inner<N> "]" }`)
     ist(outer.parse("[lfkdsajfa]").toString(outer.tags), '"[",N,"]"')
   })
 })

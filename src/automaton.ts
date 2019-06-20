@@ -364,7 +364,7 @@ export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[nam
     let byTerm: Term[] = [], byTermPos: Pos[][] = [], atEnd: Pos[] = [], skipTerms: Term[] = []
     for (let pos of state.set) {
       if (pos.pos == pos.rule.parts.length) {
-        if (!pos.rule.name.program) atEnd.push(pos)
+        if (!pos.rule.name.top) atEnd.push(pos)
       } else {
         let next = pos.rule.parts[pos.pos]
         let index = byTerm.indexOf(next)

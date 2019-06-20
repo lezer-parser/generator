@@ -1,4 +1,4 @@
-program { specialize<name, "foo"> | extend<name, "foo"> }
+top { specialize<name, "foo"> | extend<name, "foo"> }
 
 tokens {
   name { std.asciiLetter+ }

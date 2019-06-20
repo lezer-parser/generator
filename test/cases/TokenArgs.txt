@@ -1,4 +1,4 @@
-program { (KW<"let"> | KW<"if"> | Foo)+ }
+top { (KW<"let"> | KW<"if"> | Foo)+ }
 
 skip { whitespace }
 
