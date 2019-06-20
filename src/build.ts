@@ -8,7 +8,7 @@ import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {encodeArray} from "./encode"
 import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer, NestedGrammar, InputStream, Stack} from "lezer"
-import {Action, Specialize, StateFlag, Term as T} from "lezer/src/constants"
+import {Action, Specialize, StateFlag, Term as T, Seq} from "lezer/src/constants"
 
 const none: readonly any[] = []
 
@@ -225,7 +225,7 @@ class Builder {
       }
       specializations.push(table)
     }
-    specialized.push(T.Err)
+    specialized.push(Seq.End)
 
     let tokenData = this.tokens.tokenizer(tokenMasks, tokenPrec)
     let tokStart = (tokenizer: TempExternalTokenizer | LezerTokenGroup) => {
@@ -252,10 +252,10 @@ class Builder {
         // avoids state changes entirely.
         state.actions = state.actions.filter(a => !isSimpleSkip(a, this.skipRules[i]))
       }
-      actions.push(T.Err)
+      actions.push(Seq.End)
       return data.storeArray(actions)
     })
-    let noSkip = data.storeArray([T.Err])
+    let noSkip = data.storeArray([Seq.End])
     let states = table.map(s => {
       let skip = noSkip, skipState = null
       if (s.skip != this.noSkip) {
@@ -267,7 +267,7 @@ class Builder {
     })
 
     let skipTags = this.gatherSkippedTerms().filter(t => t.tag).map(t => t.id)
-    skipTags.push(T.Err)
+    skipTags.push(Seq.End)
 
     let nested = this.nestedGrammars.map(g => ({
       name: g.name,
@@ -277,7 +277,7 @@ class Builder {
       placeholder: g.placeholder.id
     }))
 
-    let precTable = data.storeArray(tokenPrec.concat(T.Err))
+    let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
     let skipTable = data.storeArray(skipTags)
     let id = Parser.allocateID()
@@ -339,12 +339,12 @@ class Builder {
         else actions.push(action.term.id, code & Action.ValueMask, code >> 16)
       }
     }
-    if (other > -1) actions.push(T.Other, other & Action.ValueMask, other >> 16)
-    actions.push(T.Err)
+    if (other > -1) actions.push(T.Err, other & Action.ValueMask, other >> 16)
+    actions.push(Seq.End)
 
     for (let action of state.recover)
       recover.push(action.term.id, action.target.id)
-    recover.push(T.Err)
+    recover.push(Seq.End)
 
     let positions = state.set.filter(p => p.pos > 0)
     if (positions.length) {
