@@ -314,7 +314,6 @@ class Builder {
   }
 
   gatherSkippedTerms() {
-    // FIXME check that tagged things from skip rules aren't also used outside of them
     let terms: Term[] = this.skipRules.slice()
     for (let i = 0; i < terms.length; i++) {
       for (let rule of terms[i].rules) {
@@ -333,9 +332,6 @@ class Builder {
 
     let other = -1
     if (defaultReduce == 0) for (let action of state.actions) {
-      // FIXME move this to buildTokenGroups?
-      if (skipState && skipState.actions.some(a => a.term == action.term))
-        this.raise(`Use of token ${action.term.name} conflicts with skip rule`)
       if (action instanceof Shift) {
         actions.push(action.term.id, action.target.id, 0)
       } else {
@@ -367,7 +363,7 @@ class Builder {
     }
     external.sort((a, b) => a.ast.start - b.ast.start)
     let tokenizerMask = 0
-    for (let i = 0; i < tokenizers.length; i++) { // FIXME use a bitmask here
+    for (let i = 0; i < tokenizers.length; i++) {
       let tok = tokenizers[i]
       if (tok instanceof TempExternalTokenizer ? external.includes(tok.set) : tok.id == state.tokenGroup)
         tokenizerMask |= (1 << i)
@@ -954,6 +950,11 @@ class TokenSet {
         let states = skipStates[this.b.skipRules.indexOf(state.skip)]
         if (states) skip = states[0]
       }
+      if (skip) for (let action of skip.actions) {
+        if (state.actions.some(a => a.term == action.term))
+          this.b.raise(`Use of token ${action.term.name} conflicts with skip rule`)
+      }
+
       for (let i = 0; i < state.actions.length + (skip ? skip.actions.length : 0); i++) {
         let term = (i < state.actions.length ? state.actions[i] : skip!.actions[i - state.actions.length]).term
         let orig = this.b.tokenOrigins[term.name]
@@ -977,7 +978,6 @@ class TokenSet {
         }
         if (hasConflict) terms.push(term)
       }
-      // FIXME this causes us to not tokenize whitespace for states that don't match any group
       if (!hasTerms) return
 
       let tokenGroup = null

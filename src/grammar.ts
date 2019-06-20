@@ -78,8 +78,8 @@ export class TermSet {
         term.id = term.error ? T.Err : term.tag ? (taggedID += 2) : (untaggedID += 2)
     for (let term of this.terminals)
       term.id = term.eof ? T.Eof : term.tag ? (taggedID += 2) : (untaggedID += 2)
-    if (taggedID >= T.Other) throw new Error("Too many tagged terms")
-    if (untaggedID >= T.Other) throw new Error("Too many untagged terms")
+    if (taggedID >= 0xffff) throw new Error("Too many tagged terms")
+    if (untaggedID >= 0xffff) throw new Error("Too many untagged terms")
 
     for (let term of this.terminals.concat(this.nonTerminals)) if (term.id > -1) {
       if (term.tag) tags[term.id >> 1] = term.tag
