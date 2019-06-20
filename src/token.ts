@@ -138,7 +138,7 @@ export class State {
   // Each state is laid out as:
   //  - Token group mask
   //  - Offset of the end of the accepting data
-  //  - Offset of the end of the state
+  //  - Number of outgoing edges in the state
   //  - Pairs of token masks and term ids that indicate the accepting
   //    states, sorted by precedence
   //  - Triples for the edges: each with a low and high bound and the
@@ -149,9 +149,8 @@ export class State {
     this.reachable(state => {
       let start = data.length
       let acceptEnd = start + 3 + state.accepting.length * 2
-      let end = acceptEnd + state.edges.length * 3
       offsets[state.id] = start
-      data.push(state.stateMask(groupMasks), acceptEnd, end)
+      data.push(state.stateMask(groupMasks), acceptEnd, state.edges.length)
       state.accepting.sort((a, b) => precedence.indexOf(a.id) - precedence.indexOf(b.id))
       for (let term of state.accepting) data.push(term.id, groupMasks[term.id] || 0xffff)
       for (let edge of state.edges) data.push(edge.from, edge.to, -edge.target.id - 1)
