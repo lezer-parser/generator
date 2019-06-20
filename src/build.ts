@@ -7,7 +7,8 @@ import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {encodeArray} from "./encode"
-import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer, NestedGrammar, InputStream, Stack} from "lezer"
+import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer,
+        NestedGrammar, InputStream, Stack, allocateGrammarID} from "lezer"
 import {Action, Specialize, StateFlag, Term as T, Seq} from "lezer/src/constants"
 
 const none: readonly any[] = []
@@ -285,7 +286,7 @@ class Builder {
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
     let skipTable = data.storeArray(skipTags)
-    let id = Parser.allocateID()
+    let id = allocateGrammarID()
     return new Parser(id, states, data.finish(), computeGotoTable(table), TagMap.single(id, tags),
                       tokenizers, nested,
                       specTable, specializations, precTable, skipTable, names)
@@ -317,7 +318,7 @@ class Builder {
     let terms: Term[] = this.skipRules.slice()
     for (let i = 0; i < terms.length; i++) {
       for (let rule of terms[i].rules) {
-        for (let part of rule.parts) if (!terms.includes(part)) terms.push(part)
+        for (let part of rule.parts) if (part.tag && !terms.includes(part)) terms.push(part)
       }
     }
     return terms
@@ -616,6 +617,32 @@ class DataBuilder {
   }
 }
 
+// The goto table maps a start state + a term to a new state, and is
+// used to determine the new state when reducing. Because this allows
+// more more efficient representation and access, unlike the action
+// tables, the goto table is organized by term, with groups of start
+// states that map to a given end state enumerated for each term.
+// Since many terms only have a single valid goto target, this makes
+// it cheaper to look those up.
+//
+// (Unfortunately, though the standard LR parsing mechanism never
+// looks up invalid goto states, the incremental parsing mechanism
+// needs accurate goto information for a state/term pair, so we do
+// need to store state ids even for terms that have only one target.)
+//
+// - First comes the amount of terms in the table
+//
+// - Then, for each term, the offset of the term's data
+//
+// - At these offsets, there's a record for each target state
+//
+//   - Such a record starts with the amount of start states that go to
+//     this target state, shifted one to the left, with the first bit
+//     only set if this is the last record for this term.
+//
+//   - Then follows the target state id
+//
+//   - And then the start state ids
 function computeGotoTable(states: readonly LRState[]) {
   let goto: {[term: number]: {[to: number]: number[]}} = {}
   let maxTerm = 0
