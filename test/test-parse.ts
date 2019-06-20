@@ -309,7 +309,7 @@ tokens {
 `, {nestedGrammar() { return nest }})
 
     function nest(stream: InputStream, stack: Stack) {
-      let tag = /<(\w+)>$/.exec(stream.read(stack.ruleStart, stream.pos))
+      let tag = /<(\w+)>$/.exec(stream.read(stack.ruleStart, stack.pos))
       if (!tag || !["textarea", "script", "style"].includes(tag[1])) return {stay: true}
       return {
         parser: inner,

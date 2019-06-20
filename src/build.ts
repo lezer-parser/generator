@@ -8,7 +8,7 @@ import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {encodeArray} from "./encode"
 import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer,
-        NestedGrammar, InputStream, Stack, allocateGrammarID} from "lezer"
+        NestedGrammar, InputStream, Token, Stack, allocateGrammarID} from "lezer"
 import {Action, Specialize, StateFlag, Term as T, Seq} from "lezer/src/constants"
 
 const none: readonly any[] = []
@@ -1136,8 +1136,8 @@ class TempExternalTokenizer {
     return this._inner
   }
   
-  token(stream: any, stack: any) {
-    this.inner.token(stream, stack)
+  token(stream: InputStream, token: Token, stack: any) {
+    this.inner.token(stream, token, stack)
   }
 
   get contextual() { return this.inner.contextual }

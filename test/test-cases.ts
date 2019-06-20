@@ -1,5 +1,5 @@
 import {buildParser} from ".."
-import {Parser, StringStream, ExternalTokenizer, InputStream} from "lezer"
+import {Parser, StringStream, ExternalTokenizer, InputStream, Token} from "lezer"
 const ist = require("ist")
 
 let fs = require("fs"), path = require("path")
@@ -27,11 +27,12 @@ function dropQuoted(ast: string) {
 }
 
 function externalTokenizer(name: string, terms: {[name: string]: number}) {
-  if (name == "ext1") return new ExternalTokenizer((input: InputStream) => {
-    let next = input.next()
-    if (next == "{".charCodeAt(0)) input.accept(terms.braceOpen)
-    else if (next == "}".charCodeAt(0)) input.accept(terms.braceClose)
-    else if (next == ".".charCodeAt(0)) input.accept(terms.dot)
+  if (name == "ext1") return new ExternalTokenizer((input: InputStream, token: Token) => {
+    let pos = token.start
+    let next = input.get(pos++)
+    if (next == "{".charCodeAt(0)) token.accept(terms.braceOpen, pos)
+    else if (next == "}".charCodeAt(0)) token.accept(terms.braceClose, pos)
+    else if (next == ".".charCodeAt(0)) token.accept(terms.dot, pos)
   })
   throw new Error("Undefined external tokenizer " + name)
 }
