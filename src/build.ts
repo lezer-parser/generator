@@ -237,7 +237,7 @@ class Builder {
       .concat(this.externalTokens.map(ext => new TempExternalTokenizer(ext, this.termTable)))
       .sort((a, b) => tokStart(a) - tokStart(b))
 
-    let data = new StateDataBuilder
+    let data = new DataBuilder
     let skipData = skipStartStates.map((state, i) => {
       let actions: number[] = []
       if (state) {
@@ -320,7 +320,7 @@ class Builder {
   }
 
   finishState(state: LRState, tokenizers: (LezerTokenGroup | TempExternalTokenizer)[],
-              data: StateDataBuilder, skipTable: number, skipState: LRState | null, isSkip: boolean) {
+              data: DataBuilder, skipTable: number, skipState: LRState | null, isSkip: boolean) {
     let actions = [], recover = [], forcedReduce = 0
     let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, state.partOfSkip) : 0
     let flags = (isSkip ? StateFlag.Skipped : 0) |
@@ -584,21 +584,27 @@ function isSimpleSkip(action: Shift | Reduce, skipRule: Term) {
   return action instanceof Shift && !!action.target.defaultReduce && action.target.defaultReduce.name == skipRule
 }
 
-class StateDataBuilder {
+function findArray(data: number[], value: number[]) {
+  search: for (let i = 0;;) {
+    let next = data.indexOf(value[0], i)
+    if (next == -1 || next + value.length > data.length) break
+    for (let j = 1; j < value.length; j++) {
+      if (value[j] != data[next + j]) {
+        i = next + 1
+        continue search
+      }
+    }
+    return next
+  }
+  return -1
+}
+
+class DataBuilder {
   data: number[] = []
 
   storeArray(data: number[]) {
-    search: for (let i = 0;;) {
-      let next = this.data.indexOf(data[0], i)
-      if (next == -1 || next + data.length > this.data.length) break
-      for (let j = 1; j < data.length; j++) {
-        if (data[j] != this.data[next + j]) {
-          i = next + 1
-          continue search
-        }
-      }
-      return next
-    }
+    let found = findArray(this.data, data)
+    if (found > -1) return found
     let pos = this.data.length
     for (let num of data) this.data.push(num)
     return pos
@@ -618,24 +624,29 @@ function computeGotoTable(states: readonly LRState[]) {
       let set = goto[entry.term.id] || (goto[entry.term.id] = {})
       ;(set[entry.target.id] || (set[entry.target.id] = [])).push(state.id)
     }
-  let data: number[] = [], index: number[] = []
+  let data = new DataBuilder
+  let index: number[] = []
+  let offset = maxTerm + 2 // Offset of the data, taking index size into account
+
   for (let term = 0; term <= maxTerm; term++) {
     let entries = goto[term]
     if (!entries) {
       index.push(1)
       continue
     }
-    index.push(data.length + maxTerm + 2) // Offset of the data, taking index size into account
+    let termTable: number[] = []
     let keys = Object.keys(entries)
     for (let target of keys) {
       let list = entries[target as any]
-      data.push((target == keys[keys.length - 1] ? 1 : 0) + (list.length << 1))
-      data.push(+target)
-      for (let source of list) data.push(source)
+      termTable.push((target == keys[keys.length - 1] ? 1 : 0) + (list.length << 1))
+      termTable.push(+target)
+      for (let source of list) termTable.push(source)
     }
+    index.push(data.storeArray(termTable) + offset)
   }
+  if (index.some(n => n > 0xffff)) throw new Error("Goto table too large")
 
-  return Uint16Array.from([maxTerm + 1, ...index, ...data])
+  return Uint16Array.from([maxTerm + 1, ...index, ...data.data])
 }
 
 class TokenGroup {
