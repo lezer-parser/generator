@@ -1,5 +1,5 @@
 import {buildParser} from ".."
-import {Parser, StringStream, ExternalTokenizer, InputStream, Token} from "lezer"
+import {Parser, ExternalTokenizer, InputStream, Token} from "lezer"
 const ist = require("ist")
 
 let fs = require("fs"), path = require("path")
@@ -63,7 +63,7 @@ describe("Cases", () => {
       if (!ast) throw new Error(`Missing syntax tree in ${name}:${i + 1}`)
       let expected = compressAST(ast, file)
       let strict = expected.indexOf("⚠") < 0, parser = force()
-      let result = parser.parse(new StringStream(text.trim()), {strict})
+      let result = parser.parse(text.trim(), {strict})
       let parsed = result.toString(parser.tags)
       if (!/"/.test(expected)) parsed = dropQuoted(parsed)
       if (parsed != expected) {
