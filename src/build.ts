@@ -7,9 +7,9 @@ import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {encodeArray} from "./encode"
-import {Parser, TagMap, ParseState, TokenGroup as LezerTokenGroup, ExternalTokenizer,
+import {Parser, TagMap, TokenGroup as LezerTokenGroup, ExternalTokenizer,
         NestedGrammar, InputStream, Token, Stack, allocateGrammarID} from "lezer"
-import {Action, Specialize, StateFlag, Term as T, Seq} from "lezer/src/constants"
+import {Action, Specialize, StateFlag, Term as T, Seq, ParseState} from "lezer/src/constants"
 
 const none: readonly any[] = []
 
@@ -262,15 +262,16 @@ class Builder {
       return data.storeArray(actions)
     })
     let noSkip = data.storeArray([Seq.End])
-    let states = table.map(s => {
+    let states = new Uint32Array(table.length * ParseState.Size)
+    for (let s of table) {
       let skip = noSkip, skipState = null
       if (s.skip != this.noSkip) {
         let index = this.skipRules.indexOf(s.skip)
         skip = skipData[index]
         skipState = skipStartStates[index]
       }
-      return this.finishState(s, tokenizers, data, skip, skipState, s.id >= firstSkipState)
-    })
+      this.finishState(s, tokenizers, data, skip, skipState, s.id >= firstSkipState, states)
+    }
 
     let skipTags = this.gatherSkippedTerms().filter(t => t.tag).map(t => t.id)
     skipTags.push(Seq.End)
@@ -325,7 +326,8 @@ class Builder {
   }
 
   finishState(state: LRState, tokenizers: (LezerTokenGroup | TempExternalTokenizer)[],
-              data: DataBuilder, skipTable: number, skipState: LRState | null, isSkip: boolean) {
+              data: DataBuilder, skipTable: number, skipState: LRState | null, isSkip: boolean,
+              stateArray: Uint32Array) {
     let actions = [], recover = [], forcedReduce = 0
     let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, state.partOfSkip) : 0
     let flags = (isSkip ? StateFlag.Skipped : 0) |
@@ -370,13 +372,14 @@ class Builder {
         tokenizerMask |= (1 << i)
     }
 
-    return new ParseState(state.id, flags,
-                          data.storeArray(actions),
-                          data.storeArray(recover),
-                          skipTable,
-                          tokenizerMask,
-                          defaultReduce,
-                          forcedReduce)
+    let base = state.id * ParseState.Size
+    stateArray[base + ParseState.Flags] = flags
+    stateArray[base + ParseState.Actions] = data.storeArray(actions)
+    stateArray[base + ParseState.Recover] = data.storeArray(recover)
+    stateArray[base + ParseState.Skip] = skipTable
+    stateArray[base + ParseState.TokenizerMask] = tokenizerMask
+    stateArray[base + ParseState.DefaultReduce] = defaultReduce
+    stateArray[base + ParseState.ForcedReduce] = forcedReduce
   }
 
   substituteArgs(expr: Expression, args: readonly Expression[], params: readonly Identifier[]) {
@@ -1236,14 +1239,6 @@ export function buildParser(text: string, options: BuildOptions = {}): Parser {
   return new Builder(text, options).getParser()
 }
 
-function flattenStates(states: readonly ParseState[]): number[] {
-  let data = []
-  for (let state of states) {
-    data.push(state.flags, state.actions, state.recover, state.skip, state.tokenizerMask, state.defaultReduce, state.forcedReduce)
-  }
-  return data
-}
-
 const KEYWORDS = ["break", "case", "catch", "continue", "debugger", "default", "do", "else", "finally",
                   "for", "function", "if", "return", "switch", "throw", "try", "var", "while", "with",
                   "null", "true", "false", "instanceof", "typeof", "void", "delete", "new", "in", "this",
@@ -1321,7 +1316,7 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${type}, ${placeholder}]`
   }
 
   let parserStr = `Parser.deserialize(
-  ${encodeArray(flattenStates(parser.states), 0xffffffff)},
+  ${encodeArray(parser.states, 0xffffffff)},
   ${encodeArray(parser.data)},
   ${encodeArray(parser.goto)},
   [${tagArray.join(",")}],
