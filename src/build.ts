@@ -73,12 +73,26 @@ class BuiltRule {
 }
 
 export type BuildOptions = {
+  /// The name of the grammar file
   fileName?: string,
+  /// A function that should be called with warnings. The default is
+  /// to call `console.warn`.
   warn?: (message: string) => void,
+  /// Whether to include term names in the output file. Defaults to
+  /// false.
   includeNames?: boolean,
+  /// Determines the module system used by the output file. Can be
+  /// either `"cjs"` (CommonJS) or `"es"` (ES2015 module), defaults to
+  /// `"es"`.
   moduleStyle?: string,
+  /// The name of the export that holds the parser in the output file.
+  /// Defaults to `"parser"`.
   exportName?: string,
+  /// When calling `buildParser`, this can be used to provide
+  /// placeholders for external tokenizers.
   externalTokenizer?: (name: string, terms: {[name: string]: number}) => ExternalTokenizer
+  /// Only relevant when using `buildParser`. Provides placeholders
+  /// for nested grammars.
   nestedGrammar?: (name: string, terms: {[name: string]: number}) => NestedGrammar
 }
 
@@ -1235,6 +1249,11 @@ function simplifyRules(rules: readonly Rule[], preserve: readonly Term[]): reado
   return mergeRules(inlineRules(rules, preserve))
 }
 
+/// Build an in-memory parser instance for a given grammar. This is
+/// mostly useful for testing. If your grammar uses external
+/// tokenizers or nested grammars, you'll have to provide the
+/// `externalTokenizer` and/or `nestedGrammar` options for the
+/// returned parser to be able to parse anything.
 export function buildParser(text: string, options: BuildOptions = {}): Parser {
   return new Builder(text, options).getParser()
 }
@@ -1245,6 +1264,15 @@ const KEYWORDS = ["break", "case", "catch", "continue", "debugger", "default", "
                   "const", "class", "extends", "export", "import", "super", "enum", "implements", "interface",
                   "let", "package", "private", "protected", "public", "static", "yield"]
 
+/// Build the code that represents the parser tables for a given
+/// grammar description. The `parser` property in the return value
+/// holds the main file that exports the `Parser` instance. The
+/// `terms` property holds a declaration file that defines constants
+/// for all of the named terms in grammar, holding their ids as value.
+/// This is useful when external code, such as a tokenizer, needs to
+/// be able to use these ids. It is recommended to run a tree-shaking
+/// bundler when importing this file, since you usually only need a
+/// handful of the many terms in your code.
 export function buildParserFile(text: string, options: BuildOptions = {}): {parser: string, terms: string} {
   let builder = new Builder(text, options), parser = builder.getParser()
   let mod = options.moduleStyle || "cjs"
@@ -1337,10 +1365,13 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${type}, ${placeholder}]`
       id = "_".repeat(i) + name
       if (!(id in builder.termTable)) break
     }
-    terms.push(`${id} = ${builder.termTable[name]}`)
+    terms.push(`${id}${mod == "cjs" ? ":" : " ="} ${builder.termTable[name]}`)
   }
 
   let exportName = options.exportName || "parser"
-  return {parser: head + (mod == "cjs" ? `exports.${exportName} = ${parserStr}\n` : `export const ${exportName} = ${parserStr}\n`),
-          terms: `${gen}export const\n  ${terms.join(",\n  ")}\n`}
+  return {
+    parser: head + (mod == "cjs" ? `exports.${exportName} = ${parserStr}\n` : `export const ${exportName} = ${parserStr}\n`),
+    terms: mod == "cjs" ? `${gen}module.exports = {\n  ${terms.join(",\n  ")}\n}`
+      : `${gen}export const\n  ${terms.join(",\n  ")}\n`
+  }
 }
