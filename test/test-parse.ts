@@ -21,7 +21,7 @@ function shared(a: Tree, b: Tree) {
 }
 
 function change(tree: Tree, ...changes: ([number, number] | [number, number, number, number])[]) {
-  return tree.unchanged(changes.map(([fromA, toA, fromB = fromA, toB = toA]) => ({fromA, toA, fromB, toB})))
+  return tree.applyChanges(changes.map(([fromA, toA, fromB = fromA, toB = toA]) => ({fromA, toA, fromB, toB})))
 }
 
 describe("parsing", () => {
