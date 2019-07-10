@@ -139,9 +139,9 @@ class Builder {
     let scopedSkip: Term[] = []
     for (let rule of this.ast.rules) this.astRules.push({skip: mainSkip, rule})
     for (let scoped of this.ast.scopedSkip) {
-      let skip = this.noSkip, found = this.ast.scopedSkip.findIndex((sc, i) => i < scopedSkip.length && sc.expr.eq(scoped.expr))
+      let skip = this.noSkip, found = this.ast.scopedSkip.findIndex((sc, i) => i < scopedSkip.length && exprEq(sc.expr, scoped.expr))
       if (found > -1) skip = scopedSkip[found]
-      else if (this.ast.mainSkip && scoped.expr.eq(this.ast.mainSkip)) skip = mainSkip
+      else if (this.ast.mainSkip && exprEq(scoped.expr, this.ast.mainSkip)) skip = mainSkip
       else if (!isEmpty(scoped.expr)) skip = this.newName("%skip", true)
       scopedSkip.push(skip)
       for (let rule of scoped.rules) this.astRules.push({skip, rule})
