@@ -374,7 +374,7 @@ export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[nam
           byTermPos.push([pos.advance()])
           skipTerms.push(skip)
         } else {
-          if (skipTerms[index] != skip) new Error("Inconsistent skip sets after " + pos.trail())
+          if (skipTerms[index] != skip) throw new Error("Inconsistent skip sets after " + pos.advance().trail())
           byTermPos[index].push(pos.advance())
         }
       }

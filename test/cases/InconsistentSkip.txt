@@ -1,0 +1,11 @@
+top { A+ }
+
+skip { space }
+
+skip {} {
+  A { "a" "b"? }
+}
+
+tokens { space { " "+ } }
+
+//! Inconsistent skip sets
