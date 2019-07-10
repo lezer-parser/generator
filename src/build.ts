@@ -1124,7 +1124,7 @@ class ExternalTokenSet {
   constructor(readonly b: Builder, readonly ast: ExternalTokenDeclaration) {
     for (let token of ast.tokens) {
       b.unique(token.id)
-      let term = b.makeTerminal(token.id.name, token.tag ? token.tag.name : null)
+      let term = b.makeTerminal(token.id.name, token.tag ? token.tag.name : isTag(token.id.name))
       b.namedTerms[token.id.name] = this.tokens[token.id.name] = term
       this.b.tokenOrigins[term.name] = this
     }
