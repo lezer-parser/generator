@@ -137,10 +137,7 @@ function parseTop(input: Input) {
       if (input.type == "{") {
         input.next()
         let scoped = []
-        while (!input.eat("}")) {
-          if (scoped.length) input.expect(",")
-          scoped.push(parseRule(input, false))
-        }
+        while (!input.eat("}")) scoped.push(parseRule(input, false))
         scopedSkip.push({expr: skip, rules: scoped})
       } else {
         if (mainSkip) input.raise(`Multiple top-level skip declarations`, input.start)
