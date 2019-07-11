@@ -564,8 +564,13 @@ class Builder {
 
   resolveSpecialization(expr: NamedExpression, type: string) {
     if (expr.args.length < 2 || expr.args.length > 3) this.raise(`'${type}' takes two or three arguments`, expr.start)
-    if (!(expr.args[1] instanceof LiteralExpression))
-      this.raise(`The second argument to '${type}' must be a literal`, expr.args[1].start)
+    let values, nameArg = expr.args[1]
+    if (nameArg instanceof LiteralExpression)
+      values = [nameArg.value]
+    else if ((nameArg instanceof ChoiceExpression) && nameArg.exprs.every(e => e instanceof LiteralExpression))
+      values = nameArg.exprs.map(expr => (expr as LiteralExpression).value)
+    else
+      return this.raise(`The second argument to '${type}' must be a literal or choice of literals`, expr.args[1].start)
     let tag = null
     if (expr.args.length == 3) {
       let tagArg = expr.args[2]
@@ -576,19 +581,23 @@ class Builder {
     let terminal = this.normalizeExpr(expr.args[0])
     if (terminal.length != 1 || terminal[0].terms.length != 1 || !terminal[0].terms[0].terminal)
       this.raise(`The first argument to '${type}' must resolve to a token`, expr.args[0].start)
-    let term = terminal[0].terms[0], value = (expr.args[1] as LiteralExpression).value
+    let term = terminal[0].terms[0], token = null
     let table = this.specialized[term.name] || (this.specialized[term.name] = [])
-    let known = table.find(sp => sp.value == value), token
-    if (known == null) {
-      token = this.makeTerminal(term.name + "/" + JSON.stringify(value), tag)
-      table.push({value, term: token, type})
-      this.tokenOrigins[token.name] = term
-    } else {
-      if (known.type != type)
-        this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`, expr.start)
-      token = known.term
+    for (let value of values) {
+      let known = table.find(sp => sp.value == value)
+      if (known == null) {
+        if (!token) token = this.makeTerminal(term.name + "/" + JSON.stringify(value), tag)
+        table.push({value, term: token, type})
+        this.tokenOrigins[token.name] = term
+      } else {
+        if (known.type != type)
+          this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`, expr.start)
+        if (token && known.term != token)
+          this.raise(`Conflicting specialization tokens for ${JSON.stringify(value)} of ${term.name}`, expr.start)
+        token = known.term
+      }
     }
-    return token
+    return token!
   }
 }
 
