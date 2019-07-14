@@ -1,15 +1,16 @@
 import {Term, TermSet, Rule, cmpSet, Conflicts, union} from "./grammar"
 import {hash, hashString} from "./hash"
 
-export class Pos {
+class Pos {
   hash: number
 
   constructor(readonly rule: Rule,
               readonly pos: number,
               readonly ahead: readonly Term[],
               readonly ambigAhead: readonly string[],
+              readonly skipAhead: Term,
               readonly prev: Pos | null) {
-    let h = hash(rule.id, pos)
+    let h = hash(hash(rule.id, pos), skipAhead.hash)
     for (let a of this.ahead) h = hash(h, a.hash)
     for (let group of ambigAhead) h = hashString(h, group)
     this.hash = h
@@ -20,15 +21,19 @@ export class Pos {
   }
 
   advance() {
-    return new Pos(this.rule, this.pos + 1, this.ahead, this.ambigAhead, this)
+    return new Pos(this.rule, this.pos + 1, this.ahead, this.ambigAhead, this.skipAhead, this)
   }
 
   reverse() {
-    return new Pos(this.rule, this.pos - 1, this.ahead, this.ambigAhead, this.prev!.prev)
+    return new Pos(this.rule, this.pos - 1, this.ahead, this.ambigAhead, this.skipAhead, this.prev!.prev)
+  }
+
+  get skip() {
+    return this.pos == this.rule.parts.length ? this.skipAhead : this.rule.skip
   }
 
   cmp(pos: Pos) {
-    return this.rule.cmp(pos.rule) || this.pos - pos.pos ||
+    return this.rule.cmp(pos.rule) || this.pos - pos.pos || this.skipAhead.hash - pos.skipAhead.hash ||
       cmpSet(this.ahead, pos.ahead, (a, b) => a.cmp(b)) || cmpSet(this.ambigAhead, pos.ambigAhead, cmpStr)
   }
 
@@ -44,7 +49,7 @@ export class Pos {
 
   eq(other: Pos) {
     return this == other ||
-      this.hash == other.hash && this.rule == other.rule && this.pos == other.pos &&
+      this.hash == other.hash && this.rule == other.rule && this.pos == other.pos && this.skipAhead == other.skipAhead &&
       sameSet(this.ahead, other.ahead) &&
       sameSet(this.ambigAhead, other.ambigAhead)
   }
@@ -255,19 +260,22 @@ class AddedPos {
               readonly ahead: Term[],
               readonly origIndex: number,
               public ambigAhead: readonly string[],
+              readonly skipAhead: Term,
               readonly prev: Pos | null) {}
 }
 
 function closure(set: readonly Pos[], first: {[name: string]: Term[]}) {
   let added: AddedPos[] = [], redo: AddedPos[] = []
-  function addFor(name: Term, ahead: readonly Term[], ambigAhead: readonly string[], prev: Pos | null) {
+  function addFor(name: Term, ahead: readonly Term[], ambigAhead: readonly string[], skipAhead: Term, prev: Pos | null) {
     for (let rule of name.rules) {
       let add = added.find(a => a.rule == rule)
       if (!add) {
         let existing = set.findIndex(p => p.pos == 0 && p.rule == rule)
-        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing, ambigAhead, prev)
+        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing, ambigAhead, skipAhead, prev)
         added.push(add)
       } else {
+        if (add.skipAhead != skipAhead)
+          throw new Error("Inconsistent skip sets after " + add.prev!.trail())
         add.ambigAhead = union(add.ambigAhead, ambigAhead)
       }
       for (let term of ahead) if (!add.ahead.includes(term)) {
@@ -281,18 +289,18 @@ function closure(set: readonly Pos[], first: {[name: string]: Term[]}) {
     let next = pos.next
     if (next && !next.terminal)
       addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first),
-             pos.conflicts(pos.pos + 1).ambigGroups, pos.prev)
+             pos.conflicts(pos.pos + 1).ambigGroups, pos.pos == pos.rule.parts.length - 1 ? pos.skipAhead : pos.rule.skip, pos.prev)
   }
   while (redo.length) {
     let add = redo.pop()!
     addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first),
            union(add.rule.conflicts[1].ambigGroups, add.rule.parts.length == 1 ? add.ambigAhead : none),
-           add.prev)
+           add.skipAhead, add.prev)
   }
 
   let result = set.slice()
   for (let add of added) {
-    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.ambigAhead, add.prev)
+    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.ambigAhead, add.skipAhead, add.prev)
     if (add.origIndex > -1) result[add.origIndex] = pos
     else result.push(pos)
   }
@@ -338,9 +346,14 @@ class Core {
 export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[name: string]: Term[]}) {
   let states: State[] = []
   let cores: {[hash: number]: Core[]} = {}
-  function getState(core: readonly Pos[], skip: Term) {
+  function getState(core: readonly Pos[]) {
     if (core.length == 0) return null
     let coreHash = hashPositions(core), byHash = cores[coreHash]
+    let skip: Term
+    for (let pos of core) {
+      if (!skip) skip = pos.skip
+      else if (skip != pos.skip) throw new Error("Inconsistent skip sets after " + pos.trail())
+    }
     if (byHash) for (let known of byHash) if (eqSet(core, known.set)) {
       if (known.state.skip != skip) throw new Error("Inconsistent skip sets after " + known.set[0].trail())
       return known.state
@@ -350,43 +363,40 @@ export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[nam
     let hash = hashPositions(set), found
     for (let state of states) if (state.hash == hash && state.hasSet(set)) found = state
     if (!found) {
-      found = new State(states.length, set, 0, skip, hash)
+      found = new State(states.length, set, 0, skip!, hash)
       states.push(found)
     }
     ;(cores[coreHash] || (cores[coreHash] = [])).push(new Core(core, found))
     return found
   }
-  getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, null)),
-           startTerm.rules.length ? startTerm.rules[0].skip : terms.nonTerminals.find(t => t.name == "%noskip")!)
+  let startSkip = startTerm.rules.length ? startTerm.rules[0].skip : terms.nonTerminals.find(t => t.name == "%noskip")!
+  getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null)))
 
   for (let filled = 0; filled < states.length; filled++) {
     let state = states[filled]
-    let byTerm: Term[] = [], byTermPos: Pos[][] = [], atEnd: Pos[] = [], skipTerms: Term[] = []
+    let byTerm: Term[] = [], byTermPos: Pos[][] = [], atEnd: Pos[] = []
     for (let pos of state.set) {
       if (pos.pos == pos.rule.parts.length) {
         if (!pos.rule.name.top) atEnd.push(pos)
       } else {
         let next = pos.rule.parts[pos.pos]
         let index = byTerm.indexOf(next)
-        let skip = pos.pos == pos.rule.parts.length - 1 ? state.skip : pos.rule.skip
         if (index < 0) {
           byTerm.push(next)
           byTermPos.push([pos.advance()])
-          skipTerms.push(skip)
         } else {
-          if (skipTerms[index] != skip) throw new Error("Inconsistent skip sets after " + pos.advance().trail())
           byTermPos[index].push(pos.advance())
         }
       }
     }
     for (let i = 0; i < byTerm.length; i++) {
-      let term = byTerm[i], skip = skipTerms[i]
+      let term = byTerm[i]
       if (term.terminal) {
         let set = applyCut(byTermPos[i])
-        let next = getState(set, skip)
+        let next = getState(set)
         if (next) state.addAction(new Shift(term, next), set.map(p => p.reverse()))
       } else {
-        let goto = getState(byTermPos[i], skip)
+        let goto = getState(byTermPos[i])
         if (goto) state.goto.push(new Shift(term, goto))
       }
     }
