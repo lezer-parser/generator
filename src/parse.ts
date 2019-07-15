@@ -150,15 +150,25 @@ function parseTop(input: Input) {
   return new GrammarDeclaration(start, rules, tokens, external, prec, mainSkip, scopedSkip, nested)
 }
 
+function parseTag(input: Input) {
+  if (!input.eat("=")) return null
+  if (input.type == "string" && input.value.length) {
+    let result = new LiteralExpression(input.start, input.value)
+    input.next()
+    return result
+  }
+  return parseIdent(input)
+}
+
 function parseRule(input: Input, isToken: boolean) {
-  let id = parseIdent(input), params: Identifier[] = [], tag: Identifier | null = null
+  let id = parseIdent(input), params: Identifier[] = []
   let start = input.start
 
   if (input.eat("<")) while (!input.eat(">")) {
     if (params.length) input.expect(",")
     params.push(parseIdent(input))
   }
-  if (input.eat("=")) tag = parseIdent(input)
+  let tag = parseTag(input)
   let expr = parseBracedExpr(input)
   return new RuleDeclaration(start, id, tag, params, expr)
 }
@@ -334,12 +344,12 @@ function parseExternalTokens(start: number, input: Input) {
   input.expect("id", "from")
   let from = input.value
   input.expect("string")
-  let tokens: {id: Identifier, tag: Identifier | null}[] = []
+  let tokens: {id: Identifier, tag: Identifier | LiteralExpression | null}[] = []
   input.expect("{")
   while (!input.eat("}")) {
     if (tokens.length) input.expect(",")
     let id = parseIdent(input)
-    let tag = input.eat("=") ? parseIdent(input) : null
+    let tag = parseTag(input)
     tokens.push({id, tag})
   }
   return new ExternalTokenDeclaration(start, id, from, tokens)

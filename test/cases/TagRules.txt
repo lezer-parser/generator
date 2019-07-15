@@ -3,7 +3,7 @@ top { (a | b | specialize<i, "ii", I>)+ }
 a=A { "a" }
 
 tokens {
-  b=B { "b" }
+  b="$B" { "b" }
   i { "i"+ }
 }
 
@@ -11,4 +11,4 @@ tokens {
 
 abaii
 
-==> A, B, A, I
+==> A, $B, A, I

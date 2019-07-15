@@ -19,7 +19,7 @@ export class GrammarDeclaration extends Node {
 export class RuleDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
-              readonly tag: Identifier | null,
+              readonly tag: Identifier | LiteralExpression | null,
               readonly params: readonly Identifier[],
               readonly expr: Expression) {
     super(start)
@@ -59,7 +59,7 @@ export class ExternalTokenDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
               readonly source: string,
-              readonly tokens: readonly {id: Identifier, tag: Identifier | null}[]) {
+              readonly tokens: readonly {id: Identifier, tag: Identifier | LiteralExpression | null}[]) {
     super(start)
   }
 }

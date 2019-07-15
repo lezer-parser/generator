@@ -53,7 +53,8 @@ function p(...terms: Term[]) { return new Parts(terms, null) }
 
 const reserved = ["specialize", "extend", "skip"]
 
-function isTag(name: string) {
+function getTag(name: string, tag: null | Identifier | LiteralExpression) {
+  if (tag) return tag instanceof Identifier ? tag.name : tag.value
   let ch0 = name[0]
   return ch0.toUpperCase() == ch0 && ch0 != "_" ? name : null
 }
@@ -557,7 +558,7 @@ class Builder {
     this.used(rule.id.name)
     let name = rule.id.name == "top" ? this.terms.top :
       this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
-                   rule.tag ? rule.tag.name : isTag(rule.id.name) || true)
+                   getTag(rule.id.name, rule.tag) || true)
     if (args.length == 0) this.namedTerms[rule.id.name] = name
     this.built.push(new BuiltRule(rule.id.name, args, name))
     this.currentSkip.push(skip)
@@ -828,7 +829,7 @@ class TokenSet {
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    let term = this.b.makeTerminal(expr.toString(), rule.tag ? rule.tag.name : isTag(name))
+    let term = this.b.makeTerminal(expr.toString(), getTag(rule.id.name, rule.tag))
     if (expr.args.length == 0) this.b.namedTerms[expr.id.name] = term
     this.buildRule(rule, expr, this.startState, new State([term]))
     this.built.push(new BuiltRule(name, expr.args, term))
@@ -1137,7 +1138,7 @@ class ExternalTokenSet {
   constructor(readonly b: Builder, readonly ast: ExternalTokenDeclaration) {
     for (let token of ast.tokens) {
       b.unique(token.id)
-      let term = b.makeTerminal(token.id.name, token.tag ? token.tag.name : isTag(token.id.name))
+      let term = b.makeTerminal(token.id.name, getTag(token.id.name, token.tag))
       b.namedTerms[token.id.name] = this.tokens[token.id.name] = term
       this.b.tokenOrigins[term.name] = this
     }
