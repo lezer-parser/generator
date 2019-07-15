@@ -375,8 +375,12 @@ class Builder {
 
     let external: ExternalTokenSet[] = []
     for (let {term} of state.actions) {
-      let orig = this.tokenOrigins[term.name]
-      if (orig instanceof ExternalTokenSet) addToSet(external, orig)
+      for (;;) {
+        let orig = this.tokenOrigins[term.name]
+        if (orig instanceof Term) { term = orig; continue }
+        if (orig instanceof ExternalTokenSet) addToSet(external, orig)
+        break
+      }
     }
     external.sort((a, b) => a.ast.start - b.ast.start)
     let tokenizerMask = 0
