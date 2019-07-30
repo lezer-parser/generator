@@ -1,6 +1,7 @@
 import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
+        TaggedExpression, TagExpression, Tag, TagPart, ValueTag, TagInterpolation, TagName,
         exprsEq, exprEq} from "./node"
 import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {State, MAX_CHAR} from "./token"
@@ -52,12 +53,6 @@ class Parts {
 function p(...terms: Term[]) { return new Parts(terms, null) }
 
 const reserved = ["specialize", "extend", "skip"]
-
-function getTag(name: string, tag: null | Identifier | LiteralExpression) {
-  if (tag) return tag instanceof Identifier ? tag.name : tag.value
-  let ch0 = name[0]
-  return ch0.toUpperCase() == ch0 && ch0 != "_" ? name : null
-}
 
 class BuiltRule {
   constructor(readonly id: string,
@@ -125,7 +120,6 @@ class Builder {
     this.tokens = new TokenSet(this, this.ast.tokens)
     this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
 
-    this.defineNamespace("tag", new TagNamespace)
     this.defineNamespace("nest", new NestNamespace)
 
     this.noSkip = this.newName("%noskip", true)
@@ -414,9 +408,39 @@ class Builder {
           this.raise(`Passing arguments to a parameter that already has arguments`, expr.start)
         }
         return arg
+      } else if (expr instanceof TaggedExpression) {
+        return new TaggedExpression(expr.start, expr.expr, this.substituteArgsInTag(expr.tag, args, params))
+      } else if (expr instanceof TagExpression) {
+        return new TagExpression(expr.start, this.substituteArgsInTag(expr.tag, args, params))
       }
       return expr
     })
+  }
+
+  substituteArgsInTag(tag: Tag, args: readonly Expression[], params: readonly Identifier[]) {
+    function substParts(parts: readonly TagPart[]) {
+      let result = []
+      for (let part of parts) for (let p of substPart(part)) result.push(p)
+      return result
+    }
+    let substPart = (part: TagPart): readonly TagPart[] => {
+      let index
+      if (part instanceof TagInterpolation && (index = params.findIndex(p => p.name == part.id.name)) > -1) {
+        let value = args[index]
+        if (value instanceof Identifier) return [new TagName(value.start, value.name)]
+        if (value instanceof LiteralExpression && value.value.length) return [new TagName(value.start, value.value)]
+        if (value instanceof TagExpression) return substParts(value.tag.parts)
+        return this.raise(`Expression '${value}' can't be used in a tag`, value.start)
+      } else if (part instanceof ValueTag) {
+        let name = substPart(part.name), val = substPart(part.value)
+        if (name.length != 1) this.raise(`Using a composite tag as tag name`, part.name.start)
+        if (val.length != 1) this.raise(`Using a composite tag as tag value`, part.value.start) 
+        return [new ValueTag(part.start, name[0], val[0])]
+      } else {
+        return [part]
+      }
+    }
+    return new Tag(tag.start, substParts(tag.parts))
   }
 
   conflictsFor(markers: readonly ConflictMarker[]) {
@@ -548,6 +572,9 @@ class Builder {
       return [p(this.tokens.getLiteral(expr)!)]
     } else if (expr instanceof NamedExpression) {
       return this.resolve(expr)
+    } else if (expr instanceof TaggedExpression) {
+      let tag = this.finishTag(expr.tag)!, name = this.newName(`tag.${tag}`, tag)
+      return [p(this.defineRule(name, this.normalizeExpr(expr.expr)))]
     } else {
       return this.raise("This type of expression may not occur in non-token rules", expr.start)
     }
@@ -558,13 +585,23 @@ class Builder {
     this.used(rule.id.name)
     let name = rule.id.name == "top" ? this.terms.top :
       this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
-                   getTag(rule.id.name, rule.tag) || true)
+                   this.finishTag(rule.tag) || true)
     if (args.length == 0) this.namedTerms[rule.id.name] = name
     this.built.push(new BuiltRule(rule.id.name, args, name))
     this.currentSkip.push(skip)
     let result = this.defineRule(name, this.normalizeExpr(expr))
     this.currentSkip.pop()
     return result
+  }
+
+  finishTag(tag: Tag | null): string | null {
+    return tag && tag.parts.map(part => this.finishTagPart(part)).join(".")
+  }
+
+  finishTagPart(part: TagPart): string {
+    if (part instanceof ValueTag) return this.finishTagPart(part.name) + "=" + this.finishTagPart(part.value)
+    if (part instanceof TagInterpolation) return this.raise(`Tag interpolation '${part}' does not refer to a rule parameter`, part.start)
+    return part.toString()
   }
 
   resolveSpecialization(expr: NamedExpression, type: string) {
@@ -578,10 +615,9 @@ class Builder {
       return this.raise(`The second argument to '${type}' must be a literal or choice of literals`, expr.args[1].start)
     let tag = null
     if (expr.args.length == 3) {
-      let tagArg = expr.args[2]
-      if (!(tagArg instanceof NamedExpression) || tagArg.args.length)
-        return this.raise(`The third argument to '${type}' must be a name (without arguments)`)
-      tag = tagArg.id.name
+      let tagExpr = expr.args[2]
+      if (!(tagExpr instanceof TagExpression)) return this.raise(`The third argument to '${type}' must be a tag expression`, tagExpr.start)
+      tag = this.finishTag(tagExpr.tag)
     }
     let terminal = this.normalizeExpr(expr.args[0])
     if (terminal.length != 1 || terminal[0].terms.length != 1 || !terminal[0].terms[0].terminal)
@@ -731,16 +767,6 @@ interface Namespace {
   resolve(expr: NamedExpression, builder: Builder): Parts[]
 }
 
-class TagNamespace implements Namespace {
-  resolve(expr: NamedExpression, builder: Builder): Parts[] {
-    if (expr.args.length != 1)
-      builder.raise(`Tag wrappers take a single argument`, expr.start)
-    let tag = expr.id.name
-    let name = builder.newName(`tag.${tag}`, tag)
-    return [p(builder.defineRule(name, builder.normalizeExpr(expr.args[0])))]
-  }
-}
-
 class NestedGrammarSpec {
   constructor(readonly placeholder: Term,
               readonly type: Term | null,
@@ -829,7 +855,7 @@ class TokenSet {
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    let term = this.b.makeTerminal(expr.toString(), getTag(rule.id.name, rule.tag))
+    let term = this.b.makeTerminal(expr.toString(), this.b.finishTag(rule.tag))
     if (expr.args.length == 0) this.b.namedTerms[expr.id.name] = term
     this.buildRule(rule, expr, this.startState, new State([term]))
     this.built.push(new BuiltRule(name, expr.args, term))
@@ -1138,7 +1164,7 @@ class ExternalTokenSet {
   constructor(readonly b: Builder, readonly ast: ExternalTokenDeclaration) {
     for (let token of ast.tokens) {
       b.unique(token.id)
-      let term = b.makeTerminal(token.id.name, getTag(token.id.name, token.tag))
+      let term = b.makeTerminal(token.id.name, b.finishTag(token.tag))
       b.namedTerms[token.id.name] = this.tokens[token.id.name] = term
       this.b.tokenOrigins[term.name] = this
     }
@@ -1337,24 +1363,11 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${type}, ${placeholder}]`
       head += `import {${imports[source].join(", ")}} from ${source}\n`
   }
 
-  let tagNames: {[tag: string]: null | string} = Object.create(null)
-  let tagDefs: string[] = [], tagArray = []
+  let tagArray: string[] = []
   for (let i = 1;; i += 2) {
     let tag = parser.tags.get(i | parser.id)
     if (tag == null) break
-    if (!(tag! in tagNames)) {
-      tagNames[tag!] = null
-    } else if (tagNames[tag!] == null) {
-      let name = getName(tag!)
-      tagNames[tag!] = name
-      tagDefs.push(`${name} = ${JSON.stringify(tag)}`)
-    }
-  }
-  if (tagDefs.length) head += `const ${tagDefs.join(", ")}\n`
-  for (let i = 1;; i += 2) {
-    let tag = parser.tags.get(i | parser.id)
-    if (tag == null) break
-    tagArray.push(tagNames[tag] || JSON.stringify(tag))
+    tagArray.push(JSON.stringify(tag))
   }
 
   let parserStr = `Parser.deserialize(

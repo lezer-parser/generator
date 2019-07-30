@@ -2,13 +2,14 @@ import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
         TokenPrecDeclaration, TokenDeclaration, ExternalTokenDeclaration,
         ExternalGrammarDeclaration, Identifier, Expression,
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
-        RepeatExpression, SetExpression, AnyExpression, ConflictMarker} from "./node"
+        RepeatExpression, SetExpression, TagExpression, TaggedExpression, AnyExpression, ConflictMarker,
+        Tag, TagPart, ValueTag, TagName, TagInterpolation} from "./node"
 
 // Note that this is the parser for grammar files, not the generated parser
 
-let word = /[\w_$]+/gy
+let word = /[\w_]+/gy
 // Some engines (specifically SpiderMonkey) have still not implemented \p
-try { word = /[\p{Alphabetic}\d_$]+/ugy } catch (_) {}
+try { word = /[\p{Alphabetic}\d_]+/ugy } catch (_) {}
 
 const none: readonly any[] = []
 
@@ -70,7 +71,7 @@ export class Input {
       let end = this.match(start + 1, /^(?:\\.|[^\]])*\]/)
       if (end == -1) this.raise("Unterminated character set", start)
       return this.set("set", this.string.slice(start + 1, end - 1), start, end)
-    } else if (/[()!~+*?{}<>\.,|=]/.test(next)) {
+    } else if (/[()!~+*?{}<>\.,|:$=]/.test(next)) {
       return this.set(next, null, start, start + 1)
     } else {
       word.lastIndex = start
@@ -101,7 +102,10 @@ export class Input {
   }
 
   expect(type: string, value: any = null) {
-    if (!this.eat(type, value)) this.unexpected()
+    let val = this.value
+    if (this.type != type || !(value == null || val === value)) this.unexpected()
+    this.next()
+    return val
   }
 
   parse() {
@@ -150,16 +154,6 @@ function parseTop(input: Input) {
   return new GrammarDeclaration(start, rules, tokens, external, prec, mainSkip, scopedSkip, nested)
 }
 
-function parseTag(input: Input) {
-  if (!input.eat("=")) return null
-  if (input.type == "string" && input.value.length) {
-    let result = new LiteralExpression(input.start, input.value)
-    input.next()
-    return result
-  }
-  return parseIdent(input)
-}
-
 function parseRule(input: Input, isToken: boolean) {
   let id = parseIdent(input), params: Identifier[] = []
   let start = input.start
@@ -168,7 +162,7 @@ function parseRule(input: Input, isToken: boolean) {
     if (params.length) input.expect(",")
     params.push(parseIdent(input))
   }
-  let tag = parseTag(input)
+  let tag = input.eat(":") ? parseTag(input) : null
   let expr = parseBracedExpr(input)
   return new RuleDeclaration(start, id, tag, params, expr)
 }
@@ -188,13 +182,13 @@ function parseExprInner(input: Input): Expression {
     let expr = parseExprChoice(input)
     input.expect(")")
     return expr
-  }
-
-  if (input.type == "string") {
+  } else if (input.type == "string") {
     let value = input.value
     input.next()
     if (value.length == 0) return new SequenceExpression(start, none, [none, none])
     return new LiteralExpression(start, value)
+  } else if (input.eat(":")) {
+    return new TagExpression(start, parseTag(input))
   } else if (input.eat("id", "_")) {
     return new AnyExpression(start)
   } else if (input.type == "set") {
@@ -244,12 +238,16 @@ function addRange(input: Input, ranges: [number, number][], from: number, to: nu
 
 function parseExprSuffix(input: Input): Expression {
   let start = input.start
-  let expr = parseExprInner(input), kind = input.type
-  if (kind == "*" || kind == "?" || kind == "+") {
-    input.next()
-    return new RepeatExpression(start, expr, kind)
+  let expr = parseExprInner(input)
+  for (;;) {
+    let kind = input.type
+    if (input.eat("*") || input.eat("?") || input.eat("+"))
+      expr = new RepeatExpression(start, expr, kind as "*" | "+" | "?")
+    else if (input.eat(":"))
+      expr = new TaggedExpression(start, expr, parseTag(input))
+    else
+      return expr
   }
-  return expr
 }
 
 function endOfSequence(input: Input) {
@@ -291,6 +289,31 @@ function parseIdent(input: Input) {
   let start = input.start, name = input.value
   input.next()
   return new Identifier(start, name)
+}
+
+function parseTag(input: Input) {
+  let parts = [], start = input.start
+  for (;;) {
+    let part = parseTagPart(input)
+    if (input.eat("="))
+      part = new ValueTag(part.start, part, parseTagPart(input))
+    parts.push(part)
+    if (!input.eat(".")) break
+  }
+  return new Tag(start, parts)
+}
+
+function parseTagPart(input: Input): TagPart {
+  if (input.type == "$") {
+    input.next()
+    return new TagInterpolation(input.start, parseIdent(input))
+  } else if (input.type == "id") {
+    return new TagName(input.start, input.expect("id"))
+  } else if (input.type == "string" && input.value.length) {
+    return new TagName(input.start, input.expect("string"))
+  } else {
+    return input.unexpected()
+  }
 }
 
 function parsePrecedence(input: Input) {
@@ -344,12 +367,12 @@ function parseExternalTokens(start: number, input: Input) {
   input.expect("id", "from")
   let from = input.value
   input.expect("string")
-  let tokens: {id: Identifier, tag: Identifier | LiteralExpression | null}[] = []
+  let tokens: {id: Identifier, tag: Tag | null}[] = []
   input.expect("{")
   while (!input.eat("}")) {
     if (tokens.length) input.expect(",")
     let id = parseIdent(input)
-    let tag = parseTag(input)
+    let tag = input.eat(":") ? parseTag(input) : null
     tokens.push({id, tag})
   }
   return new ExternalTokenDeclaration(start, id, from, tokens)
