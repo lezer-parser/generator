@@ -1,6 +1,6 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
         TokenPrecDeclaration, TokenDeclaration, ExternalTokenDeclaration,
-        ExternalGrammarDeclaration, Identifier, Expression,
+        ExternalGrammarDeclaration, Identifier, Expression, LiteralDeclaration,
         NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, TagExpression, TaggedExpression, AnyExpression, ConflictMarker,
         Tag, TagPart, ValueTag, TagName, TagInterpolation} from "./node"
@@ -337,13 +337,16 @@ function parseTokens(input: Input) {
   input.expect("{")
   let tokenRules: RuleDeclaration[] = []
   let precedences: TokenPrecDeclaration[] = []
+  let literals: LiteralDeclaration[] = []
   while (!input.eat("}")) {
     if (input.type == "id" && input.value == "precedence")
       precedences.push(parseTokenPrecedence(input))
+    else if (input.type == "string")
+      literals.push(parseLiteralDeclaration(input))
     else
       tokenRules.push(parseRule(input, true))
   }
-  return new TokenDeclaration(start, precedences, tokenRules)
+  return new TokenDeclaration(start, precedences, literals, tokenRules)
 }
 
 function parseTokenPrecedence(input: Input) {
@@ -360,6 +363,13 @@ function parseTokenPrecedence(input: Input) {
       input.raise(`Invalid expression in token precedences`, expr.start)
   }
   return new TokenPrecDeclaration(start, tokens)
+}
+
+function parseLiteralDeclaration(input: Input) {
+  let lit = new LiteralExpression(input.start, input.value)
+  input.next()
+  input.expect(":")
+  return new LiteralDeclaration(lit.start, lit, parseTag(input))
 }
 
 function parseExternalTokens(start: number, input: Input) {

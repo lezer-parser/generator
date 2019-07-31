@@ -43,16 +43,17 @@ export class TokenPrecDeclaration extends Node {
   }
 }
 
-export class ScopedSkip extends Node {
-  
-}
-
 export class TokenDeclaration extends Node {
   constructor(start: number,
               readonly precedences: readonly TokenPrecDeclaration[],
+              readonly literals: readonly LiteralDeclaration[],
               readonly rules: readonly RuleDeclaration[]) {
     super(start)
   }
+}
+
+export class LiteralDeclaration extends Node {
+  constructor(start: number, readonly literal: LiteralExpression, readonly tag: Tag) { super(start) }
 }
 
 export class ExternalTokenDeclaration extends Node {

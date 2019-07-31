@@ -865,7 +865,8 @@ class TokenSet {
   getLiteral(expr: LiteralExpression) {
     let id = JSON.stringify(expr.value)
     for (let built of this.built) if (built.id == id) return built.term
-    let term = this.b.makeTerminal(id, id)
+    let decl = this.ast && this.ast.literals.find(lit => lit.literal.value == expr.value)
+    let term = this.b.makeTerminal(id, decl ? this.b.finishTag(decl.tag) : null)
     this.build(expr, this.startState, new State([term]), none)
     this.built.push(new BuiltRule(id, none, term))
     return term
