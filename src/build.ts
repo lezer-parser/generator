@@ -1,15 +1,15 @@
 import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
-        TaggedExpression, TagExpression, Tag, TagPart, ValueTag, TagInterpolation, TagName,
+        TaggedExpression, TagExpression, Tag as TagNode, TagPart, ValueTag, TagInterpolation, TagName,
         exprsEq, exprEq} from "./node"
 import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {encodeArray} from "./encode"
-import {Parser, TagMap, TokenGroup as LezerTokenGroup, ExternalTokenizer,
-        NestedGrammar, InputStream, Token, Stack, allocateGrammarID} from "lezer"
+import {Parser, TokenGroup as LezerTokenGroup, ExternalTokenizer,
+        NestedGrammar, InputStream, Token, Stack, Tag} from "lezer"
 import {Action, Specialize, StateFlag, Term as T, Seq, ParseState} from "lezer/src/constants"
 
 const none: readonly any[] = []
@@ -296,8 +296,7 @@ class Builder {
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
     let skipTable = data.storeArray(skipTags)
-    let id = allocateGrammarID()
-    return new Parser(id, states, data.finish(), computeGotoTable(table), TagMap.single(id, tags),
+    return new Parser(states, data.finish(), computeGotoTable(table), tags.map(t => new Tag(t)),
                       tokenizers, nested,
                       specTable, specializations, precTable, skipTable, names)
   }
@@ -417,7 +416,7 @@ class Builder {
     })
   }
 
-  substituteArgsInTag(tag: Tag, args: readonly Expression[], params: readonly Identifier[]) {
+  substituteArgsInTag(tag: TagNode, args: readonly Expression[], params: readonly Identifier[]) {
     function substParts(parts: readonly TagPart[]) {
       let result = []
       for (let part of parts) for (let p of substPart(part)) result.push(p)
@@ -440,7 +439,7 @@ class Builder {
         return [part]
       }
     }
-    return new Tag(tag.start, substParts(tag.parts))
+    return new TagNode(tag.start, substParts(tag.parts))
   }
 
   conflictsFor(markers: readonly ConflictMarker[]) {
@@ -594,7 +593,7 @@ class Builder {
     return result
   }
 
-  finishTag(tag: Tag | null): string | null {
+  finishTag(tag: TagNode | null): string | null {
     return tag && tag.parts.map(part => this.finishTagPart(part)).join(".")
   }
 
@@ -1364,18 +1363,11 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${type}, ${placeholder}]`
       head += `import {${imports[source].join(", ")}} from ${source}\n`
   }
 
-  let tagArray: string[] = []
-  for (let i = 1;; i += 2) {
-    let tag = parser.tags.get(i | parser.id)
-    if (tag == null) break
-    tagArray.push(JSON.stringify(tag))
-  }
-
   let parserStr = `Parser.deserialize(
   ${encodeArray(parser.states, 0xffffffff)},
   ${encodeArray(parser.data)},
   ${encodeArray(parser.goto)},
-  [${tagArray.join(",")}],
+  [${parser.tags.map(t => JSON.stringify(t.tag)).join(",")}],
   ${encodeArray(tokenData || [])},
   [${tokenizers.join(", ")}],
   [${nested.join(", ")}],
