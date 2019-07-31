@@ -1,9 +1,9 @@
-top { A+ }
+top { a+ }
 
 skip { spaces }
 
 skip { dashes } {
-  A { "x" | "(" "b" ")" }
+  a:a { "x" | "(" "b" ")" }
 }
 
 tokens {
@@ -11,14 +11,14 @@ tokens {
   dashes { "-"+ }
 }
 
----
+# Applies the correct skip rules
 
 x (---b---) (b)
 
-==> A, A, A
+==> a, a, a
 
----
+# Marks invalid whitespace
 
 ( b )
 
-==> A(⚠, ⚠)
+==> a(⚠, ⚠)

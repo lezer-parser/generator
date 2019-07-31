@@ -1,7 +1,7 @@
-top { X<"hi"> }
+top { x<"hi"> }
 
 tokens {
-  X<a, b> { a b }
+  x<a, b>:x { a b }
 }
 
 //! Incorrect number of arguments

@@ -1,7 +1,7 @@
-top { (tag.A<"a"> | tag.B<"b">)+ }
+top { ("a":a | "b":b)+ }
 
----
+# Assigns tags to tagged expressions
 
 baba
 
-==> B,A,B,A
+==> b,a,b,a

@@ -3,66 +3,60 @@ precedence { mult left, plus left }
 top { expr }
 
 expr {
-  atom | BinaryExpr
+  atom | binaryExpr
 }
 
-BinaryExpr {
-  expr !mult MultOp expr |
-  expr !plus AddOp expr
+binaryExpr:bin.expr {
+  expr !mult multOp expr |
+  expr !plus addOp expr
 }
 
-atom { Symbol | "(" expr ")" }
+atom { symbol | "(" expr ")" }
 
 tokens {
-  MultOp { "*" | "/" }
-  AddOp { "+" | "-" }
-  Symbol { "x" | "y" }
+  multOp:mult.op { "*" | "/" }
+  addOp:add.op { "+" | "-" }
+  symbol:sym.expr { "x" | "y" }
 }
 
----
+# Parenthesized
 
 (x+y)/x
 
-==> BinaryExpr("(",BinaryExpr(Symbol,AddOp,Symbol),")",MultOp,Symbol)
+==> bin.expr(bin.expr(sym.expr,add.op,sym.expr),mult.op,sym.expr)
 
----
+# Associativity
 
 x+x+x+x
 
-==> BinaryExpr(BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),AddOp,Symbol),AddOp,Symbol)
+==> bin.expr(bin.expr(bin.expr(sym.expr,add.op,sym.expr),add.op,sym.expr),add.op,sym.expr)
 
----
+# Precedence
 
 x+x*x-x
 
-==> BinaryExpr(BinaryExpr(Symbol,AddOp,BinaryExpr(Symbol,MultOp,Symbol)),AddOp,Symbol)
+==> bin.expr(bin.expr(sym.expr,add.op,bin.expr(sym.expr,mult.op,sym.expr)),add.op,sym.expr)
 
----
+# Mixed precedence
 
 x*x+y/y
 
-==> BinaryExpr(BinaryExpr(Symbol,MultOp,Symbol),AddOp,BinaryExpr(Symbol,MultOp,Symbol))
+==> bin.expr(bin.expr(sym.expr,mult.op,sym.expr),add.op,bin.expr(sym.expr,mult.op,sym.expr))
 
----
-
-(x+y)*x
-
-==> BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),MultOp,Symbol)
-
----
+# Duplicate operator
 
 x++y
 
-==> BinaryExpr(BinaryExpr(Symbol,AddOp,⚠),AddOp,Symbol)
+==> bin.expr(bin.expr(sym.expr,add.op,⚠),add.op,sym.expr)
 
----
+# Dropped character 
 
 x%+y
 
-==> BinaryExpr(Symbol,⚠,AddOp,Symbol)
+==> bin.expr(sym.expr,⚠,add.op,sym.expr)
 
----
+# Missing operator
 
 xy
 
-==> BinaryExpr(Symbol,⚠,Symbol)
+==> bin.expr(sym.expr,⚠,sym.expr)

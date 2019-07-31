@@ -1,14 +1,14 @@
-top { (a | b | specialize<i, "ii", I>)+ }
+top { (a | b | specialize<i, "ii", :i>)+ }
 
-a=A { "a" }
+a:a { "a" }
 
 tokens {
-  b="$B" { "b" }
+  b:"$B" { "b" }
   i { "i"+ }
 }
 
----
+# Uses tags assigned to rules
 
 abaii
 
-==> A, $B, A, I
+==> a, "$B", a, i

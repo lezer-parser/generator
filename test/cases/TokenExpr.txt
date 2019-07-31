@@ -1,28 +1,28 @@
-top { (Word | Number | Operator)+ }
+top { (word | number | operator)+ }
 
 skip { whitespace }
 
 tokens {
   whitespace { std.whitespace+ }
 
-  Word { std.asciiLetter (letter | std.digit)* }
+  word:word { std.asciiLetter (letter | std.digit)* }
 
-  Number { (std.digit+ ("." std.digit*)? | "." std.digit+) (("e" | "E") ("+" | "-")? std.digit+)? }
+  number:number { (std.digit+ ("." std.digit*)? | "." std.digit+) (("e" | "E") ("+" | "-")? std.digit+)? }
 
-  Operator { "+" "+"? | "-" }
+  operator:op { "+" "+"? | "-" }
 
   letter { [a-zA-Z] }
 }
 
----
+# Word tokens
 
 Hello		Catch22 Foo
 azAZ09
 
-==> Word,Word,Word,Word
+==> word,word,word,word
 
----
+# Numbers and operators
 
 50 + 200e-5 ++ .2 - 111.111e+111
 
-==> Number,Operator,Number,Operator,Number,Operator,Number
+==> number,op,number,op,number,op,number

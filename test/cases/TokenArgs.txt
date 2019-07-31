@@ -1,23 +1,23 @@
-top { (KW<"let"> | KW<"if"> | Foo)+ }
+top { (kw<"let"> | kw<"if"> | foo)+ }
 
 skip { whitespace }
 
 tokens {
   whitespace { std.whitespace+ }
-  KW<word> { word }
-  Foo { bar<"foo"> }
+  kw<word>:$word.kw { word }
+  foo:foo { bar<"foo"> }
   bar<x> { baz<x> }
   baz<z> { "!" z }
 }
 
----
+# Allows parameterized tokens
 
 let if let
 
-==> KW,KW,KW
+==> let.kw, if.kw, let.kw
 
----
+# Tokens can call other tokens
 
 !foo
 
-==> Foo
+==> foo

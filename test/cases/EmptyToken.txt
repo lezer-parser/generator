@@ -1,7 +1,7 @@
-top { X }
+top { x }
 
 tokens {
-  X { "x"* }
+  x:x { "x"* }
 }
 
 //! zero-length

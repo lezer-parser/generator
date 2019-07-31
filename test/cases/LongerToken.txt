@@ -1,7 +1,7 @@
-top { (tag.A<"foo"> | tag.B<"foobar"> | tag.C<"baz">)+ }
+top { ("foo":a | "foobar":b | "baz":c)+ }
 
----
+# Properly splits tokens
 
 foobaz
 
-==> A, C
+==> a, c

@@ -2,22 +2,22 @@ precedence { div left }
 
 top { expr }
 
-expr { RegExp | Symbol | BinOp }
+expr { regExp | symbol | binOp }
 
-BinOp { expr !div "/" expr }
+binOp:op { expr !div "/" expr }
 
 skip { whitespace }
 
 tokens {
   whitespace { std.whitespace+ }
 
-  Symbol { std.asciiLetter+ }
+  symbol:sym { std.asciiLetter+ }
 
-  RegExp { "/" [^/]+ "/" }
+  regExp:re { "/" [^/]+ "/" }
 }
 
----
+# Disambiguates division from regexp
 
 x / y / /foo/
 
-==> BinOp(BinOp(Symbol,Symbol),RegExp)
+==> op(op(sym,sym),re)

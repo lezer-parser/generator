@@ -1,4 +1,4 @@
-top { (Identifier | Thing)+ }
+top { (identifier | thing)+ }
 
 skip { whitespace }
 
@@ -7,13 +7,13 @@ tokens {
 
   identifierChar { std.asciiLetter | [\u{a1}-\u{10ffff}] }
 
-  Identifier { identifierChar+ }
+  identifier:id { identifierChar+ }
 
-  Thing { "-" ("💩" | "🦆") }
+  thing:thing { "-" ("💩" | "🦆") }
 }
 
----
+# Tokens with astral characters
 
 foo föö 象𫝄鼻 -💩 -🦆 -& -🍰
 
-==> Identifier,Identifier,Identifier,Thing,Thing,⚠,⚠,Identifier
+==> id,id,id,thing,thing,⚠,⚠,id

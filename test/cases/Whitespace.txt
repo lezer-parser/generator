@@ -1,25 +1,25 @@
-top { X+ }
+top { x+ }
 
-skip { whitespace | Comment }
+skip { whitespace | comment }
 
 tokens {
   whitespace { (" " | "\n")+ }
 
-  Comment { "#" [^\n]* }
+  comment:comment { "#" [^\n]* }
 
-  X { "x" }
+  x:x { "x" }
 }
 
----
+# Skips whitespace
 
 x x
 
-==> X,X
+==> x, x
 
----
+# Skips comments
 
 x
 x # I'm a comment!
 x
 
-==> X,X,Comment,X
+==> x, x, comment, x

@@ -1,22 +1,22 @@
-top { Statement+ }
+top { statement+ }
 
-Statement {
-  Variable ";" |
-  Variable Variable ";"
+statement:stat {
+  variable ";" |
+  variable variable ";"
 }
 
-Variable { identifier }
+variable:var { identifier }
 
-skip { space | Comment }
+skip { space | comment }
 
 tokens {
   space { std.whitespace+ }
-  Comment { "'" [^']* "'" }
+  comment:comment { "'" [^']* "'" }
   identifier { "x" }
 }
 
----
+# Puts skipped content in the right tree position
 
 x'c';'c' x 'c' x 'c'; 'c'
 
-==> Statement(Variable, Comment), Comment, Statement(Variable, Comment, Variable, Comment), Comment
+==> stat(var, comment), comment, stat(var, comment, var, comment), comment

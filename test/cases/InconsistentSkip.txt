@@ -1,9 +1,9 @@
-top { A+ }
+top { a+ }
 
 skip { space }
 
 skip {} {
-  A { "a" "b"? }
+  a:a { "a" "b"? }
 }
 
 tokens { space { " "+ } }

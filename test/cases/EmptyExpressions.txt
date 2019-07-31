@@ -1,11 +1,11 @@
-top { X+ }
+top { x+ }
 
 y {}
 
-X { "x" "" () y }
+x:x { "x" "" () y }
 
----
+# Ignores empty expressions
 
 xxx
 
-==> X, X, X
+==> x, x, x

@@ -5,14 +5,14 @@ precedence {
 top { statement* }
 
 statement {
-  tag.Block<!statement "{" statement* "}"> |
+  (!statement "{" statement* "}"):block |
   expression ";"
 }
 
 expression { "x" | "(" expression ")" | "{" "}" }
 
----
+# Statement is block
 
 {}
 
-==> Block
+==> block

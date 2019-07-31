@@ -1,42 +1,42 @@
 top { (statement ";")+ }
 
 statement {
-  tag.Decl<kw<"let"> Identifier "=" Number> |
-  tag.Print<kw<"print"> Number> |
-  tag.Exit<kw<"exit">> |
-  tag.Async<kwExt<"async"> Number> |
-  Identifier
+  (kw<"let"> identifier "=" number):decl |
+  (kw<"print"> number):print |
+  (kw<"exit">):exit |
+  (kwExt<"async"> number):async |
+  identifier
 }
 
-kw<word> { specialize<Identifier, word> }
+kw<word> { specialize<identifier, word> }
 
-kwExt<word> { extend<Identifier, word> }
+kwExt<word> { extend<identifier, word> }
 
 skip { whitespace }
 
 tokens {
   whitespace { std.whitespace+ }
-  Identifier { std.asciiLetter+ }
-  Number { std.digit+ }
+  identifier:id { std.asciiLetter+ }
+  number:number { std.digit+ }
 }
 
----
+# Can use a contextual keyword as regular identifier
 
 let async = 10;
 exit;
 
-==> Decl(Identifier, Number),Exit
+==> decl(id, number), exit
 
----
+# Can not use a non-contextual keyword as identifier
 
 print 10;
 let print 2;
 
-==> Print(Number),Decl(⚠),⚠,Print(Number)
+==> print(number),decl(⚠),⚠,print(number)
 
----
+# Use of extended token can be determined by next token
 
 async 1;
 async;
 
-==> Async(Number), Identifier
+==> async(number), id

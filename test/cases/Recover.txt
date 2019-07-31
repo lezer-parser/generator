@@ -1,8 +1,8 @@
-top { (Class | Block)* }
+top { (class | block)* }
 
-Class { "class" "{" "classitem"* "}" }
+class:class { "class" "{" "classitem"* "}" }
 
-Block { "{" (Block | "statement")* "}" }
+block:block { "{" (block | "statement")* "}" }
 
 skip { whitespace }
 
@@ -10,8 +10,8 @@ tokens {
   whitespace { std.whitespace+ }
 }
 
----
+# Can resynchronize to an outer context
 
 { { { class { classitem }
 
-==> Block(Block(Block(⚠),⚠),⚠),Class
+==> block(block(block(⚠),⚠),⚠),class

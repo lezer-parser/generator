@@ -584,7 +584,7 @@ class Builder {
     this.used(rule.id.name)
     let name = rule.id.name == "top" ? this.terms.top :
       this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
-                   this.finishTag(rule.tag) || true)
+                   this.finishTag(rule.tag, args, rule.params) || true)
     if (args.length == 0) this.namedTerms[rule.id.name] = name
     this.built.push(new BuiltRule(rule.id.name, args, name))
     this.currentSkip.push(skip)
@@ -593,8 +593,10 @@ class Builder {
     return result
   }
 
-  finishTag(tag: TagNode | null): string | null {
-    return tag && tag.parts.map(part => this.finishTagPart(part)).join(".")
+  finishTag(tag: TagNode | null, args?: readonly Expression[], params?: readonly Identifier[]): string | null {
+    if (!tag) return null
+    if (params) tag = this.substituteArgsInTag(tag, args!, params)
+    return tag.parts.map(part => this.finishTagPart(part)).join(".")
   }
 
   finishTagPart(part: TagPart): string {
@@ -782,9 +784,9 @@ class NestNamespace implements Namespace {
     let [tagExpr, endExpr, defaultExpr] = expr.args as [NamedExpression | undefined, Expression | undefined, Expression | undefined]
     let tag = null
     if (tagExpr && !isEmpty(tagExpr)) {
-      if (!(tagExpr instanceof NamedExpression) || tagExpr.args.length)
-        builder.raise(`First argument to 'nest.${expr.id.name}' should be a plain tag name`, tagExpr.start)
-      tag = tagExpr.id.name
+      if (!(tagExpr instanceof TagExpression))
+        return builder.raise(`First argument to 'nest.${expr.id.name}' should be a tag`, tagExpr.start)
+      tag = builder.finishTag(tagExpr.tag)
     }
     let extGrammar = builder.ast.grammars.find(g => g.id.name == expr.id.name)
     if (!extGrammar) return builder.raise(`No external grammar '${expr.id.name}' defined`, expr.id.start)
@@ -854,7 +856,8 @@ class TokenSet {
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    let term = this.b.makeTerminal(expr.toString(), this.b.finishTag(rule.tag))
+    let term = this.b.makeTerminal(expr.toString(), this.b.finishTag(rule.tag, expr.args,
+                                                                     rule.params.length != expr.args.length ? undefined : rule.params))
     if (expr.args.length == 0) this.b.namedTerms[expr.id.name] = term
     this.buildRule(rule, expr, this.startState, new State([term]))
     this.built.push(new BuiltRule(name, expr.args, term))

@@ -1,17 +1,17 @@
-top { tag.Foo<"foo">+ }
+top { "foo":foo+ }
 
 skip { " " | "<" skipContent* ">" }
 
-skipContent { tag.A<"a"> | tag.B<"b"> }
+skipContent { "a":a | "b":b }
 
----
+# Can skip the simple part of the skip expression
 
 foo foo
 
-==> Foo,Foo
+==> foo,foo
 
----
+# Outputs tags from skipped content
 
 foo <aba> foo
 
-==> Foo,A,B,A,Foo
+==> foo,a,b,a,foo

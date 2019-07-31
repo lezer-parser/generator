@@ -2,10 +2,10 @@ top { foo<bar> }
 
 bar { bar "x" | "" }
 
-foo<e> { Token<e> }
+foo<e> { token<e> }
 
 tokens {
-  Token<x> { x "!" }
+  token<x> { x "!" }
 }
 
 //! isn't found in this token group
