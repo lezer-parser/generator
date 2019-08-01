@@ -61,15 +61,16 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
   let stack = [specs], pos = [0]
   tree.iterate(0, tree.length, tag => {
     let last = stack.length - 1, index = pos[last], seq = stack[last]
-    if (index < seq.length && tag.tag.indexOf(seq[index].tag) == 0) {
+    let next = index < seq.length ? seq[index] : null
+    if (next && (/\$$/.test(next.tag) ? tag.tag == next.tag.replace("$", "") : tag.tag.indexOf(next.tag) == 0)) {
       pos.push(0)
-      stack.push(seq[index].children)
+      stack.push(next.children)
       return undefined
     } else if (mayIgnore(tag)) {
       return false
     } else {
       let parent = last > 0 ? stack[last - 1][pos[last - 1]].tag : "tree"
-      let after = index < pos[last] ? `end of ${parent}` : seq[index].tag + (parent == "tree" ? "" : " in " + parent)
+      let after = next ? next.tag + (parent == "tree" ? "" : " in " + parent) : `end of ${parent}`
       throw new Error(`Expected ${after}, got ${tag.tag}`)
     }
   }, (tag) => {

@@ -572,7 +572,9 @@ class Builder {
     } else if (expr instanceof NamedExpression) {
       return this.resolve(expr)
     } else if (expr instanceof TaggedExpression) {
-      let tag = this.finishTag(expr.tag)!, name = this.newName(`tag.${tag}`, tag)
+      let tag = this.finishTag(expr.tag)!, delim = this.findDelimiters(expr.expr)
+      if (delim) tag += ".delim=" + JSON.stringify(delim)
+      let name = this.newName(`tag.${tag}`, tag)
       return [p(this.defineRule(name, this.normalizeExpr(expr.expr)))]
     } else {
       return this.raise("This type of expression may not occur in non-token rules", expr.start)
@@ -580,11 +582,16 @@ class Builder {
   }
 
   buildRule(rule: RuleDeclaration, args: readonly Expression[], skip: Term): Term {
-    let expr = this.substituteArgs(rule.expr, args, rule.params)
+    let expr = this.substituteArgs(rule.expr, args, rule.params), name
     this.used(rule.id.name)
-    let name = rule.id.name == "top" ? this.terms.top :
-      this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""),
-                   this.finishTag(rule.tag, args, rule.params) || true)
+    if (rule.id.name == "top") {
+      name = this.terms.top
+    } else {
+      let tag = this.finishTag(rule.tag, args, rule.params)
+      let delim = tag && this.findDelimiters(rule.expr)
+      if (delim) tag += ".delim=" + JSON.stringify(delim)
+      name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), tag || true)
+    }
     if (args.length == 0) this.namedTerms[rule.id.name] = name
     this.built.push(new BuiltRule(rule.id.name, args, name))
     this.currentSkip.push(skip)
@@ -640,6 +647,28 @@ class Builder {
       }
     }
     return token!
+  }
+
+  findDelimiters(expr: Expression) {
+    if (!(expr instanceof SequenceExpression) || expr.exprs.length < 2) return null
+    let findToken = (expr: Expression): string | null => {
+      if (expr instanceof LiteralExpression) return expr.value
+      if (expr instanceof NamedExpression && expr.args.length == 0) {
+        let rule = this.ast.rules.find(r => r.id.name == expr.id.name)
+        if (rule) return findToken(rule.expr)
+        let token = this.tokens.rules.find(r => r.id.name == expr.id.name)
+        if (token && token.expr instanceof LiteralExpression) return token.expr.value
+      }
+      return null
+    }
+    let lastToken = findToken(expr.exprs[expr.exprs.length - 1])
+    if (!lastToken) return null
+    const brackets = ["()", "[]", "{}", "<>"]
+    let bracket = brackets.find(b => lastToken!.indexOf(b[1]) > -1 && lastToken!.indexOf(b[0]) < 0)
+    if (!bracket) return null
+    let firstToken = findToken(expr.exprs[0])
+    if (!firstToken || firstToken.indexOf(bracket[0]) < 0 || firstToken.indexOf(bracket[1]) > -1) return null
+    return firstToken + " " + lastToken
   }
 }
 

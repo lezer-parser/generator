@@ -1,5 +1,6 @@
 import {buildParser, BuildOptions} from ".."
 import {Parser, InputStream, Stack, Tree} from "lezer"
+import {testTree} from "../dist/test"
 const ist = require("ist")
 
 function p(text: string, options?: BuildOptions): () => Parser {
@@ -61,11 +62,11 @@ describe("parsing", () => {
     let ast = p1().parse(doc, {bufferLength: 2})
     let expected = "cond(var,block(call(var,num),var))," +
       "loop(var,block(cond(num,call(var,var,num,num,num))))"
-    ist(ast.toString(), expected)
+    testTree(ast, expected)
     ist(ast.length, 70)
     let pos = doc.indexOf("false"), doc2 = doc.slice(0, pos) + "x" + doc.slice(pos + 5)
     let ast2 = p1().parse(doc2, {bufferLength: 2, cache: change(ast, [pos, pos + 5, pos, pos + 1])})
-    ist(ast2.toString(), expected)
+    testTree(ast, expected)
     ist(shared(ast, ast2), 60, ">")
     ist(ast2.length, 66)
   })
@@ -191,9 +192,9 @@ skip { space }
 tokens { space { " "+ } var:var { "x" } "*":times "+":plus }
 `)
     let ast = parser.parse("x + x + x", {strict: true, bufferLength: 2})
-    ist(ast.toString(), "bin(bin(var,plus,var),plus,var)")
+    testTree(ast, "bin(bin(var,plus,var),plus,var)")
     let ast2 = parser.parse("x * x + x + x", {strict: true, bufferLength: 2, cache: change(ast, [0, 0, 0, 4])})
-    ist(ast2.toString(), "bin(bin(bin(var,times,var),plus,var),plus,var)")
+    testTree(ast2, "bin(bin(bin(var,times,var),plus,var),plus,var)")
   })
 
   it("can cache skipped content", () => {
@@ -286,10 +287,9 @@ expr { "[[" nest.inner<:foo> "]]" | "!":bang }
 tokens { "[[":b.open "]]":b.close }
 `, {nestedGrammar() { return inner }})
 
-    ist(outer.parse("![[((.).)]][[.]]").toString(),
-        'bang,b.open,foo(b(p.open,b(p.open,dot,p.close),dot,p.close)),b.close,b.open,foo(dot),b.close')
-    ist(outer.parse("[[/\]]").toString(),
-        'b.open,foo(⚠),b.close')
+    testTree(outer.parse("![[((.).)]][[.]]"),
+             'bang,b.open,foo(b(p.open,b(p.open,dot,p.close),dot,p.close)),b.close,b.open,foo(dot),b.close')
+    testTree(outer.parse("[[/\]]"), 'b.open,foo(⚠),b.close')
   })
 
   it("supports conditional nesting and end token predicates", () => {
@@ -314,10 +314,10 @@ tokens {
       }
     }
 
-    ist(outer.parse("<foo><bar></baz></foo>").toString(),
-        "tag(open,tag(open,close),close)")
-    ist(outer.parse("<textarea><bar></baz></textarea>").toString(),
-        "tag(open,text,close)")
+    testTree(outer.parse("<foo><bar></baz></foo>"),
+             "tag(open,tag(open,close),close)")
+    testTree(outer.parse("<textarea><bar></baz></textarea>"),
+             "tag(open,text,close)")
   })
 
   it("allows updating the nested grammars for a parser", () => {
@@ -325,18 +325,18 @@ tokens {
     let inner2 = buildParser(`top { "x":b+ }`)
     let outer = buildParser(`external grammar inner from "." top { "[" nest.inner<:nest> "]" } tokens { "[":o "]":c }`,
                             {nestedGrammar() { return inner1 }})
-    ist(outer.parse("[x]").toString(), 'o,nest(a),c')
-    ist(outer.withNested({inner: inner2}).parse("[x]").toString(), 'o,nest(b),c')
+    testTree(outer.parse("[x]"), 'o,nest(a),c')
+    testTree(outer.withNested({inner: inner2}).parse("[x]"), 'o,nest(b),c')
   })
 
   it("supports tag-less nesting", () => {
     let inner = buildParser(`top { "x":x }`)
     let outer = buildParser(`external grammar x from "." top { "&" nest.x "&" } tokens { "&":and }`, {nestedGrammar() { return inner }})
-    ist(outer.parse("&x&").toString(), 'and,x,and')
+    testTree(outer.parse("&x&"), 'and,x,and')
   })
 
   it("skips ranges with missing nested parsers", () => {
     let outer = buildParser(`external grammar inner top { "[" nest.inner<:n> "]" } tokens { "[":o "]":c }`)
-    ist(outer.parse("[lfkdsajfa]").toString(), 'o,n,c')
+    testTree(outer.parse("[lfkdsajfa]"), 'o,n,c')
   })
 })
