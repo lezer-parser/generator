@@ -401,8 +401,22 @@ export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[nam
       }
     }
 
-    for (let pos of atEnd) for (let ahead of pos.ahead)
+    let replaced = false
+    for (let pos of atEnd) for (let ahead of pos.ahead) {
+      let count = state.actions.length
       state.addAction(new Reduce(ahead, pos.rule), [pos])
+      if (state.actions.length == count) replaced = true
+    }
+    // If some actions were replaced by others, double-check whether
+    // goto entries are now superfluous (for example, in an operator
+    // precedence-related state that has a shift for `*` but only a
+    // reduce for `+`, we don't need a goto entry for rules that start
+    // with `+`)
+    if (replaced) for (let i = 0; i < state.goto.length; i++) {
+      let start = first[state.goto[i].term.name]
+      if (!start.some(term => state.actions.some(a => a.term == term && (a instanceof Shift))))
+        state.goto.splice(i--, 1)
+    }
   }
 
   for (let state of states) state.finish()
