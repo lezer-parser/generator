@@ -849,6 +849,12 @@ class TokenSet {
   constructor(readonly b: Builder, readonly ast: TokenDeclaration | null) {
     this.rules = ast ? ast.rules : none
     for (let rule of this.rules) this.b.unique(rule.id)
+    if (ast) for (let i = 0; i < ast.literals.length; i++) {
+      let lit = ast.literals[i].literal.value
+      for (let j = i + 1; j < ast.literals.length; j++)
+        if (ast.literals[j].literal.value == lit)
+          b.raise(`Duplicate literal tag definition for ${JSON.stringify(lit)}`, ast.literals[j].start)
+    }
   }
 
   getToken(expr: NamedExpression) {
