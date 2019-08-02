@@ -7,6 +7,7 @@ export class GrammarDeclaration extends Node {
               readonly rules: readonly RuleDeclaration[],
               readonly topExpr: Expression,
               readonly tokens: TokenDeclaration | null,
+              readonly tags: TagBlock | null,
               readonly externalTokens: readonly ExternalTokenDeclaration[],
               readonly precedences: PrecDeclaration | null,
               readonly mainSkip: Expression | null,
@@ -47,10 +48,21 @@ export class TokenPrecDeclaration extends Node {
 export class TokenDeclaration extends Node {
   constructor(start: number,
               readonly precedences: readonly TokenPrecDeclaration[],
-              readonly literals: readonly LiteralDeclaration[],
               readonly rules: readonly RuleDeclaration[]) {
     super(start)
   }
+}
+
+export class TagBlock extends Node {
+  constructor(start: number,
+              readonly tags: readonly TagDeclaration[],
+              readonly exprs: readonly TagExpression[]) { super(start) }
+}
+
+export class TagDeclaration extends Node {
+  constructor(start: number,
+              readonly target: LiteralExpression | Identifier,
+              readonly tag: Tag) { super(start) }
 }
 
 export class LiteralDeclaration extends Node {

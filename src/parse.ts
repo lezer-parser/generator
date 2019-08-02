@@ -1,7 +1,7 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
         TokenPrecDeclaration, TokenDeclaration, ExternalTokenDeclaration,
-        ExternalGrammarDeclaration, Identifier, Expression, LiteralDeclaration,
-        NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
+        ExternalGrammarDeclaration, Identifier, TagBlock, TagDeclaration,
+        Expression, NamedExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, TagExpression, TaggedExpression,
         AtExpression, AnyExpression, ConflictMarker,
         Tag, TagPart, ValueTag, TagName, TagInterpolation} from "./node"
@@ -124,6 +124,7 @@ function parseGrammar(input: Input) {
   let rules: RuleDeclaration[] = []
   let prec: PrecDeclaration | null = null
   let tokens: TokenDeclaration | null = null
+  let tags: TagBlock | null = null
   let mainSkip: Expression | null = null
   let scopedSkip: {expr: Expression, rules: readonly RuleDeclaration[]}[] = []
   let external: ExternalTokenDeclaration[] = []
@@ -138,6 +139,9 @@ function parseGrammar(input: Input) {
     } else if (input.type == "at" && input.value == "tokens") {
       if (tokens) input.raise(`Multiple @tokens declaractions`, input.start)
       else tokens = parseTokens(input)
+    } else if (input.type == "at" && input.value == "tags") {
+      if (tags) input.raise(`Multiple @tags declaractions`, input.start)
+      tags = parseTagBlock(input)
     } else if (input.type == "at" && input.value == "external-tokens") {
       external.push(parseExternalTokens(input))
     } else if (input.type == "at" && input.value == "external-grammar") {
@@ -161,7 +165,7 @@ function parseGrammar(input: Input) {
     }
   }
   if (!top) return input.raise(`Missing @top declaration`)
-  return new GrammarDeclaration(start, rules, top, tokens, external, prec, mainSkip, scopedSkip, nested)
+  return new GrammarDeclaration(start, rules, top, tokens, tags, external, prec, mainSkip, scopedSkip, nested)
 }
 
 function parseRule(input: Input, isToken: boolean) {
@@ -348,6 +352,25 @@ function parsePrecedence(input: Input) {
   }
   return new PrecDeclaration(start, items)
 }
+
+function parseTagBlock(input: Input) {
+  let start = input.start
+  let tags: TagDeclaration[] = []
+  let exprs: TagExpression[] = []
+  input.next()
+  input.expect("{")
+  while (!input.eat("}")) {
+    if (input.type == "@") {
+      exprs.push(parseExprInner(input) as TagExpression)
+    } else {
+      let start = input.start
+      let target = input.type == "string" ? parseExprInner(input) as LiteralExpression : parseIdent(input)
+      input.expect(":")
+      tags.push(new TagDeclaration(start, target, parseTag(input)))
+    }
+  }
+  return new TagBlock(start, tags, exprs)
+}
       
 function parseTokens(input: Input) {
   let start = input.start
@@ -355,16 +378,13 @@ function parseTokens(input: Input) {
   input.expect("{")
   let tokenRules: RuleDeclaration[] = []
   let precedences: TokenPrecDeclaration[] = []
-  let literals: LiteralDeclaration[] = []
   while (!input.eat("}")) {
     if (input.type == "at" && input.value == "precedence")
       precedences.push(parseTokenPrecedence(input))
-    else if (input.type == "string")
-      literals.push(parseLiteralDeclaration(input))
     else
       tokenRules.push(parseRule(input, true))
   }
-  return new TokenDeclaration(start, precedences, literals, tokenRules)
+  return new TokenDeclaration(start, precedences, tokenRules)
 }
 
 function parseTokenPrecedence(input: Input) {
@@ -381,13 +401,6 @@ function parseTokenPrecedence(input: Input) {
       input.raise(`Invalid expression in token precedences`, expr.start)
   }
   return new TokenPrecDeclaration(start, tokens)
-}
-
-function parseLiteralDeclaration(input: Input) {
-  let lit = new LiteralExpression(input.start, input.value)
-  input.next()
-  input.expect(":")
-  return new LiteralDeclaration(lit.start, lit, parseTag(input))
 }
 
 function parseExternalTokens(input: Input) {

@@ -1,6 +1,6 @@
 import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
-        ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
+        ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker, TagBlock,
         TaggedExpression, TagExpression, AtExpression,
         Tag as TagNode, TagPart, ValueTag, TagInterpolation, TagName,
         exprsEq, exprEq} from "./node"
@@ -106,6 +106,7 @@ class Builder {
   namespaces: {[name: string]: Namespace} = Object.create(null)
   namedTerms: {[name: string]: Term} = Object.create(null)
   termTable: {[name: string]: number} = Object.create(null)
+  declaredTags: {[name: string]: string} = Object.create(null)
 
   astRules: {skip: Term, rule: RuleDeclaration}[] = []
   currentSkip: Term[] = []
@@ -146,6 +147,8 @@ class Builder {
       if (this.namespaces[rule.id.name])
         this.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
     }
+
+    if (this.ast.tags) this.readTags(this.ast.tags)
 
     this.currentSkip.push(this.noSkip)
     if (mainSkip != this.noSkip) {
@@ -309,6 +312,15 @@ class Builder {
           this.raise(`Nested grammar in ambiguous position after ${nest[0].trail()} ` + state.set)
         state.nested = this.nestedGrammars.findIndex(g => g.placeholder == placeholder)
       }
+    }
+  }
+
+  readTags(tags: TagBlock) {
+    for (let decl of tags.tags) {
+      let id = decl.target instanceof LiteralExpression ? JSON.stringify(decl.target.value) : decl.target.name
+      if (this.declaredTags[id])
+        this.raise(`Duplicate tag definition for ${decl.target}`, decl.start)
+      this.declaredTags[id] = this.finishTag(decl.tag)!
     }
   }
 
@@ -579,7 +591,7 @@ class Builder {
       let name = this.newName(`tag.${tag}`, tag)
       return [p(this.defineRule(name, this.normalizeExpr(expr.expr)))]
     } else {
-      return this.raise("This type of expression may not occur in non-token rules", expr.start)
+      return this.raise(`This type of expression ('${expr}') may not occur in non-token rules`, expr.start)
     }
   }
 
@@ -587,6 +599,11 @@ class Builder {
     let expr = this.substituteArgs(rule.expr, args, rule.params)
     this.used(rule.id.name)
     let tag = this.finishTag(rule.tag, args, rule.params)
+    let tagDecl = this.declaredTags[rule.id.name]
+    if (tagDecl) {
+      if (tag) this.raise(`Duplicate tag definition for rule '${rule.id.name}'`, rule.tag!.start)
+      tag = tagDecl
+    }
     let delim = tag && this.findDelimiters(rule.expr)
     if (delim) tag += ".delim=" + JSON.stringify(delim)
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), tag || true)
@@ -878,12 +895,6 @@ class TokenSet {
   constructor(readonly b: Builder, readonly ast: TokenDeclaration | null) {
     this.rules = ast ? ast.rules : none
     for (let rule of this.rules) this.b.unique(rule.id)
-    if (ast) for (let i = 0; i < ast.literals.length; i++) {
-      let lit = ast.literals[i].literal.value
-      for (let j = i + 1; j < ast.literals.length; j++)
-        if (ast.literals[j].literal.value == lit)
-          b.raise(`Duplicate literal tag definition for ${JSON.stringify(lit)}`, ast.literals[j].start)
-    }
   }
 
   getToken(expr: NamedExpression) {
@@ -902,8 +913,8 @@ class TokenSet {
   getLiteral(expr: LiteralExpression) {
     let id = JSON.stringify(expr.value)
     for (let built of this.built) if (built.id == id) return built.term
-    let decl = this.ast && this.ast.literals.find(lit => lit.literal.value == expr.value)
-    let term = this.b.makeTerminal(id, decl ? this.b.finishTag(decl.tag) : null)
+    let decl = this.b.declaredTags[id]
+    let term = this.b.makeTerminal(id, decl || null)
     this.build(expr, this.startState, new State([term]), none)
     this.built.push(new BuiltRule(id, none, term))
     return term
