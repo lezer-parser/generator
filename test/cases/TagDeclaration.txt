@@ -1,0 +1,28 @@
+@top { ("a" | "(" b ")")+ }
+
+b { "b" }
+
+@tags {
+  @punctuation<"()">
+  @all<:lang=foo.something>
+  "a":a
+  b:b
+}
+
+# Uses declared tags for literals
+
+a
+
+==> a
+
+# Adds global tags
+
+a
+
+==> a.lang=foo.something
+
+# Applies punctuation tags
+
+(b)
+
+==> open.paren.punctuation b close.paren.punctuation

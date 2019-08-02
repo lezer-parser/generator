@@ -356,12 +356,12 @@ function parsePrecedence(input: Input) {
 function parseTagBlock(input: Input) {
   let start = input.start
   let tags: TagDeclaration[] = []
-  let exprs: TagExpression[] = []
+  let exprs: AtExpression[] = []
   input.next()
   input.expect("{")
   while (!input.eat("}")) {
-    if (input.type == "@") {
-      exprs.push(parseExprInner(input) as TagExpression)
+    if (input.type == "at") {
+      exprs.push(parseExprInner(input) as AtExpression)
     } else {
       let start = input.start
       let target = input.type == "string" ? parseExprInner(input) as LiteralExpression : parseIdent(input)

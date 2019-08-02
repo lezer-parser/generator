@@ -25,6 +25,10 @@ dualExpr:dual.expr {
   bClose { "|]" }
 }
 
+@tags {
+  @detect-delim
+}
+
 # Assigns delim to tagged expressions
 
 (11)

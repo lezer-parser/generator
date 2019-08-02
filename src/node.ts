@@ -56,7 +56,7 @@ export class TokenDeclaration extends Node {
 export class TagBlock extends Node {
   constructor(start: number,
               readonly tags: readonly TagDeclaration[],
-              readonly exprs: readonly TagExpression[]) { super(start) }
+              readonly exprs: readonly AtExpression[]) { super(start) }
 }
 
 export class TagDeclaration extends Node {

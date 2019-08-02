@@ -107,6 +107,8 @@ class Builder {
   namedTerms: {[name: string]: Term} = Object.create(null)
   termTable: {[name: string]: number} = Object.create(null)
   declaredTags: {[name: string]: string} = Object.create(null)
+  detectDelimiters = false
+  globalTag: null | string = null
 
   astRules: {skip: Term, rule: RuleDeclaration}[] = []
   currentSkip: Term[] = []
@@ -296,7 +298,7 @@ class Builder {
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
     let skipTable = data.storeArray(skipTags)
-    return new Parser(states, data.finish(), computeGotoTable(table), tags.map(t => new Tag(t)),
+    return new Parser(states, data.finish(), computeGotoTable(table), tags.map(t => new Tag(t + (this.globalTag ? "." + this.globalTag : ""))),
                       tokenizers, nested,
                       specTable, specializations, precTable, skipTable, names)
   }
@@ -315,13 +317,43 @@ class Builder {
     }
   }
 
-  readTags(tags: TagBlock) {
-    for (let decl of tags.tags) {
-      let id = decl.target instanceof LiteralExpression ? JSON.stringify(decl.target.value) : decl.target.name
-      if (this.declaredTags[id])
-        this.raise(`Duplicate tag definition for ${decl.target}`, decl.start)
-      this.declaredTags[id] = this.finishTag(decl.tag)!
+  readTags(tags: TagBlock): void {
+    for (let decl of tags.tags)
+      this.declareTag(decl.target instanceof LiteralExpression ? JSON.stringify(decl.target.value) : decl.target.name,
+                      this.finishTag(decl.tag)!, decl.start)
+
+    for (let expr of tags.exprs) {
+      if (expr.id == "detect-delim") {
+        this.detectDelimiters = true
+      } else if (expr.id == "all") {
+        if (expr.args.length != 1) this.raise(`@all takes exactly one argument`, expr.start)
+        let tag = expr.args[0]
+        if (!(tag instanceof TagExpression)) return this.raise(`Argument to @all must be a tag expression`)
+        this.globalTag = this.finishTag(tag.tag)
+      } else if (expr.id == "punctuation") {
+        if (expr.args.length > 1) this.raise(`@punctuation takes zero or one arguments`, expr.start)
+        let filter = null
+        if (expr.args.length) {
+          let arg = expr.args[0]
+          if (!(arg instanceof LiteralExpression))
+            return this.raise(`The argument to @punctuation should be a literal string`, arg.start)
+          filter = arg.value
+          for (let i = 0; i < filter.length; i++) if (!STD_PUNC_TAGS[filter[i]])
+            this.raise(`No standard punctuation name has been defined for ${JSON.stringify(filter[i])}`, arg.start)
+        }
+        for (let punc in STD_PUNC_TAGS) {
+          if (filter && filter.indexOf(punc) < 0) continue
+          this.declareTag(JSON.stringify(punc), STD_PUNC_TAGS[punc], expr.start)
+        }
+      } else {
+        this.raise(`Unrecognized tag annotation '${expr}'`, expr.start)
+      }
     }
+  }
+
+  declareTag(id: string, tag: string, pos: number) {
+    if (this.declaredTags[id]) this.raise(`Duplicate tag definition for ${id}`, pos)
+    this.declaredTags[id] = tag
   }
 
   makeTerminal(name: string, tag: string | null) {
@@ -586,8 +618,7 @@ class Builder {
     } else if (expr instanceof AtExpression) {
       return this.resolveAt(expr)
     } else if (expr instanceof TaggedExpression) {
-      let tag = this.finishTag(expr.tag)!, delim = this.findDelimiters(expr.expr)
-      if (delim) tag += ".delim=" + JSON.stringify(delim)
+      let tag = this.addDelimiters(this.finishTag(expr.tag)!, expr.expr)
       let name = this.newName(`tag.${tag}`, tag)
       return [p(this.defineRule(name, this.normalizeExpr(expr.expr)))]
     } else {
@@ -604,8 +635,7 @@ class Builder {
       if (tag) this.raise(`Duplicate tag definition for rule '${rule.id.name}'`, rule.tag!.start)
       tag = tagDecl
     }
-    let delim = tag && this.findDelimiters(rule.expr)
-    if (delim) tag += ".delim=" + JSON.stringify(delim)
+    tag = this.addDelimiters(tag, rule.expr)
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), tag || true)
 
     if (args.length == 0) this.namedTerms[rule.id.name] = name
@@ -666,8 +696,10 @@ class Builder {
     return token!
   }
 
-  findDelimiters(expr: Expression) {
-    if (!(expr instanceof SequenceExpression) || expr.exprs.length < 2) return null
+  addDelimiters(tag: string | null, expr: Expression) {
+    if (!tag || !this.detectDelimiters) return tag
+
+    if (!(expr instanceof SequenceExpression) || expr.exprs.length < 2) return tag
     let findToken = (expr: Expression): string | null => {
       if (expr instanceof LiteralExpression) return expr.value
       if (expr instanceof NamedExpression && expr.args.length == 0) {
@@ -679,13 +711,13 @@ class Builder {
       return null
     }
     let lastToken = findToken(expr.exprs[expr.exprs.length - 1])
-    if (!lastToken) return null
+    if (!lastToken) return tag
     const brackets = ["()", "[]", "{}", "<>"]
     let bracket = brackets.find(b => lastToken!.indexOf(b[1]) > -1 && lastToken!.indexOf(b[0]) < 0)
-    if (!bracket) return null
+    if (!bracket) return tag
     let firstToken = findToken(expr.exprs[0])
-    if (!firstToken || firstToken.indexOf(bracket[0]) < 0 || firstToken.indexOf(bracket[1]) > -1) return null
-    return firstToken + " " + lastToken
+    if (!firstToken || firstToken.indexOf(bracket[0]) < 0 || firstToken.indexOf(bracket[1]) > -1) return tag
+    return tag + ".delim=" + JSON.stringify(firstToken + " " + lastToken)
   }
 }
 
@@ -1203,6 +1235,24 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
                [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]]
 }
 
+const STD_PUNC_TAGS: {[char: string]: string} = {
+  "(": "open.paren.punctuation",
+  ")": "close.paren.punctuation",
+  "[": "open.bracket.punctuation",
+  "]": "close.bracket.punctuation",
+  "{": "open.brace.punctuation",
+  "}": "close.brace.punctuation",
+  ",": "comma.punctuation",
+  ":": "colon.punctuation",
+  ".": "dot.punctuation",
+  ";": "semicolon.punctuation",
+  "#": "hash.punctuation",
+  "?": "question.punctuation",
+  "!": "exclamation.punctuation",
+  "@": "at.punctuation",
+  "|": "bar.punctuation"
+}
+
 function isEmpty(expr: Expression) {
   return expr instanceof SequenceExpression && expr.exprs.length == 0
 }
@@ -1412,11 +1462,26 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${type}, ${placeholder}]`
       head += `import {${imports[source].join(", ")}} from ${source}\n`
   }
 
+  let globalTag: string | null = null
+  if (parser.tags.length) {
+    let tag0 = parser.tags[0].tag, suffix = tag0
+    for (let i = 1; i < parser.tags.length; i++) {
+      let tag = parser.tags[i].tag
+      while (tag.length < suffix.length || tag.slice(tag.length - suffix.length) != suffix) {
+        let head = /^(?:[^."]|\"(?:[^"\\]|\\.)*\")+\./.exec(suffix)
+        suffix = head ? suffix.slice(head[0].length) : ""
+      }
+      if (suffix.length == 0) break
+    }
+    if (suffix) globalTag = suffix
+  }
+
   let parserStr = `Parser.deserialize(
   ${encodeArray(parser.states, 0xffffffff)},
   ${encodeArray(parser.data)},
   ${encodeArray(parser.goto)},
-  [${parser.tags.map(t => JSON.stringify(t.tag)).join(",")}],
+  [${parser.tags.map(t => JSON.stringify(globalTag ? t.tag.slice(0, t.tag.length - globalTag.length - 1) : t.tag)).join(",")}],
+  ${JSON.stringify(globalTag)},
   ${encodeArray(tokenData || [])},
   [${tokenizers.join(", ")}],
   [${nested.join(", ")}],
