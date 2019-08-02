@@ -1,7 +1,8 @@
 import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDeclaration,
         Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
-        TaggedExpression, TagExpression, Tag as TagNode, TagPart, ValueTag, TagInterpolation, TagName,
+        TaggedExpression, TagExpression, AtExpression,
+        Tag as TagNode, TagPart, ValueTag, TagInterpolation, TagName,
         exprsEq, exprEq} from "./node"
 import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
 import {State, MAX_CHAR} from "./token"
@@ -51,8 +52,6 @@ class Parts {
 }
 
 function p(...terms: Term[]) { return new Parts(terms, null) }
-
-const reserved = ["specialize", "extend", "skip"]
 
 class BuiltRule {
   constructor(readonly id: string,
@@ -162,10 +161,9 @@ class Builder {
     }
     this.currentSkip.pop()
 
-    let top = this.astRules.find(r => r.rule.id.name == "top")
-    if (!top) return this.raise(`Missing 'top' rule declaration`)
-    if (top.rule.params.length) this.raise(`'top' rules should not take parameters`, top.rule.id.start)
-    this.buildRule(top.rule, [], top.skip)
+    this.currentSkip.push(mainSkip)
+    this.defineRule(this.terms.top, this.normalizeExpr(this.ast.topExpr))
+    this.currentSkip.pop()
 
     for (let name in this.ruleNames) {
       let value = this.ruleNames[name]
@@ -178,7 +176,6 @@ class Builder {
   unique(id: Identifier) {
     if (id.name in this.ruleNames)
       this.raise(`Duplicate definition of rule '${id.name}'`, id.start)
-    if (reserved.includes(id.name)) this.raise(`The name '${id.name}' is reserved for a built-in operator`, id.start)
     this.ruleNames[id.name] = id
   }
 
@@ -486,10 +483,6 @@ class Builder {
       if (!ns)
         this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
       return ns.resolve(expr, this)
-    } else if (expr.id.name == "specialize" || expr.id.name == "extend") {
-      return [p(this.resolveSpecialization(expr, expr.id.name))]
-    } else if (expr.id.name == "top") {
-      return this.raise(`The 'top' rule can't be referenced in other expressions`, expr.start)
     } else {
       for (let built of this.built) if (built.matches(expr)) return [p(built.term)]
 
@@ -507,6 +500,13 @@ class Builder {
         this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
       return [p(this.buildRule(known.rule, expr.args, known.skip))]
     }
+  }
+
+  resolveAt(expr: AtExpression): Parts[] {
+    if (expr.id == "specialize" || expr.id == "extend")
+      return [p(this.resolveSpecialization(expr))]
+    else
+      return this.raise(`Unknown @-expression type: @${expr.id}`, expr.start)
   }
 
   // For tree-balancing reasons, repeat expressions X* have to be
@@ -571,6 +571,8 @@ class Builder {
       return [p(this.tokens.getLiteral(expr)!)]
     } else if (expr instanceof NamedExpression) {
       return this.resolve(expr)
+    } else if (expr instanceof AtExpression) {
+      return this.resolveAt(expr)
     } else if (expr instanceof TaggedExpression) {
       let tag = this.finishTag(expr.tag)!, delim = this.findDelimiters(expr.expr)
       if (delim) tag += ".delim=" + JSON.stringify(delim)
@@ -582,16 +584,13 @@ class Builder {
   }
 
   buildRule(rule: RuleDeclaration, args: readonly Expression[], skip: Term): Term {
-    let expr = this.substituteArgs(rule.expr, args, rule.params), name
+    let expr = this.substituteArgs(rule.expr, args, rule.params)
     this.used(rule.id.name)
-    if (rule.id.name == "top") {
-      name = this.terms.top
-    } else {
-      let tag = this.finishTag(rule.tag, args, rule.params)
-      let delim = tag && this.findDelimiters(rule.expr)
-      if (delim) tag += ".delim=" + JSON.stringify(delim)
-      name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), tag || true)
-    }
+    let tag = this.finishTag(rule.tag, args, rule.params)
+    let delim = tag && this.findDelimiters(rule.expr)
+    if (delim) tag += ".delim=" + JSON.stringify(delim)
+    let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), tag || true)
+
     if (args.length == 0) this.namedTerms[rule.id.name] = name
     this.built.push(new BuiltRule(rule.id.name, args, name))
     this.currentSkip.push(skip)
@@ -612,7 +611,8 @@ class Builder {
     return part.toString()
   }
 
-  resolveSpecialization(expr: NamedExpression, type: string) {
+  resolveSpecialization(expr: AtExpression) {
+    let type = expr.id
     if (expr.args.length < 2 || expr.args.length > 3) this.raise(`'${type}' takes two or three arguments`, expr.start)
     let values, nameArg = expr.args[1]
     if (nameArg instanceof LiteralExpression)
@@ -847,15 +847,15 @@ class NestNamespace implements Namespace {
 
 function findExprAfter(ast: GrammarDeclaration, expr: Expression) {
   let found: Expression | undefined
-  for (let rule of ast.rules) {
-    rule.expr.walk(cur => {
-      if (cur instanceof SequenceExpression) {
-        let index = cur.exprs.indexOf(expr)
-        if (index > -1 && index < cur.exprs.length - 1) found = cur.exprs[index + 1]
-      }
-      return cur
-    })
+  function walk(cur: Expression) {
+    if (cur instanceof SequenceExpression) {
+      let index = cur.exprs.indexOf(expr)
+      if (index > -1 && index < cur.exprs.length - 1) found = cur.exprs[index + 1]
+    }
+    return cur
   }
+  for (let rule of ast.rules) rule.expr.walk(walk)
+  ast.topExpr.walk(walk)
   return found
 }
 

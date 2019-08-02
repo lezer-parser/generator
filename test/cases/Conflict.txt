@@ -1,4 +1,4 @@
-top { expr+ }
+@top { expr+ }
 
 expr { arrowExpr | parenExpr | identifier }
 
@@ -10,9 +10,9 @@ identifier:id.expr { word ~arrow }
 
 paramName:param.name { word ~arrow }
 
-skip { whitespace }
+@skip { whitespace }
 
-tokens {
+@tokens {
   i<expr> { expr }
 
   whitespace { std.whitespace+ }

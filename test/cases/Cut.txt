@@ -1,8 +1,8 @@
-precedence {
-  statement cut
+@precedence {
+  statement @cut
 }
 
-top { statement* }
+@top { statement* }
 
 statement {
   (!statement "{" statement* "}"):block |

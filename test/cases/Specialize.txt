@@ -1,4 +1,4 @@
-top { (statement ";")+ }
+@top { (statement ";")+ }
 
 statement {
   (kw<"let"> identifier "=" number):decl |
@@ -8,13 +8,13 @@ statement {
   identifier
 }
 
-kw<word> { specialize<identifier, word> }
+kw<word> { @specialize<identifier, word> }
 
-kwExt<word> { extend<identifier, word> }
+kwExt<word> { @extend<identifier, word> }
 
-skip { whitespace }
+@skip { whitespace }
 
-tokens {
+@tokens {
   whitespace { std.whitespace+ }
   identifier:id { std.asciiLetter+ }
   number:number { std.digit+ }

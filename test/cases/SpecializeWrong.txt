@@ -1,6 +1,6 @@
-top { specialize<name, "foo"> | extend<name, "foo"> }
+@top { @specialize<name, "foo"> | @extend<name, "foo"> }
 
-tokens {
+@tokens {
   name { std.asciiLetter+ }
 }
 

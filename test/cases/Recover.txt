@@ -1,12 +1,12 @@
-top { (class | block)* }
+@top { (class | block)* }
 
 class:class { "class" "{" "classitem"* "}" }
 
 block:block { "{" (block | "statement")* "}" }
 
-skip { whitespace }
+@skip { whitespace }
 
-tokens {
+@tokens {
   whitespace { std.whitespace+ }
 }
 

@@ -1,7 +1,7 @@
-top { (a | b | bb)+ }
+@top { (a | b | bb)+ }
 
-tokens {
-  precedence { bb, b }
+@tokens {
+  @precedence { bb, b }
 
   a:a { "A" }
   b:b { "B" "."? }

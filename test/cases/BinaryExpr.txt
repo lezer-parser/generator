@@ -1,6 +1,6 @@
-precedence { mult left, plus left }
+@precedence { mult @left, plus @left }
 
-top { expr }
+@top { expr }
 
 expr {
   atom | binaryExpr
@@ -13,7 +13,7 @@ binaryExpr:bin.expr {
 
 atom { symbol | "(" expr ")" }
 
-tokens {
+@tokens {
   multOp:mult.op { "*" | "/" }
   addOp:add.op { "+" | "-" }
   symbol:sym.expr { "x" | "y" }

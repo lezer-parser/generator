@@ -1,4 +1,4 @@
-top { statement+ }
+@top { statement+ }
 
 statement:stat {
   variable ";" |
@@ -7,9 +7,9 @@ statement:stat {
 
 variable:var { identifier }
 
-skip { space | comment }
+@skip { space | comment }
 
-tokens {
+@tokens {
   space { std.whitespace+ }
   comment:comment { "'" [^']* "'" }
   identifier { "x" }

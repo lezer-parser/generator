@@ -1,8 +1,8 @@
-top { x+ }
+@top { x+ }
 
-skip { whitespace | comment }
+@skip { whitespace | comment }
 
-tokens {
+@tokens {
   whitespace { (" " | "\n")+ }
 
   comment:comment { "#" [^\n]* }

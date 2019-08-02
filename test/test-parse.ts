@@ -27,9 +27,9 @@ function change(tree: Tree, ...changes: ([number, number] | [number, number, num
 
 describe("parsing", () => {
   let p1 = p(`
-    precedence { call }
+    @precedence { call }
 
-    top { statement* }
+    @top { statement* }
     statement { conditional | loop | block | expression p<";"> }
     conditional:cond { kw<"if"> expression statement }
     block:block { p<"{"> statement* p<"}"> }
@@ -37,14 +37,14 @@ describe("parsing", () => {
     expression { callExpression | number | variable | p<"!"> expression }
     callExpression:call { expression !call p<"("> expression* p<")"> }
 
-    kw<value> { specialize<variable, value> }
-    tokens {
+    kw<value> { @specialize<variable, value> }
+    @tokens {
       p<x> { x }
       number:num { std.digit+ }
       variable:var { std.asciiLetter+ }
       whitespace { std.whitespace+ }
     }
-    skip { whitespace }`)
+    @skip { whitespace }`)
 
   function qq(parser: Parser, ast: Tree) {
     return function(query: string, offset = 1): {start: number, end: number} {
@@ -184,12 +184,12 @@ describe("parsing", () => {
 
   it("doesn't incorrectly reuse nodes", () => {
     let parser = buildParser(`
-precedence { times left, plus left }
-top { expr+ }
+@precedence { times @left, plus @left }
+@top { expr+ }
 expr { binOp | var }
 binOp:bin { expr !plus "+" expr | expr !times "*" expr }
-skip { space }
-tokens { space { " "+ } var:var { "x" } "*":times "+":plus }
+@skip { space }
+@tokens { space { " "+ } var:var { "x" } "*":times "+":plus }
 `)
     let ast = parser.parse("x + x + x", {strict: true, bufferLength: 2})
     testTree(ast, "bin(bin(var,plus,var),plus,var)")
@@ -199,12 +199,12 @@ tokens { space { " "+ } var:var { "x" } "*":times "+":plus }
 
   it("can cache skipped content", () => {
     let comments = buildParser(`
-top { "x"+ }
-skip { space | comment }
-skip {} {
+@top { "x"+ }
+@skip { space | comment }
+@skip {} {
   comment:comment { commentStart (comment | commentContent)* commentEnd }
 }
-tokens {
+@tokens {
   space { " "+ }
   commentStart { "(" }
   commentEnd { ")" }
@@ -219,7 +219,7 @@ tokens {
 
 describe("sequences", () => {
   let p1 = p(`
-    top { (x | y)+ }
+    @top { (x | y)+ }
     x:x { "x" }
     y:y { "y" ";"* }`)
 
@@ -278,13 +278,13 @@ describe("sequences", () => {
 describe("nesting", () => {
   it("can nest grammars", () => {
     let inner = buildParser(`
-top { expr+ }
+@top { expr+ }
 expr { ("(":p.open expr+ ")":p.close):b | ".":dot }`)
     let outer = buildParser(`
-external grammar inner from "."
-top { expr+ }
+@external-grammar inner from "."
+@top { expr+ }
 expr { "[[" nest.inner<:foo> "]]" | "!":bang }
-tokens { "[[":b.open "]]":b.close }
+@tokens { "[[":b.open "]]":b.close }
 `, {nestedGrammar() { return inner }})
 
     testTree(outer.parse("![[((.).)]][[.]]"),
@@ -293,14 +293,14 @@ tokens { "[[":b.open "]]":b.close }
   })
 
   it("supports conditional nesting and end token predicates", () => {
-    let inner = buildParser(`top { any } tokens { any { _+ } }`)
+    let inner = buildParser(`@top { any } @tokens { any { _+ } }`)
     let outer = buildParser(`
-external grammar inner from "."
-top { tag }
+@external-grammar inner from "."
+@top { tag }
 tag:tag { open nest.inner<:text, "</" name ">", tag*> close }
 open:open { "<" name ">" }
 close:close { "</" name ">" }
-tokens {
+@tokens {
   name { std.asciiLetter+ }
 }
 `, {nestedGrammar() { return nest }})
@@ -321,22 +321,22 @@ tokens {
   })
 
   it("allows updating the nested grammars for a parser", () => {
-    let inner1 = buildParser(`top { "x":a+ }`)
-    let inner2 = buildParser(`top { "x":b+ }`)
-    let outer = buildParser(`external grammar inner from "." top { "[" nest.inner<:nest> "]" } tokens { "[":o "]":c }`,
+    let inner1 = buildParser(`@top { "x":a+ }`)
+    let inner2 = buildParser(`@top { "x":b+ }`)
+    let outer = buildParser(`@external-grammar inner from "." @top { "[" nest.inner<:nest> "]" } @tokens { "[":o "]":c }`,
                             {nestedGrammar() { return inner1 }})
     testTree(outer.parse("[x]"), 'o,nest(a),c')
     testTree(outer.withNested({inner: inner2}).parse("[x]"), 'o,nest(b),c')
   })
 
   it("supports tag-less nesting", () => {
-    let inner = buildParser(`top { "x":x }`)
-    let outer = buildParser(`external grammar x from "." top { "&" nest.x "&" } tokens { "&":and }`, {nestedGrammar() { return inner }})
+    let inner = buildParser(`@top { "x":x }`)
+    let outer = buildParser(`@external-grammar x from "." @top { "&" nest.x "&" } @tokens { "&":and }`, {nestedGrammar() { return inner }})
     testTree(outer.parse("&x&"), 'and,x,and')
   })
 
   it("skips ranges with missing nested parsers", () => {
-    let outer = buildParser(`external grammar inner top { "[" nest.inner<:n> "]" } tokens { "[":o "]":c }`)
+    let outer = buildParser(`@external-grammar inner @top { "[" nest.inner<:n> "]" } @tokens { "[":o "]":c }`)
     testTree(outer.parse("[lfkdsajfa]"), 'o,n,c')
   })
 })

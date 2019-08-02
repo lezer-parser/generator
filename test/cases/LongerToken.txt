@@ -1,4 +1,4 @@
-top { ("foo":a | "foobar":b | "baz":c)+ }
+@top { ("foo":a | "foobar":b | "baz":c)+ }
 
 # Properly splits tokens
 

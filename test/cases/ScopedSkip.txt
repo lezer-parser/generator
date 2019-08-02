@@ -1,12 +1,12 @@
-top { a+ }
+@top { a+ }
 
-skip { spaces }
+@skip { spaces }
 
-skip { dashes } {
+@skip { dashes } {
   a:a { "x" | "(" "b" ")" }
 }
 
-tokens {
+@tokens {
   spaces { " "+ }
   dashes { "-"+ }
 }

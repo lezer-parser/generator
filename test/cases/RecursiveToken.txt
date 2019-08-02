@@ -1,6 +1,6 @@
-top { foo }
+@top { foo }
 
-tokens {
+@tokens {
   foo:foo { bar+ }
   bar { foo }
 }

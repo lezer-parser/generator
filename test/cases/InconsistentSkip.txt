@@ -1,11 +1,11 @@
-top { a+ }
+@top { a+ }
 
-skip { space }
+@skip { space }
 
-skip {} {
+@skip {} {
   a:a { "a" "b"? }
 }
 
-tokens { space { " "+ } }
+@tokens { space { " "+ } }
 
 //! Inconsistent skip sets

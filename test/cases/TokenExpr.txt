@@ -1,8 +1,8 @@
-top { (word | number | operator)+ }
+@top { (word | number | operator)+ }
 
-skip { whitespace }
+@skip { whitespace }
 
-tokens {
+@tokens {
   whitespace { std.whitespace+ }
 
   word:word { std.asciiLetter (letter | std.digit)* }

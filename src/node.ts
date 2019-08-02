@@ -5,6 +5,7 @@ export class Node {
 export class GrammarDeclaration extends Node {
   constructor(start: number,
               readonly rules: readonly RuleDeclaration[],
+              readonly topExpr: Expression,
               readonly tokens: TokenDeclaration | null,
               readonly externalTokens: readonly ExternalTokenDeclaration[],
               readonly precedences: PrecDeclaration | null,
@@ -93,11 +94,23 @@ export class NamedExpression extends Expression {
   toString() { return this.id.name + (this.args.length ? `<${this.args.join()}>` : "") }
   eq(other: NamedExpression) {
     return (this.namespace ? other.namespace != null && other.namespace.name == this.namespace.name : !other.namespace) &&
-      this.id.name == other.id.name
+      this.id.name == other.id.name && exprsEq(this.args, other.args)
   }
   walk(f: (expr: Expression) => Expression): Expression {
     let args = walkExprs(this.args, f)
     return f(args == this.args ? this : new NamedExpression(this.start, this.namespace, this.id, args))
+  }
+}
+
+export class AtExpression extends Expression {
+  constructor(start: number, readonly id: string, readonly args: readonly Expression[]) { super(start) }
+  toString() { return `@${this.id}` + (this.args.length ? `<${this.args.join()}>` : "") }
+  eq(other: AtExpression) {
+    return this.id == other.id && exprsEq(this.args, other.args)
+  }
+  walk(f: (expr: Expression) => Expression): Expression {
+    let args = walkExprs(this.args, f)
+    return f(args == this.args ? this : new AtExpression(this.start, this.id, args))
   }
 }
 

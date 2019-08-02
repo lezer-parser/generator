@@ -1,4 +1,4 @@
-top { ("a":a | "b":b)+ }
+@top { ("a":a | "b":b)+ }
 
 # Assigns tags to tagged expressions
 

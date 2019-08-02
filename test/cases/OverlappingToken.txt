@@ -1,6 +1,6 @@
-top { (x | y)+ }
+@top { (x | y)+ }
 
-tokens {
+@tokens {
   x { "x"+ }
 
   y { "x" "y"* }

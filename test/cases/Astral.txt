@@ -1,8 +1,8 @@
-top { (identifier | thing)+ }
+@top { (identifier | thing)+ }
 
-skip { whitespace }
+@skip { whitespace }
 
-tokens {
+@tokens {
   whitespace { " "+ }
 
   identifierChar { std.asciiLetter | [\u{a1}-\u{10ffff}] }

@@ -1,6 +1,6 @@
-top { x<"hi"> }
+@top { x<"hi"> }
 
-tokens {
+@tokens {
   x<a, b>:x { a b }
 }
 

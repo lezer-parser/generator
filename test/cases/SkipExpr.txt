@@ -1,6 +1,6 @@
-top { "foo":foo+ }
+@top { "foo":foo+ }
 
-skip { " " | "<" skipContent* ">" }
+@skip { " " | "<" skipContent* ">" }
 
 skipContent { "a":a | "b":b }
 

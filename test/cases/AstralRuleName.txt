@@ -1,8 +1,8 @@
-top { (象𫝄鼻 | föó)+ }
+@top { (象𫝄鼻 | föó)+ }
 
 象𫝄鼻:x { x }
 
-tokens {
+@tokens {
   x { "x" }
   föó:foo { "y" }
 }

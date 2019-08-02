@@ -1,8 +1,8 @@
-top { (a | b | specialize<i, "ii", :i>)+ }
+@top { (a | b | @specialize<i, "ii", :i>)+ }
 
 a:a { "a" }
 
-tokens {
+@tokens {
   b:"$B" { "b" }
   i { "i"+ }
 }

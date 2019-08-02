@@ -1,4 +1,4 @@
-top { a* }
+@top { a* }
 
 a:a { b ~ambig "." | c ~ambig "." }
 

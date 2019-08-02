@@ -1,4 +1,4 @@
-top { expr+ }
+@top { expr+ }
 
 expr {
   ("(" number ")"):paren.expr |
@@ -19,7 +19,7 @@ dualExpr:dual.expr {
   ("{" | "{{") number ("}" | "}}")
 }
 
-tokens {
+@tokens {
   number:number.expr { std.digit+ }
   bOpen { "[|" }
   bClose { "|]" }

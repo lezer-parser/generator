@@ -1,8 +1,8 @@
-top { (kw<"let"> | kw<"if"> | foo)+ }
+@top { (kw<"let"> | kw<"if"> | foo)+ }
 
-skip { whitespace }
+@skip { whitespace }
 
-tokens {
+@tokens {
   whitespace { std.whitespace+ }
   kw<word>:$word.kw { word }
   foo:foo { bar<"foo"> }

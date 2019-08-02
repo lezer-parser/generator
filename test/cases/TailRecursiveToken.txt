@@ -1,8 +1,8 @@
-top { (single | open "." close)+ }
+@top { (single | open "." close)+ }
 
-skip { spaces }
+@skip { spaces }
 
-tokens {
+@tokens {
   spaces { " "+ }
 
   single:single { "`" toEnd }

@@ -1,10 +1,10 @@
-top { foo<bar> }
+@top { foo<bar> }
 
 bar { bar "x" | "" }
 
 foo<e> { token<e> }
 
-tokens {
+@tokens {
   token<x> { x "!" }
 }
 

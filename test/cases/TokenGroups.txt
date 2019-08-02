@@ -1,14 +1,14 @@
-precedence { div left }
+@precedence { div @left }
 
-top { expr }
+@top { expr }
 
 expr { regExp | symbol | binOp }
 
 binOp:op { expr !div "/" expr }
 
-skip { whitespace }
+@skip { whitespace }
 
-tokens {
+@tokens {
   whitespace { std.whitespace+ }
 
   symbol:sym { std.asciiLetter+ }
