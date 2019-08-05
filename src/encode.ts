@@ -12,28 +12,24 @@
 //
 // - The digits in a number are ordered from high to low significance.
 
-const BIG_VAL = 0xffff, BIG_VAL_CODE = 126
-
-const START = 32, GAP1 = 34 /* '"' */, GAP2 = 92 /* "\\" */
-
-const BASE = 46 // (126 - 32 - 2) / 2
+import {Encode} from "lezer/src/constants"
 
 function digitToChar(digit: number) {
-  let ch = digit + START
-  if (ch >= GAP1) ch++
-  if (ch >= GAP2) ch++
+  let ch = digit + Encode.Start
+  if (ch >= Encode.Gap1) ch++
+  if (ch >= Encode.Gap2) ch++
   return String.fromCharCode(ch)
 }
 
 export function encode(value: number, max = 0xffff) {
   if (value > max) throw new Error("Trying to encode a number that's too big: " + value)
-  if (value == BIG_VAL) return String.fromCharCode(BIG_VAL_CODE)
+  if (value == Encode.BigVal) return String.fromCharCode(Encode.BigValCode)
   let result = ""
-  for (let first = BASE;; first = 0) {
-    let low = value % BASE, rest = value - low
+  for (let first = Encode.Base;; first = 0) {
+    let low = value % Encode.Base, rest = value - low
     result = digitToChar(low + first) + result
     if (rest == 0) break
-    value = rest / BASE
+    value = rest / Encode.Base
   }
   return result
 }
