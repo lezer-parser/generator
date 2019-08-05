@@ -154,23 +154,24 @@ function parseGrammar(input: Input) {
       if (input.type == "{") {
         input.next()
         let scoped = []
-        while (!input.eat("}")) scoped.push(parseRule(input, false))
+        while (!input.eat("}")) scoped.push(parseRule(input))
         scopedSkip.push({expr: skip, rules: scoped})
       } else {
         if (mainSkip) input.raise(`Multiple top-level skip declarations`, input.start)
         mainSkip = skip
       }
     } else {
-      rules.push(parseRule(input, false))
+      rules.push(parseRule(input))
     }
   }
   if (!top) return input.raise(`Missing @top declaration`)
   return new GrammarDeclaration(start, rules, top, tokens, tags, external, prec, mainSkip, scopedSkip, nested)
 }
 
-function parseRule(input: Input, isToken: boolean) {
-  let id = parseIdent(input), params: Identifier[] = []
+function parseRule(input: Input) {
   let start = input.start
+  let exported = input.eat("at", "export")
+  let id = parseIdent(input), params: Identifier[] = []
 
   if (input.eat("<")) while (!input.eat(">")) {
     if (params.length) input.expect(",")
@@ -178,7 +179,7 @@ function parseRule(input: Input, isToken: boolean) {
   }
   let tag = input.eat(":") ? parseTag(input) : null
   let expr = parseBracedExpr(input)
-  return new RuleDeclaration(start, id, tag, params, expr)
+  return new RuleDeclaration(start, id, exported, tag, params, expr)
 }
 
 function parseBracedExpr(input: Input): Expression {
@@ -382,7 +383,7 @@ function parseTokens(input: Input) {
     if (input.type == "at" && input.value == "precedence")
       precedences.push(parseTokenPrecedence(input))
     else
-      tokenRules.push(parseRule(input, true))
+      tokenRules.push(parseRule(input))
   }
   return new TokenDeclaration(start, precedences, tokenRules)
 }

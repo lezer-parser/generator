@@ -637,8 +637,11 @@ class Builder {
     }
     tag = this.addDelimiters(tag, rule.expr)
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), tag || true)
+    if ((tag || rule.exported) && rule.params.length == 0) {
+      if (!tag) name.preserve = true
+      this.namedTerms[rule.id.name] = name
+    }
 
-    if (args.length == 0) this.namedTerms[rule.id.name] = name
     this.built.push(new BuiltRule(rule.id.name, args, name))
     this.currentSkip.push(skip)
     let result = this.defineRule(name, this.normalizeExpr(expr))
@@ -936,7 +939,10 @@ class TokenSet {
     if (!rule) return null
     let term = this.b.makeTerminal(expr.toString(), this.b.finishTag(rule.tag, expr.args,
                                                                      rule.params.length != expr.args.length ? undefined : rule.params))
-    if (expr.args.length == 0) this.b.namedTerms[expr.id.name] = term
+    if ((term.tag || rule.exported) && rule.params.length == 0) {
+      if (!term.tag) term.preserve = true
+      this.b.namedTerms[expr.id.name] = term
+    }
     this.buildRule(rule, expr, this.startState, new State([term]))
     this.built.push(new BuiltRule(name, expr.args, term))
     return term
