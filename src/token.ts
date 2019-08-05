@@ -124,7 +124,7 @@ export class State {
     let out = "digraph {\n"
     this.reachable(state => {
       if (state.accepting.length)
-        out += `  ${state.id} [label=${state.accepting.join()}];\n`
+        out += `  ${state.id} [label=${JSON.stringify(state.accepting.join())}];\n`
       for (let edge of state.edges)
         out += `  ${state.id} ${edge};\n`
     })
