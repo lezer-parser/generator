@@ -52,8 +52,10 @@ class TestSpec {
   }
 }
 
+const punc = new Tag("punctuation"), doc = new Tag("document")
+
 function defaultIgnore(tag: Tag) {
-  return tag.has("punctuation")
+  return tag.match(punc)
 }
 
 export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) {
@@ -68,7 +70,7 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
       return undefined
     } else if (mayIgnore(tag)) {
       return false
-    } else if (stack.length == 1 && tag.has("document")) {
+    } else if (stack.length == 1 && tag.match(doc)) {
       return undefined
     } else {
       let parent = last > 0 ? stack[last - 1][pos[last - 1]].tag : "tree"
@@ -76,7 +78,7 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
       throw new Error(`Expected ${after}, got ${tag.tag} at ${start}`)
     }
   }, (tag, start) => {
-    if (stack.length == 1 && tag.has("document")) return
+    if (stack.length == 1 && tag.match(doc)) return
     let last = stack.length - 1, index = pos[last], seq = stack[last]
     if (index < seq.length) throw new Error(`Unexpected end of ${tag.tag}. Expected ${seq.slice(index).map(s => s.tag).join(", ")} at ${start}`)
     pos.pop()
