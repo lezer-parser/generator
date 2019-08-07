@@ -291,7 +291,6 @@ class Builder {
       name: g.name,
       grammar: tempNestedGrammar(this, g),
       end: new LezerTokenGroup(g.end.compile().toArray({}, none), 0),
-      type: g.type ? g.type.id : -1,
       placeholder: g.placeholder.id
     }))
 
@@ -854,7 +853,6 @@ interface Namespace {
 
 class NestedGrammarSpec {
   constructor(readonly placeholder: Term,
-              readonly type: Term | null,
               readonly name: string,
               readonly extName: string,
               readonly source: string | null,
@@ -863,23 +861,12 @@ class NestedGrammarSpec {
 
 class NestNamespace implements Namespace {
   resolve(expr: NamedExpression, builder: Builder): Parts[] {
-    if (expr.args.length > 3)
+    if (expr.args.length > 2)
       builder.raise(`Too many arguments to 'nest.${expr.id.name}'`, expr.start)
-    let [tagExpr, endExpr, defaultExpr] = expr.args as [NamedExpression | undefined, Expression | undefined, Expression | undefined]
-    let tag = null
-    if (tagExpr && !isEmpty(tagExpr)) {
-      if (!(tagExpr instanceof TagExpression))
-        return builder.raise(`First argument to 'nest.${expr.id.name}' should be a tag`, tagExpr.start)
-      tag = builder.finishTag(tagExpr.tag)
-    }
+    let [endExpr, defaultExpr] = expr.args as [NamedExpression | undefined, Expression | undefined, Expression | undefined]
     let extGrammar = builder.ast.grammars.find(g => g.id.name == expr.id.name)
     if (!extGrammar) return builder.raise(`No external grammar '${expr.id.name}' defined`, expr.id.start)
     let placeholder = builder.newName(expr.id.name + "-placeholder", true)
-    let term = null
-    if (tag) {
-      term = builder.newName(tag, tag)
-      term.preserve = true
-    }
     builder.defineRule(placeholder, defaultExpr ? builder.normalizeExpr(defaultExpr) : [])
 
     if (!endExpr && !(endExpr = findExprAfter(builder.ast, expr)))
@@ -891,9 +878,8 @@ class NestNamespace implements Namespace {
       if (!(e instanceof SyntaxError)) throw e
       builder.raise(`End token '${endExpr}' for nested grammar is not a valid token expression`, endExpr.start)
     }
-    builder.nestedGrammars.push(new NestedGrammarSpec(placeholder, term,
-                                                      extGrammar.id.name, extGrammar.externalID.name, extGrammar.source,
-                                                      endStart))
+    builder.nestedGrammars.push(new NestedGrammarSpec(placeholder, extGrammar.id.name, extGrammar.externalID.name,
+                                                      extGrammar.source, endStart))
     if (builder.nestedGrammars.length >= 2**(30 - StateFlag.NestShift))
       builder.raise("Too many nested grammars used")
     return [p(placeholder)]

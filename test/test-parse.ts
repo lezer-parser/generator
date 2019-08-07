@@ -288,36 +288,34 @@ expr { ("(":p.open expr+ ")":p.close):b | ".":dot }`)
     let outer = buildParser(`
 @external-grammar inner from "."
 @top { expr+ }
-expr { "[[" nest.inner<:foo> "]]" | "!":bang }
+expr { "[[" nest.inner "]]" | "!":bang }
 @tags { "[[":b.open "]]":b.close }
 `, {nestedGrammar() { return inner }})
 
     testTree(outer.parse("![[((.).)]][[.]]"),
-             'bang,b.open,foo(b(p.open,b(p.open,dot,p.close),dot,p.close)),b.close,b.open,foo(dot),b.close')
-    testTree(outer.parse("[[/\]]"), 'b.open,foo(⚠),b.close')
+             'bang,b.open,document(b(p.open,b(p.open,dot,p.close),dot,p.close)),b.close,b.open,document(dot),b.close')
+    testTree(outer.parse("[[/\]]"), 'b.open,document(⚠),b.close')
   })
 
   it("supports conditional nesting and end token predicates", () => {
-    let inner = buildParser(`@top { any } @tokens { any { _+ } }`)
     let outer = buildParser(`
 @external-grammar inner from "."
 @top { tag }
-tag:tag { open nest.inner<:text, "</" name ">", tag*> close }
+tag:tag { open nest.inner<"</" name ">", tag*> close }
 open:open { "<" name ">" }
 close:close { "</" name ">" }
-@tokens {
-  name { std.asciiLetter+ }
-}
-`, {nestedGrammar() { return nest }})
-
-    function nest(stream: InputStream, stack: Stack) {
-      let tag = /<(\w+)>$/.exec(stream.read(stack.ruleStart, stack.pos))
-      if (!tag || !["textarea", "script", "style"].includes(tag[1])) return {stay: true}
-      return {
-        parser: inner,
-        filterEnd(token: string) { return token == "</" + tag![1] + ">" }
+@tokens { name { std.asciiLetter+ } }
+@tags { @export<text, :text> }`, {
+    nestedGrammar(_, terms) {
+      return function nest(stream: InputStream, stack: Stack) {
+        let tag = /<(\w+)>$/.exec(stream.read(stack.ruleStart, stack.pos))
+        if (!tag || !["textarea", "script", "style"].includes(tag[1])) return {stay: true}
+        return {
+          filterEnd(token: string) { return token == "</" + tag![1] + ">" },
+          wrapType: terms.text
+        }
       }
-    }
+    }})
 
     testTree(outer.parse("<foo><bar></baz></foo>"),
              "tag(open,tag(open,close),close)")
@@ -328,10 +326,10 @@ close:close { "</" name ">" }
   it("allows updating the nested grammars for a parser", () => {
     let inner1 = buildParser(`@top { "x":a+ }`)
     let inner2 = buildParser(`@top { "x":b+ }`)
-    let outer = buildParser(`@external-grammar inner from "." @top { "[" nest.inner<:nest> "]" } @tags { "[":o "]":c }`,
+    let outer = buildParser(`@external-grammar inner from "." @top { "[" nest.inner "]" } @tags { "[":o "]":c }`,
                             {nestedGrammar() { return inner1 }})
-    testTree(outer.parse("[x]"), 'o,nest(a),c')
-    testTree(outer.withNested({inner: inner2}).parse("[x]"), 'o,nest(b),c')
+    testTree(outer.parse("[x]"), 'o,document(a),c')
+    testTree(outer.withNested({inner: inner2}).parse("[x]"), 'o,document(b),c')
   })
 
   it("supports tag-less nesting", () => {
@@ -341,7 +339,7 @@ close:close { "</" name ">" }
   })
 
   it("skips ranges with missing nested parsers", () => {
-    let outer = buildParser(`@external-grammar inner @top { "[" nest.inner<:n> "]" } @tags { "[":o "]":c }`)
-    testTree(outer.parse("[lfkdsajfa]"), 'o,n,c')
+    let outer = buildParser(`@external-grammar inner @top { "[" nest.inner "]" } @tags { "[":o "]":c }`)
+    testTree(outer.parse("[lfkdsajfa]"), 'o,c')
   })
 })
