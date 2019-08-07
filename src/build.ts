@@ -325,6 +325,14 @@ class Builder {
     for (let expr of tags.exprs) {
       if (expr.id == "detect-delim") {
         this.detectDelimiters = true
+      } else if (expr.id == "export") {
+        let [name, tag] = expr.args
+        if (expr.args.length != 2 || !(name instanceof NamedExpression) || name.args.length || !(tag instanceof TagExpression))
+          return this.raise(`Arguments to @export must be in <name, :tag> form`, expr.start)
+        this.unique(name.id)
+        this.used(name.id.name)
+        let term = this.namedTerms[name.id.name] = this.newName(name.id.name, this.finishTag(tag.tag))
+        term.preserve = true
       } else if (expr.id == "punctuation") {
         if (expr.args.length > 1) this.raise(`@punctuation takes zero or one arguments`, expr.start)
         let filter = null
