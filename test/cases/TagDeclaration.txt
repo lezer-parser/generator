@@ -1,25 +1,18 @@
-@top { ("a" | "(" b ")")+ }
+@top:document.lang=foo { ("a" | "(" b ")")+ }
 
 b { "b" }
 
 @tags {
   @punctuation<"()">
-  @all<:lang=foo.something>
   "a":a
   b:b
 }
 
-# Uses declared tags for literals
+# Adds a document node
 
 a
 
-==> a
-
-# Adds global tags
-
-a
-
-==> a.lang=foo.something
+==> document.lang=foo(a)
 
 # Applies punctuation tags
 

@@ -139,14 +139,14 @@ describe("parsing", () => {
   it("can resolve positions in trees", () => testResolve(2))
 
   let iterDoc = "while 1 { a; b; c(d e); } while 2 { f; }"
-  let iterSeq = ["loop", 0, "num", 6, "/num", 7, "block", 8, "var", 10, "/var", 11,
+  let iterSeq = ["document", 0, "loop", 0, "num", 6, "/num", 7, "block", 8, "var", 10, "/var", 11,
                  "var", 13, "/var", 14, "call", 16, "var", 16, "/var", 17,
                  "var", 18, "/var", 19, "var", 20, "/var", 21, "/call", 22,
                  "/block", 25, "/loop", 25, "loop", 26, "num", 32, "/num", 33, "block", 34, "var", 36,
-                 "/var", 37, "/block", 40, "/loop", 40]
+                 "/var", 37, "/block", 40, "/loop", 40, "/document", 40]
   // Node boundaries seen when iterating range 13-19 ("b; c(d")
-  let partialSeq = ["loop", 0, "block", 8, "var", 13, "/var", 14, "call", 16, "var", 16,
-                    "/var", 17, "var", 18, "/var", 19, "/call", 22, "/block", 25, "/loop", 25]
+  let partialSeq = ["document", 0, "loop", 0, "block", 8, "var", 13, "/var", 14, "call", 16, "var", 16,
+                    "/var", 17, "var", 18, "/var", 19, "/call", 22, "/block", 25, "/loop", 25, "/document", 40]
 
   function testIter(bufferLength: number, partial: boolean) {
     let parser = p1(), output: any[] = []
@@ -262,14 +262,18 @@ describe("sequences", () => {
     let ast = parser.parse(doc, {bufferLength: 10})
     let i = 0
     ast.iterate(0, ast.length, (tag, start, end) => {
-      if (i == 100) {
+      if (i == 0) {
+        ist(tag.tag, "document")
+        ist(start, 0)
+        ist(end, doc.length)
+      } else if (i == 101) {
         ist(tag.tag, "y")
         ist(start, 100)
         ist(end, 110)
       } else {
         ist(tag.tag, "x")
         ist(end, start + 1)
-        ist(start, i < 100 ? i : i + 9)
+        ist(start, i < 101 ? i - 1 : i + 8)
       }
       i++
     })

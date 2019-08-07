@@ -6,6 +6,7 @@ export class GrammarDeclaration extends Node {
   constructor(start: number,
               readonly rules: readonly RuleDeclaration[],
               readonly topExpr: Expression,
+              readonly topTag: Tag | null,
               readonly tokens: TokenDeclaration | null,
               readonly tags: TagBlock | null,
               readonly externalTokens: readonly ExternalTokenDeclaration[],

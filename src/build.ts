@@ -108,7 +108,6 @@ class Builder {
   termTable: {[name: string]: number} = Object.create(null)
   declaredTags: {[name: string]: string} = Object.create(null)
   detectDelimiters = false
-  globalTag: null | string = null
 
   astRules: {skip: Term, rule: RuleDeclaration}[] = []
   currentSkip: Term[] = []
@@ -167,6 +166,7 @@ class Builder {
     this.currentSkip.pop()
 
     this.currentSkip.push(mainSkip)
+    this.terms.top.tag = this.ast.topTag ? this.finishTag(this.ast.topTag) : "document"
     this.defineRule(this.terms.top, this.normalizeExpr(this.ast.topExpr))
     this.currentSkip.pop()
 
@@ -298,7 +298,7 @@ class Builder {
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
     let skipTable = data.storeArray(skipTags)
-    return new Parser(states, data.finish(), computeGotoTable(table), tags.map(t => new Tag(t + (this.globalTag ? "." + this.globalTag : ""))),
+    return new Parser(states, data.finish(), computeGotoTable(table), tags.map(t => new Tag(t)),
                       tokenizers, nested,
                       specTable, specializations, precTable, skipTable, names)
   }
@@ -325,11 +325,6 @@ class Builder {
     for (let expr of tags.exprs) {
       if (expr.id == "detect-delim") {
         this.detectDelimiters = true
-      } else if (expr.id == "all") {
-        if (expr.args.length != 1) this.raise(`@all takes exactly one argument`, expr.start)
-        let tag = expr.args[0]
-        if (!(tag instanceof TagExpression)) return this.raise(`Argument to @all must be a tag expression`)
-        this.globalTag = this.finishTag(tag.tag)
       } else if (expr.id == "punctuation") {
         if (expr.args.length > 1) this.raise(`@punctuation takes zero or one arguments`, expr.start)
         let filter = null
@@ -1468,26 +1463,11 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${type}, ${placeholder}]`
       head += `import {${imports[source].join(", ")}} from ${source}\n`
   }
 
-  let globalTag: string | null = null
-  if (parser.tags.length) {
-    let tag0 = parser.tags[0].tag, suffix = tag0
-    for (let i = 1; i < parser.tags.length; i++) {
-      let tag = parser.tags[i].tag
-      while (tag.length < suffix.length || tag.slice(tag.length - suffix.length) != suffix) {
-        let head = /^(?:[^."]|\"(?:[^"\\]|\\.)*\")+\./.exec(suffix)
-        suffix = head ? suffix.slice(head[0].length) : ""
-      }
-      if (suffix.length == 0) break
-    }
-    if (suffix) globalTag = suffix
-  }
-
   let parserStr = `Parser.deserialize(
   ${encodeArray(parser.states, 0xffffffff)},
   ${encodeArray(parser.data)},
   ${encodeArray(parser.goto)},
-  [${parser.tags.map(t => JSON.stringify(globalTag ? t.tag.slice(0, t.tag.length - globalTag.length - 1) : t.tag)).join(",")}],
-  ${JSON.stringify(globalTag)},
+  [${parser.tags.map(t => JSON.stringify(t.tag)).join(",")}],
   ${encodeArray(tokenData || [])},
   [${tokenizers.join(", ")}],
   [${nested.join(", ")}],

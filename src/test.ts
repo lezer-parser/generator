@@ -68,19 +68,22 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
       return undefined
     } else if (mayIgnore(tag)) {
       return false
+    } else if (stack.length == 1 && tag.has("document")) {
+      return undefined
     } else {
       let parent = last > 0 ? stack[last - 1][pos[last - 1]].tag : "tree"
       let after = next ? next.tag + (parent == "tree" ? "" : " in " + parent) : `end of ${parent}`
       throw new Error(`Expected ${after}, got ${tag.tag} at ${start}`)
     }
   }, (tag, start) => {
+    if (stack.length == 1 && tag.has("document")) return
     let last = stack.length - 1, index = pos[last], seq = stack[last]
-    if (index < seq.length) throw new Error(`Unexpected end of ${tag.tag}. Expected ${seq.slice(index).map(s => s.tag)} at ${start}`)
+    if (index < seq.length) throw new Error(`Unexpected end of ${tag.tag}. Expected ${seq.slice(index).map(s => s.tag).join(", ")} at ${start}`)
     pos.pop()
     stack.pop()
     pos[last - 1]++
   })
-  if (pos[0] != specs.length) throw new Error(`Unexpected end of tree. Expected ${stack[0].slice(pos[0]).map(s => s.tag)} at ${tree.length}`)
+  if (pos[0] != specs.length) throw new Error(`Unexpected end of tree. Expected ${stack[0].slice(pos[0]).map(s => s.tag).join(", ")} at ${tree.length}`)
 }
 
 export function fileTests(file: string, fileName: string, mayIgnore = defaultIgnore) {

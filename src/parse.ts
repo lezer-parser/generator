@@ -129,12 +129,13 @@ function parseGrammar(input: Input) {
   let scopedSkip: {expr: Expression, rules: readonly RuleDeclaration[]}[] = []
   let external: ExternalTokenDeclaration[] = []
   let nested: ExternalGrammarDeclaration[] = []
-  let top: Expression | null = null
+  let top: Expression | null = null, topTag: Tag | null = null
 
   while (input.type != "eof") {
     if (input.type == "at" && input.value == "top") {
       if (top) input.raise(`Multiple @top declarations`, input.start)
       input.next()
+      if (input.eat(":")) topTag = parseTag(input)
       top = parseBracedExpr(input)
     } else if (input.type == "at" && input.value == "tokens") {
       if (tokens) input.raise(`Multiple @tokens declaractions`, input.start)
@@ -165,7 +166,7 @@ function parseGrammar(input: Input) {
     }
   }
   if (!top) return input.raise(`Missing @top declaration`)
-  return new GrammarDeclaration(start, rules, top, tokens, tags, external, prec, mainSkip, scopedSkip, nested)
+  return new GrammarDeclaration(start, rules, top, topTag, tokens, tags, external, prec, mainSkip, scopedSkip, nested)
 }
 
 function parseRule(input: Input) {

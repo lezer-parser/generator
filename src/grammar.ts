@@ -25,7 +25,7 @@ export class Term {
 
   constructor(readonly name: string,
               private flags: number,
-              readonly tag: string | null) {}
+              public tag: string | null) {}
   toString() { return this.name }
   get terminal() { return (this.flags & TermFlag.Terminal) > 0 }
   get eof() { return (this.flags & TermFlag.Eof) > 0 }
@@ -72,10 +72,10 @@ export class TermSet {
     let tags: string[] = []
     let names: {[id: number]: string} = {}
 
-    let taggedID = 1, untaggedID = 0
+    let taggedID = 3, untaggedID = 0
     for (let term of this.nonTerminals)
       if (term.id < 0 && (term.preserve || rules.some(r => r.name == term || r.parts.includes(term))))
-        term.id = term.error ? T.Err : term.tag ? (taggedID += 2) : (untaggedID += 2)
+        term.id = term.error ? T.Err : term.top ? T.Top : term.tag ? (taggedID += 2) : (untaggedID += 2)
     for (let term of this.terminals)
       term.id = term.eof ? T.Eof : term.tag ? (taggedID += 2) : (untaggedID += 2)
     if (taggedID >= 0xffff) throw new Error("Too many tagged terms")
