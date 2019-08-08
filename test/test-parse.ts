@@ -294,7 +294,7 @@ expr { "[[" nest.inner "]]" | "!":bang }
 
     testTree(outer.parse("![[((.).)]][[.]]"),
              'bang,b.open,document(b(p.open,b(p.open,dot,p.close),dot,p.close)),b.close,b.open,document(dot),b.close')
-    testTree(outer.parse("[[/\]]"), 'b.open,document(⚠),b.close')
+    testTree(outer.parse("[[/\]]"), 'b.open,document(error),b.close')
   })
 
   it("supports conditional nesting and end token predicates", () => {

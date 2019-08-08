@@ -16,4 +16,4 @@
 
 foo föö 象𫝄鼻 -💩 -🦆 -& -🍰
 
-==> id,id,id,thing,thing,⚠,⚠,id
+==> id,id,id,thing,thing,error,error,id

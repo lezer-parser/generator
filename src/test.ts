@@ -98,7 +98,7 @@ export function fileTests(file: string, fileName: string, mayIgnore = defaultIgn
     tests.push({
       name: m[1],
       run(parser: Parser) {
-        let strict = expected.indexOf("⚠") < 0
+        let strict = !/\berror\b/.test(expected)
         testTree(parser.parse(text, {strict}), expected, mayIgnore)
       }
     })

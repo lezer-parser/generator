@@ -14,4 +14,10 @@ block:block { "{" (block | "statement")* "}" }
 
 { { { class { classitem }
 
-==> block(block(block(⚠),⚠),⚠),class
+==> block(block(block(error),error),error),class
+
+# Properly places end-of-file errors
+
+{ { {	
+
+==> block(block(block(error),error),error)

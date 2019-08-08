@@ -48,7 +48,7 @@ export class TermSet {
 
   constructor() {
     this.eof = this.term("␄", null, TermFlag.Terminal | TermFlag.Eof)
-    this.error = this.term("⚠", "⚠", TermFlag.Error | TermFlag.Preserve)
+    this.error = this.term("⚠", "error", TermFlag.Error | TermFlag.Preserve)
     this.top = this.term("@top", null, TermFlag.Top)
   }
 
