@@ -403,7 +403,7 @@ class Builder {
 
     let positions = state.set.filter(p => p.pos > 0)
     if (positions.length) {
-      let defaultPos = positions.reduce((a, b) => a.pos - b.pos || b.rule.parts.length - a.rule.parts.length < 0 ? b : a)
+      let defaultPos = positions.reduce((a, b) => (a.pos - b.pos || b.rule.parts.length - a.rule.parts.length) < 0 ? b : a)
       if (!defaultPos.rule.name.top)
         forcedReduce = reduceAction(defaultPos.rule, state.partOfSkip, defaultPos.pos)
       else if (positions.some(p => p.rule.name.top && p.pos == p.rule.parts.length))

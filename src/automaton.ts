@@ -165,7 +165,7 @@ export class State {
   nested = -1
 
   constructor(public id: number,
-              readonly set: readonly Pos[],
+              public set: readonly Pos[],
               public flags = 0,
               readonly skip: Term,
               public hash = hashPositions(set)) {}
@@ -349,7 +349,7 @@ export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[nam
   function getState(core: readonly Pos[]) {
     if (core.length == 0) return null
     let coreHash = hashPositions(core), byHash = cores[coreHash]
-    let skip: Term
+    let skip: Term | undefined
     for (let pos of core) {
       if (!skip) skip = pos.skip
       else if (skip != pos.skip) throw new Error("Inconsistent skip sets after " + pos.trail())
@@ -524,6 +524,9 @@ function mergeIdentical(states: readonly State[]): readonly State[] {
       } else {
         mapping[i] = match
         didMerge = true
+        let other = newStates[match], add: Pos[] | null = null
+        for (let pos of state.set) if (!other.set.some(p => p.eqSimple(pos))) (add || (add = [])).push(pos)
+        if (add) other.set = add.concat(other.set).sort((a, b) => a.cmp(b))
       }
     }
     if (!didMerge) return states
