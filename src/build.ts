@@ -11,6 +11,7 @@ import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState,
 import {encodeArray} from "./encode"
 import {Parser, TokenGroup as LezerTokenGroup, ExternalTokenizer,
         NestedGrammar, InputStream, Token, Stack, Tag} from "lezer"
+import {NodeGroup, TypeFlag} from "lezer-tree" // FIXME re-export from lezer?
 import {Action, Specialize, StateFlag, Term as T, Seq, ParseState} from "lezer/src/constants"
 
 const none: readonly any[] = []
@@ -203,7 +204,7 @@ class Builder {
 
   getParser() {
     let rules = simplifyRules(this.rules, [...this.skipRules, ...this.nestedGrammars.map(g => g.placeholder), this.terms.top])
-    let {tags, names} = this.terms.finish(rules)
+    let {nodeTypes, names} = this.terms.finish(rules)
     for (let prop in this.namedTerms) this.termTable[prop] = this.namedTerms[prop].id
 
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
@@ -284,9 +285,6 @@ class Builder {
       this.finishState(s, tokenizers, data, skip, skipState, s.id >= firstSkipState, states)
     }
 
-    let skipTags = this.gatherSkippedTerms().filter(t => t.tag).map(t => t.id)
-    skipTags.push(Seq.End)
-
     let nested = this.nestedGrammars.map(g => ({
       name: g.name,
       grammar: tempNestedGrammar(this, g),
@@ -294,12 +292,18 @@ class Builder {
       placeholder: g.placeholder.id
     }))
 
+    let skipped = this.gatherSkippedTerms()
+    let group = new NodeGroup
+    for (let term of nodeTypes)
+      group.define(term.tag ? new Tag(term.tag) : Tag.none,
+                   (term.error ? TypeFlag.Error : 0) | (term.repeated ? TypeFlag.Repeat : 0) |
+                   (skipped.includes(term) ? TypeFlag.Skipped : 0))
+    
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
-    let skipTable = data.storeArray(skipTags)
-    return new Parser(states, data.finish(), computeGotoTable(table), tags.map(t => new Tag(t)),
+    return new Parser(states, data.finish(), computeGotoTable(table), group,
                       tokenizers, nested,
-                      specTable, specializations, precTable, skipTable, names)
+                      specTable, specializations, precTable, names)
   }
 
   addNestedGrammars(table: LRState[]) {
@@ -863,7 +867,7 @@ class NestNamespace implements Namespace {
   resolve(expr: NamedExpression, builder: Builder): Parts[] {
     if (expr.args.length > 2)
       builder.raise(`Too many arguments to 'nest.${expr.id.name}'`, expr.start)
-    let [endExpr, defaultExpr] = expr.args as [NamedExpression | undefined, Expression | undefined, Expression | undefined]
+    let [endExpr, defaultExpr] = expr.args as [Expression | undefined, Expression | undefined]
     let extGrammar = builder.ast.grammars.find(g => g.id.name == expr.id.name)
     if (!extGrammar) return builder.raise(`No external grammar '${expr.id.name}' defined`, expr.id.start)
     let placeholder = builder.newName(expr.id.name + "-placeholder", true)
@@ -1443,11 +1447,11 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
     }
   })
 
-  let nested = parser.nested.map(({name, grammar, end, type, placeholder}) => {
+  let nested = parser.nested.map(({name, grammar, end, placeholder}) => {
     let spec: NestedGrammarSpec = (grammar as any).spec
     if (!spec) throw new Error("Spec-less nested grammar in parser")
     return `[${JSON.stringify(name)}, ${spec.source ? importName(spec.extName, spec.source, spec.name) : "null"},\
-${encodeArray((end as LezerTokenGroup).data)}, ${type}, ${placeholder}]`
+${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
   })
 
   for (let source in imports) {
@@ -1457,18 +1461,23 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${type}, ${placeholder}]`
       head += `import {${imports[source].join(", ")}} from ${source}\n`
   }
 
+  let nodeTypes: (string | number)[] = []
+  for (let type of parser.group.types) {
+    if (type.tag != Tag.none) nodeTypes.push(type.tag.toString())
+    nodeTypes.push(type.flags)
+  }
+
   let parserStr = `Parser.deserialize(
   ${encodeArray(parser.states, 0xffffffff)},
   ${encodeArray(parser.data)},
   ${encodeArray(parser.goto)},
-  [${parser.tags.map(t => JSON.stringify(t.tag)).join(",")}],
+  ${JSON.stringify(nodeTypes)},
   ${encodeArray(tokenData || [])},
   [${tokenizers.join(", ")}],
   [${nested.join(", ")}],
   ${parser.specializeTable},
   ${JSON.stringify(parser.specializations)},
-  ${parser.tokenPrecTable},
-  ${parser.skippedNodes}${options.includeNames ? `,
+  ${parser.tokenPrecTable}${options.includeNames ? `,
   ${JSON.stringify(parser.termNames)}` : ''}
 )`
 

@@ -69,26 +69,29 @@ export class TermSet {
   finish(rules: readonly Rule[]) {
     for (let rule of rules) rule.name.rules.push(rule)
 
-    let tags: string[] = []
+    this.nonTerminals = this.nonTerminals.filter(t => t.preserve || rules.some(r => r.name == t || r.parts.includes(t)))
+
     let names: {[id: number]: string} = {}
+    let nodeTypes = [this.error, this.top]
+    let all = this.terminals.concat(this.nonTerminals)
 
-    let taggedID = 3, untaggedID = 0
-    for (let term of this.nonTerminals)
-      if (term.id < 0 && (term.preserve || rules.some(r => r.name == term || r.parts.includes(term))))
-        term.id = term.error ? T.Err : term.top ? T.Top : term.tag ? (taggedID += 2) : (untaggedID += 2)
-    for (let term of this.terminals)
-      term.id = term.eof ? T.Eof : term.tag ? (taggedID += 2) : (untaggedID += 2)
-    if (taggedID >= 0xffff) throw new Error("Too many tagged terms")
-    if (untaggedID >= 0xffff) throw new Error("Too many untagged terms")
-
-    for (let term of this.terminals.concat(this.nonTerminals)) if (term.id > -1) {
-      if (term.tag) tags[term.id >> 1] = term.tag
+    this.error.id = T.Err
+    this.top.id = T.Top
+    let nextID = 2
+    for (let term of all) {
+      if (term.id < 0 && (term.tag || term.repeated)) {
+        term.id = nextID++
+        nodeTypes.push(term)
+      }
+    }
+    this.eof.id = nextID++
+    for (let term of all) {
+      if (term.id < 0) term.id = nextID++
       names[term.id] = term.name
     }
+    if (nextID >= 0xfffe) throw new Error("Too many terms")
 
-    this.nonTerminals = this.nonTerminals.filter(t => t.id > -1)
-
-    return {tags, names}
+    return {nodeTypes, names}
   }
 }
 

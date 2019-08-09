@@ -1,5 +1,5 @@
 import {buildParser, BuildOptions} from ".."
-import {Parser, InputStream, Stack, Tree} from "lezer"
+import {Parser, InputStream, Stack, Tree, Tag} from "lezer"
 import {testTree} from "../dist/test"
 const ist = require("ist")
 
@@ -48,9 +48,9 @@ describe("parsing", () => {
 
   function qq(parser: Parser, ast: Tree) {
     return function(query: string, offset = 1): {start: number, end: number} {
-      let result = null
-      ast.iterate(0, ast.length, (tag, start, end) => {
-        if (tag.tag == query && --offset == 0) result = {start, end}
+      let result = null, queryTag = new Tag(query)
+      ast.iterate(0, ast.length, (type, start, end) => {
+        if (type.tag.match(queryTag) && --offset == 0) result = {start, end}
       })
       if (result) return result
       throw new Error("Couldn't find " + query)
@@ -98,27 +98,27 @@ describe("parsing", () => {
 
     let cx111 = ast.resolve(7)
     ist(cx111.depth, 2)
-    ist(cx111.tag.tag, "num")
+    ist(cx111.tag.toString(), "num")
     ist(cx111.start, 6)
     ist(cx111.end, 9)
-    ist(cx111.parent!.tag.tag, "loop")
+    ist(cx111.parent!.tag.toString(), "loop")
     ist(cx111.parent!.start, 0)
     ist(cx111.parent!.end, 33)
 
     let cxThree = ast.resolve(22)
     ist(cxThree.depth, 4)
-    ist(cxThree.tag.tag, "var")
+    ist(cxThree.tag.toString(), "var")
     ist(cxThree.start, 21)
     ist(cxThree.end, 26)
 
     let cxCall = cxThree.parent!
-    ist(cxCall.tag.tag, "call")
+    ist(cxCall.tag.toString(), "call")
     ist(cxCall.start, 17)
     ist(cxCall.end, 30)
 
     let branch = cxThree.resolve(18)
     ist(branch.depth, 4)
-    ist(branch.tag.tag, "var")
+    ist(branch.tag.toString(), "var")
     ist(branch.start, 17)
     ist(branch.end, 20)
 
@@ -128,10 +128,10 @@ describe("parsing", () => {
 
     ist(cxCall.childBefore(cxCall.start), null)
     ist(cxCall.childAfter(cxCall.end), null)
-    ist(cxCall.childBefore(27)!.tag.tag, "var")
-    ist(cxCall.childAfter(26)!.tag.tag, "num")
-    ist(cxCall.childBefore(28)!.tag.tag, "num")
-    ist(cxCall.childAfter(28)!.tag.tag, "num")
+    ist(cxCall.childBefore(27)!.tag.toString(), "var")
+    ist(cxCall.childAfter(26)!.tag.toString(), "num")
+    ist(cxCall.childBefore(28)!.tag.toString(), "num")
+    ist(cxCall.childAfter(28)!.tag.toString(), "num")
   }
 
   it("can resolve positions in buffers", () => testResolve(1024))
@@ -261,17 +261,17 @@ describe("sequences", () => {
     let parser = p1()
     let ast = parser.parse(doc, {bufferLength: 10})
     let i = 0
-    ast.iterate(0, ast.length, (tag, start, end) => {
+    ast.iterate(0, ast.length, (type, start, end) => {
       if (i == 0) {
-        ist(tag.tag, "document")
+        ist(type.tag.toString(), "document")
         ist(start, 0)
         ist(end, doc.length)
       } else if (i == 101) {
-        ist(tag.tag, "y")
+        ist(type.tag.toString(), "y")
         ist(start, 100)
         ist(end, 110)
       } else {
-        ist(tag.tag, "x")
+        ist(type.tag.toString(), "x")
         ist(end, start + 1)
         ist(start, i < 101 ? i - 1 : i + 8)
       }

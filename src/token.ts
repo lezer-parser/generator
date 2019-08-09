@@ -152,7 +152,8 @@ export class State {
       offsets[state.id] = start
       data.push(state.stateMask(groupMasks), acceptEnd, state.edges.length)
       state.accepting.sort((a, b) => precedence.indexOf(a.id) - precedence.indexOf(b.id))
-      for (let term of state.accepting) data.push(term.id, groupMasks[term.id] || 0xffff)
+      for (let term of state.accepting)
+        data.push(term.id, groupMasks[term.id] || 0xffff)
       for (let edge of state.edges) data.push(edge.from, edge.to, -edge.target.id - 1)
     })
     // Replace negative numbers with resolved state offsets
