@@ -10,8 +10,7 @@ import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {encodeArray} from "./encode"
 import {Parser, TokenGroup as LezerTokenGroup, ExternalTokenizer,
-        NestedGrammar, InputStream, Token, Stack, Tag} from "lezer"
-import {NodeGroup, TypeFlag} from "lezer-tree" // FIXME re-export from lezer?
+        NestedGrammar, InputStream, Token, Stack, Tag, NodeGroup} from "lezer"
 import {Action, Specialize, StateFlag, Term as T, Seq, ParseState} from "lezer/src/constants"
 
 const none: readonly any[] = []
@@ -296,8 +295,7 @@ class Builder {
     let group = new NodeGroup
     for (let term of nodeTypes)
       group.define(term.tag ? new Tag(term.tag) : Tag.none,
-                   (term.error ? TypeFlag.Error : 0) | (term.repeated ? TypeFlag.Repeat : 0) |
-                   (skipped.includes(term) ? TypeFlag.Skipped : 0))
+                   {error: term.error, repeated: term.repeated, skipped: skipped.includes(term)})
     
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
@@ -1461,11 +1459,7 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
       head += `import {${imports[source].join(", ")}} from ${source}\n`
   }
 
-  let nodeTypes: (string | number)[] = []
-  for (let type of parser.group.types) {
-    if (type.tag != Tag.none) nodeTypes.push(type.tag.toString())
-    nodeTypes.push(type.flags)
-  }
+  let nodeTypes = parser.group.types.map(type => (type.skipped ? "~" : type.repeated ? "+" : "") + type.tag)
 
   let parserStr = `Parser.deserialize(
   ${encodeArray(parser.states, 0xffffffff)},
