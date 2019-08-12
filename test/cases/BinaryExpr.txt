@@ -47,7 +47,7 @@ x*x+y/y
 
 x++y
 
-==> bin.expr(bin.expr(sym.expr,add.op,error),add.op,sym.expr)
+==> bin.expr(sym.expr,add.op,error(add.op),sym.expr)
 
 # Dropped character 
 
