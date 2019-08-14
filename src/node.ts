@@ -6,9 +6,7 @@ export class GrammarDeclaration extends Node {
   constructor(start: number,
               readonly rules: readonly RuleDeclaration[],
               readonly topExpr: Expression,
-              readonly topTag: Tag | null,
               readonly tokens: TokenDeclaration | null,
-              readonly tags: TagBlock | null,
               readonly externalTokens: readonly ExternalTokenDeclaration[],
               readonly precedences: PrecDeclaration | null,
               readonly mainSkip: Expression | null,
@@ -23,7 +21,8 @@ export class RuleDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
               readonly exported: boolean,
-              readonly tag: Tag | null,
+              readonly name: Name | null,
+              readonly props: readonly Prop[],
               readonly params: readonly Identifier[],
               readonly expr: Expression) {
     super(start)
@@ -42,7 +41,7 @@ export class PrecDeclaration extends Node {
 
 export class TokenPrecDeclaration extends Node {
   constructor(start: number,
-              readonly items: readonly (NamedExpression | LiteralExpression)[]) {
+              readonly items: readonly (NameExpression | LiteralExpression)[]) {
     super(start)
   }
 }
@@ -55,27 +54,11 @@ export class TokenDeclaration extends Node {
   }
 }
 
-export class TagBlock extends Node {
-  constructor(start: number,
-              readonly tags: readonly TagDeclaration[],
-              readonly exprs: readonly AtExpression[]) { super(start) }
-}
-
-export class TagDeclaration extends Node {
-  constructor(start: number,
-              readonly target: LiteralExpression | Identifier,
-              readonly tag: Tag) { super(start) }
-}
-
-export class LiteralDeclaration extends Node {
-  constructor(start: number, readonly literal: LiteralExpression, readonly tag: Tag) { super(start) }
-}
-
 export class ExternalTokenDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
               readonly source: string,
-              readonly tokens: readonly {id: Identifier, tag: Tag | null}[]) {
+              readonly tokens: readonly {id: Identifier, name: Name | null}[]) {
     super(start)
   }
 }
@@ -101,18 +84,18 @@ export class Expression extends Node {
   eq(other: Expression): boolean { return false }
 }
 
-export class NamedExpression extends Expression {
+export class NameExpression extends Expression {
   constructor(start: number, readonly namespace: Identifier | null, readonly id: Identifier, readonly args: readonly Expression[]) {
     super(start)
   }
   toString() { return this.id.name + (this.args.length ? `<${this.args.join()}>` : "") }
-  eq(other: NamedExpression) {
+  eq(other: NameExpression) {
     return (this.namespace ? other.namespace != null && other.namespace.name == this.namespace.name : !other.namespace) &&
       this.id.name == other.id.name && exprsEq(this.args, other.args)
   }
   walk(f: (expr: Expression) => Expression): Expression {
     let args = walkExprs(this.args, f)
-    return f(args == this.args ? this : new NamedExpression(this.start, this.namespace, this.id, args))
+    return f(args == this.args ? this : new NameExpression(this.start, this.namespace, this.id, args))
   }
 }
 
@@ -128,24 +111,17 @@ export class AtExpression extends Expression {
   }
 }
 
-export class TaggedExpression extends Expression {
-  constructor(start: number, readonly expr: Expression, readonly tag: Tag) { super(start) }
+export class NamedExpression extends Expression {
+  constructor(start: number, readonly expr: Expression, readonly name: Name) { super(start) }
 
-  toString() { return "(" + this.expr + "):" + this.tag }
-  eq(other: TaggedExpression) {
-    return exprEq(this.expr, other.expr) && String(this.tag) == String(other.tag)
+  toString() { return "(" + this.expr + "):" + this.name.name }
+  eq(other: NamedExpression) {
+    return exprEq(this.expr, other.expr) && this.name.eq(other.name)
   }
   walk(f: (expr: Expression) => Expression): Expression {
     let expr = this.expr.walk(f)
-    return f(expr == this.expr ? this : new TaggedExpression(this.start, expr, this.tag))
+    return f(expr == this.expr ? this : new NamedExpression(this.start, expr, this.name))
   }
-}
-
-export class TagExpression extends Expression {
-  constructor(start: number, readonly tag: Tag) { super(start) }
-
-  toString() { return ":" + this.tag }
-  eq(other: TagExpression) { return String(this.tag) == String(other.tag) }
 }
 
 export class ChoiceExpression extends Expression {
@@ -253,28 +229,18 @@ export function exprsEq(a: readonly Expression[], b: readonly Expression[]) {
   return a.length == b.length && a.every((e, i) => exprEq(e, b[i]))
 }
 
-export class TagPart extends Node {}
-
-export class Tag extends Node {
-  constructor(start: number, readonly parts: readonly TagPart[]) { super(start) }
-
-  toString() { return this.parts.join(".") }
+export class SplicedName extends Node {
+  constructor(start: number, readonly pos: number, readonly name: string) { super(start) }
 }
 
-export class TagName extends TagPart {
-  constructor(start: number, readonly name: string) { super(start) }
-
-  toString() { return /\W/.test(this.name) ? JSON.stringify(this.name) : this.name }
+export class Name extends Node {
+  constructor(start: number, readonly name: string, readonly spliced: readonly SplicedName[]) { super(start) }
+  eq(other: Name) { return this.name == other.name && this.spliced.length == other.spliced.length &&
+                    this.spliced.every((s, i) => { let o = other.spliced[i]; return s.pos == o.pos && s.name == o.name }) }
 }
 
-export class TagInterpolation extends TagPart {
-  constructor(start: number, readonly id: Identifier) { super(start) }
+export class Prop extends Node {
+  constructor(start: number, readonly name: string, readonly value: string | null) { super(start) }
 
-  toString() { return "$" + this.id }
-}
-
-export class ValueTag extends TagPart {
-  constructor(start: number, readonly name: TagPart, readonly value: TagPart) { super(start) }
-
-  toString() { return this.name + "=" + this.value }
+  toString() { return `${this.name}=${/\W/.test(this.value) ? JSON.stringify(this.value) : this.value}` }
 }

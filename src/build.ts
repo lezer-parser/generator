@@ -1,5 +1,5 @@
 import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDeclaration,
-        Expression, Identifier, LiteralExpression, NamedExpression, SequenceExpression,
+        Expression, Identifier, LiteralExpression, NameExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker, TagBlock,
         TaggedExpression, TagExpression, AtExpression,
         Tag as TagNode, TagPart, ValueTag, TagInterpolation, TagName,
@@ -58,7 +58,7 @@ class BuiltRule {
               readonly args: readonly Expression[],
               readonly term: Term) {}
 
-  matches(expr: NamedExpression) {
+  matches(expr: NameExpression) {
     return this.id == expr.id.name && exprsEq(expr.args, this.args)
   }
 
@@ -328,7 +328,7 @@ class Builder {
         this.detectDelimiters = true
       } else if (expr.id == "export") {
         let [name, tag] = expr.args
-        if (expr.args.length != 2 || !(name instanceof NamedExpression) || name.args.length || !(tag instanceof TagExpression))
+        if (expr.args.length != 2 || !(name instanceof NameExpression) || name.args.length || !(tag instanceof TagExpression))
           return this.raise(`Arguments to @export must be in <name, :tag> form`, expr.start)
         this.unique(name.id)
         this.used(name.id.name)
@@ -443,12 +443,12 @@ class Builder {
     if (args.length == 0) return expr
     return expr.walk(expr => {
       let found
-      if (expr instanceof NamedExpression && !expr.namespace &&
+      if (expr instanceof NameExpression && !expr.namespace &&
           (found = params.findIndex(p => p.name == expr.id.name)) > -1) {
         let arg = args[found]
         if (expr.args.length) {
-          if (arg instanceof NamedExpression && !arg.args.length)
-            return new NamedExpression(expr.start, arg.namespace, arg.id, expr.args)
+          if (arg instanceof NameExpression && !arg.args.length)
+            return new NameExpression(expr.start, arg.namespace, arg.id, expr.args)
           this.raise(`Passing arguments to a parameter that already has arguments`, expr.start)
         }
         return arg
@@ -525,7 +525,7 @@ class Builder {
     return name
   }
 
-  resolve(expr: NamedExpression): Parts[] {
+  resolve(expr: NameExpression): Parts[] {
     if (expr.namespace) {
       let ns = this.namespaces[expr.namespace.name]
       if (!ns)
@@ -617,7 +617,7 @@ class Builder {
       return this.normalizeSequence(expr)
     } else if (expr instanceof LiteralExpression) {
       return [p(this.tokens.getLiteral(expr)!)]
-    } else if (expr instanceof NamedExpression) {
+    } else if (expr instanceof NameExpression) {
       return this.resolve(expr)
     } else if (expr instanceof AtExpression) {
       return this.resolveAt(expr)
@@ -709,7 +709,7 @@ class Builder {
     if (!(expr instanceof SequenceExpression) || expr.exprs.length < 2) return tag
     let findToken = (expr: Expression): string | null => {
       if (expr instanceof LiteralExpression) return expr.value
-      if (expr instanceof NamedExpression && expr.args.length == 0) {
+      if (expr instanceof NameExpression && expr.args.length == 0) {
         let rule = this.ast.rules.find(r => r.id.name == expr.id.name)
         if (rule) return findToken(rule.expr)
         let token = this.tokens.rules.find(r => r.id.name == expr.id.name)
@@ -850,7 +850,7 @@ function buildTokenMasks(groups: TokenGroup[]) {
 }
 
 interface Namespace {
-  resolve(expr: NamedExpression, builder: Builder): Parts[]
+  resolve(expr: NameExpression, builder: Builder): Parts[]
 }
 
 class NestedGrammarSpec {
@@ -862,7 +862,7 @@ class NestedGrammarSpec {
 }
 
 class NestNamespace implements Namespace {
-  resolve(expr: NamedExpression, builder: Builder): Parts[] {
+  resolve(expr: NameExpression, builder: Builder): Parts[] {
     if (expr.args.length > 2)
       builder.raise(`Too many arguments to 'nest.${expr.id.name}'`, expr.start)
     let [endExpr, defaultExpr] = expr.args as [Expression | undefined, Expression | undefined]
@@ -923,7 +923,7 @@ class TokenSet {
     for (let rule of this.rules) this.b.unique(rule.id)
   }
 
-  getToken(expr: NamedExpression) {
+  getToken(expr: NameExpression) {
     for (let built of this.built) if (built.matches(expr)) return built.term
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
@@ -949,7 +949,7 @@ class TokenSet {
     return term
   }
 
-  buildRule(rule: RuleDeclaration, expr: NamedExpression, from: State, to: State, args: readonly TokenArg[] = none) {
+  buildRule(rule: RuleDeclaration, expr: NameExpression, from: State, to: State, args: readonly TokenArg[] = none) {
     let name = expr.id.name
     if (rule.params.length != expr.args.length)
       this.b.raise(`Incorrect number of arguments for token '${name}'`, expr.start)
@@ -974,7 +974,7 @@ class TokenSet {
   }
 
   build(expr: Expression, from: State, to: State, args: readonly TokenArg[]): void {
-    if (expr instanceof NamedExpression) {
+    if (expr instanceof NameExpression) {
       if (expr.namespace) {
         if (expr.namespace.name == "std") return this.buildStd(expr, from, to)
         this.b.raise(`Unknown namespace '${expr.namespace.name}'`, expr.start)
@@ -1028,7 +1028,7 @@ class TokenSet {
     }
   }
 
-  buildStd(expr: NamedExpression, from: State, to: State) {
+  buildStd(expr: NameExpression, from: State, to: State) {
     if (expr.args.length) this.b.raise(`'std.${expr.id.name}' does not take arguments`, expr.args[0].start)
     if (!STD_RANGES.hasOwnProperty(expr.id.name)) this.b.raise(`There is no builtin rule 'std.${expr.id.name}'`, expr.start)
     for (let [a, b] of STD_RANGES[expr.id.name]) from.edge(a, b, to)
@@ -1049,8 +1049,8 @@ class TokenSet {
       let terms: Term[] = []
       for (let item of group.items) {
         let known
-        if (item instanceof NamedExpression) {
-          known = this.built.find(b => b.matches(item as NamedExpression))
+        if (item instanceof NameExpression) {
+          known = this.built.find(b => b.matches(item as NameExpression))
         } else {
           let id = JSON.stringify(item.value)
           known = this.built.find(b => b.id == id)
@@ -1266,7 +1266,7 @@ class ExternalTokenSet {
     }
   }
 
-  getToken(expr: NamedExpression) {
+  getToken(expr: NameExpression) {
     let found = this.tokens[expr.id.name]
     if (!found) return null
     if (expr.args.length) this.b.raise("External tokens cannot take arguments", expr.args[0].start)
