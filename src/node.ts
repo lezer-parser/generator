@@ -5,7 +5,7 @@ export class Node {
 export class GrammarDeclaration extends Node {
   constructor(start: number,
               readonly rules: readonly RuleDeclaration[],
-              readonly topExpr: Expression,
+              readonly topRule: RuleDeclaration,
               readonly tokens: TokenDeclaration | null,
               readonly externalTokens: readonly ExternalTokenDeclaration[],
               readonly precedences: PrecDeclaration | null,
@@ -21,7 +21,7 @@ export class RuleDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
               readonly exported: boolean,
-              readonly name: Name | null,
+              readonly hidden: boolean,
               readonly props: readonly Prop[],
               readonly params: readonly Identifier[],
               readonly expr: Expression) {
@@ -58,7 +58,7 @@ export class ExternalTokenDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
               readonly source: string,
-              readonly tokens: readonly {id: Identifier, name: Name | null}[]) {
+              readonly tokens: readonly {id: Identifier, props: null | readonly Prop[]}[]) {
     super(start)
   }
 }
@@ -111,16 +111,22 @@ export class AtExpression extends Expression {
   }
 }
 
-export class NamedExpression extends Expression {
-  constructor(start: number, readonly expr: Expression, readonly name: Name) { super(start) }
+export class InlineRuleExpression extends Expression {
+  constructor(start: number, readonly rule: RuleDeclaration) { super(start) }
 
-  toString() { return "(" + this.expr + "):" + this.name.name }
-  eq(other: NamedExpression) {
-    return exprEq(this.expr, other.expr) && this.name.eq(other.name)
+  toString() {
+    let rule = this.rule
+    return `${rule.id}${rule.props.length ? `[${rule.props.join(",")}]` : ""} { ${rule.expr} }`
+  }
+  eq(other: InlineRuleExpression) {
+    let rule = this.rule, oRule = other.rule
+    return exprEq(rule.expr, oRule.expr) && rule.id.name == oRule.id.name &&
+      rule.props.length == oRule.props.length && rule.props.every((p, i) => p.eq(oRule.props[i]))
   }
   walk(f: (expr: Expression) => Expression): Expression {
-    let expr = this.expr.walk(f)
-    return f(expr == this.expr ? this : new NamedExpression(this.start, expr, this.name))
+    let rule = this.rule, expr = rule.expr.walk(f)
+    return f(expr == rule.expr ? this :
+             new InlineRuleExpression(this.start, new RuleDeclaration(rule.start, rule.id, false, false, rule.props, [], expr)))
   }
 }
 
@@ -229,18 +235,25 @@ export function exprsEq(a: readonly Expression[], b: readonly Expression[]) {
   return a.length == b.length && a.every((e, i) => exprEq(e, b[i]))
 }
 
-export class SplicedName extends Node {
-  constructor(start: number, readonly pos: number, readonly name: string) { super(start) }
-}
-
-export class Name extends Node {
-  constructor(start: number, readonly name: string, readonly spliced: readonly SplicedName[]) { super(start) }
-  eq(other: Name) { return this.name == other.name && this.spliced.length == other.spliced.length &&
-                    this.spliced.every((s, i) => { let o = other.spliced[i]; return s.pos == o.pos && s.name == o.name }) }
-}
-
 export class Prop extends Node {
-  constructor(start: number, readonly name: string, readonly value: string | null) { super(start) }
+  constructor(start: number, readonly name: string, readonly value: readonly PropPart[]) { super(start) }
 
-  toString() { return `${this.name}=${/\W/.test(this.value) ? JSON.stringify(this.value) : this.value}` }
+  eq(other: Prop) {
+    return this.name == other.name && this.value.length == other.value.length &&
+      this.value.every((v, i) => v.value == other.value[i].value && v.name == other.value[i].name)
+  }
+
+  toString() {
+    let result = this.name
+    if (this.value.length) {
+      result += "="
+      for (let {name, value} of this.value)
+        result += name ? `{${name}}` : /[^\w-]/.test(value!) ? JSON.stringify(value) : value
+    }
+    return result
+  }
+}
+
+export class PropPart extends Node {
+  constructor(start: number, readonly value: string | null, readonly name: string | null) { super(start) }
 }
