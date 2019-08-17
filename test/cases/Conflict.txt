@@ -1,22 +1,19 @@
 @top { expr+ }
 
-expr { arrowExpr | parenExpr | identifier }
+expr { ArrowExpr | ParenExpr | Identifier }
 
-parenExpr:paren.expr { i<"("> expr i<")"> }
+ParenExpr { "(" expr ")" }
 
-arrowExpr:arrow.expr { i<"("> paramName i<")"> i<"=>"> expr }
+ArrowExpr { "(" ParamName ")" "=>" expr }
 
-identifier:id.expr { word ~arrow }
+Identifier { word ~arrow }
 
-paramName:param.name { word ~arrow }
+ParamName { word ~arrow }
 
 @skip { whitespace }
 
 @tokens {
-  i<expr> { expr }
-
   whitespace { std.whitespace+ }
-
   word { std.asciiLetter+ }
 }
 
@@ -24,10 +21,10 @@ paramName:param.name { word ~arrow }
 
 (a) => b
 
-==> arrow.expr(param.name, id)
+==> ArrowExpr(ParamName, Identifier)
 
 # Paren expr
 
 (a)
 
-==> paren.expr(id)
+==> ParenExpr(Identifier)

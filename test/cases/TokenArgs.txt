@@ -1,11 +1,11 @@
-@top { (kw<"let"> | kw<"if"> | foo)+ }
+@top { (kw<"let"> | kw<"if"> | Foo)+ }
 
 @skip { whitespace }
 
 @tokens {
   whitespace { std.whitespace+ }
-  kw<word>:$word.kw { word }
-  foo:foo { bar<"foo"> }
+  kw[name={word}]<word> { word }
+  Foo { bar<"foo"> }
   bar<x> { baz<x> }
   baz<z> { "!" z }
 }
@@ -14,10 +14,10 @@
 
 let if let
 
-==> let.kw, if.kw, let.kw
+==> let, if, let
 
 # Tokens can call other tokens
 
 !foo
 
-==> foo
+==> Foo

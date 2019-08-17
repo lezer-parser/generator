@@ -1,7 +1,7 @@
-@top { x }
+@top { X }
 
 @tokens {
-  x:x { y }
+  X { y }
 }
 
 //! Reference to rule 'y'

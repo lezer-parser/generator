@@ -13,7 +13,7 @@ function externalTokenizer(name: string, terms: {[name: string]: number}) {
     let next = input.get(pos++)
     if (next == "{".charCodeAt(0)) token.accept(terms.braceOpen, pos)
     else if (next == "}".charCodeAt(0)) token.accept(terms.braceClose, pos)
-    else if (next == ".".charCodeAt(0)) token.accept(terms.dot, pos)
+    else if (next == ".".charCodeAt(0)) token.accept(terms.Dot, pos)
   })
   throw new Error("Undefined external tokenizer " + name)
 }

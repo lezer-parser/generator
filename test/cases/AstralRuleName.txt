@@ -1,14 +1,11 @@
-@top { (象𫝄鼻 | föó)+ }
+@top { (象𫝄鼻 | Föó)+ }
 
-象𫝄鼻:x { x }
+象𫝄鼻 { "x" }
 
-@tokens {
-  x { "x" }
-  föó:foo { "y" }
-}
+@tokens { Föó { "y" } }
 
 # Rules with astral characters
 
 xyx
 
-==> x, foo, x
+==> 象𫝄鼻, Föó, 象𫝄鼻

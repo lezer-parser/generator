@@ -1,17 +1,19 @@
 import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDeclaration,
         Expression, Identifier, LiteralExpression, NameExpression, SequenceExpression,
-        ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker, TagBlock,
-        TaggedExpression, TagExpression, AtExpression,
-        Tag as TagNode, TagPart, ValueTag, TagInterpolation, TagName,
+        ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
+        InlineRuleExpression, SpecializeExpression, Prop, PropPart,
         exprsEq, exprEq} from "./node"
-import {Term, TermSet, PREC_REPEAT, Rule, Conflicts} from "./grammar"
+import {Term, TermSet, PREC_REPEAT, Rule, Conflicts, Props, noProps} from "./grammar"
 import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {encodeArray} from "./encode"
 import {Parser, TokenGroup as LezerTokenGroup, ExternalTokenizer,
-        NestedGrammar, InputStream, Token, Stack, Tag, NodeGroup} from "lezer"
+        NestedGrammar, InputStream, Token, Stack, NodeGroup} from "lezer"
+import {NodeProp, NodeType} from "lezer-tree" // FIXME from lezer
 import {Action, Specialize, StateFlag, Term as T, Seq, ParseState} from "lezer/src/constants"
+
+// FIXME ensure node names are unique?
 
 const none: readonly any[] = []
 
@@ -106,8 +108,7 @@ class Builder {
   namespaces: {[name: string]: Namespace} = Object.create(null)
   namedTerms: {[name: string]: Term} = Object.create(null)
   termTable: {[name: string]: number} = Object.create(null)
-  declaredTags: {[name: string]: string} = Object.create(null)
-  detectDelimiters = false
+  knownProps: {[name: string]: {prop: NodeProp<any>, source: {name: string, from: string | null}}} = Object.create(null)
 
   astRules: {skip: Term, rule: RuleDeclaration}[] = []
   currentSkip: Term[] = []
@@ -122,6 +123,11 @@ class Builder {
     this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
 
     this.defineNamespace("nest", new NestNamespace)
+
+    let NP: {[key: string]: any} = NodeProp
+    for (let prop in NP) {
+      if (NP[prop] instanceof NodeProp) this.knownProps[prop] = {prop: NP[prop], source: {name: prop, from: null}}
+    }
 
     this.noSkip = this.newName("%noskip", true)
     this.defineRule(this.noSkip, [])
@@ -149,8 +155,6 @@ class Builder {
         this.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
     }
 
-    if (this.ast.tags) this.readTags(this.ast.tags)
-
     this.currentSkip.push(this.noSkip)
     if (mainSkip != this.noSkip) {
       this.skipRules.push(mainSkip)
@@ -166,9 +170,20 @@ class Builder {
     this.currentSkip.pop()
 
     this.currentSkip.push(mainSkip)
-    this.terms.top.tag = this.ast.topTag ? this.finishTag(this.ast.topTag) : "document"
-    this.defineRule(this.terms.top, this.normalizeExpr(this.ast.topExpr))
+    let top = this.ast.topRule
+    let {name, props} = this.nodeInfo(top.props, null, none, none, top.expr)
+    this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
     this.currentSkip.pop()
+
+    for (let rule of this.ast.rules) {
+      if (rule.exported && this.ruleNames[rule.id.name] && rule.params.length == 0) {
+        let {name, props} = this.nodeInfo(rule.props, rule.id.name)
+        let term = this.namedTerms[rule.id.name] = this.newName(rule.id.name, name, props)
+        term.preserve = true
+        if (rule.expr instanceof SequenceExpression && rule.expr.exprs.length == 0)
+          this.used(rule.id.name)
+      }
+    }
 
     for (let name in this.ruleNames) {
       let value = this.ruleNames[name]
@@ -193,11 +208,11 @@ class Builder {
     this.namespaces[name] = value
   }
 
-  newName(base: string, tag: string | null | true = null): Term {
-    for (let i = tag ? 0 : 1;; i++) {
+  newName(base: string, nodeName: string | null | true = null, props: Props = noProps): Term {
+    for (let i = nodeName ? 0 : 1;; i++) {
       let name = i ? `${base}-${i}` : base
       if (!this.terms.nonTerminals.some(t => t.name == name))
-        return this.terms.makeNonTerminal(name, tag === true ? null : tag)
+        return this.terms.makeNonTerminal(name, nodeName === true ? null : nodeName, props)
     }
   }
 
@@ -292,16 +307,26 @@ class Builder {
     }))
 
     let skipped = this.gatherSkippedTerms()
-    let group = new NodeGroup
-    for (let term of nodeTypes)
-      group.define(term.tag ? new Tag(term.tag) : Tag.none,
-                   {error: term.error, repeated: term.repeated, skipped: skipped.includes(term)})
+    let group = new NodeGroup(nodeTypes.map((term, i) => this.toNodeType(term, skipped, i)))
     
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
     return new Parser(states, data.finish(), computeGotoTable(table), group,
                       tokenizers, nested,
                       specTable, specializations, precTable, names)
+  }
+
+  toNodeType(term: Term, skipped: readonly Term[], id: number) {
+    let propData: any[] = []
+    let props = {propData} as {[id: number]: any}
+    if (skipped.includes(term)) props[NodeProp.skipped.id] = true
+    for (let prop in term.props) {
+      let propType = this.knownProps[prop]
+      if (!propType) throw new Error("No known prop type for " + prop)
+      props[propType.prop.id] = propType.prop.fromString(term.props[prop])
+      propData.push(propType.source, term.props[prop])
+    }
+    return new NodeType(term.nodeName || "", props, id)
   }
 
   addNestedGrammars(table: LRState[]) {
@@ -318,53 +343,11 @@ class Builder {
     }
   }
 
-  readTags(tags: TagBlock): void {
-    for (let decl of tags.tags)
-      this.declareTag(decl.target instanceof LiteralExpression ? JSON.stringify(decl.target.value) : decl.target.name,
-                      this.finishTag(decl.tag)!, decl.start)
-
-    for (let expr of tags.exprs) {
-      if (expr.id == "detect-delim") {
-        this.detectDelimiters = true
-      } else if (expr.id == "export") {
-        let [name, tag] = expr.args
-        if (expr.args.length != 2 || !(name instanceof NameExpression) || name.args.length || !(tag instanceof TagExpression))
-          return this.raise(`Arguments to @export must be in <name, :tag> form`, expr.start)
-        this.unique(name.id)
-        this.used(name.id.name)
-        let term = this.namedTerms[name.id.name] = this.newName(name.id.name, this.finishTag(tag.tag))
-        term.preserve = true
-      } else if (expr.id == "punctuation") {
-        if (expr.args.length > 1) this.raise(`@punctuation takes zero or one arguments`, expr.start)
-        let filter = null
-        if (expr.args.length) {
-          let arg = expr.args[0]
-          if (!(arg instanceof LiteralExpression))
-            return this.raise(`The argument to @punctuation should be a literal string`, arg.start)
-          filter = arg.value
-          for (let i = 0; i < filter.length; i++) if (!STD_PUNC_TAGS[filter[i]])
-            this.raise(`No standard punctuation name has been defined for ${JSON.stringify(filter[i])}`, arg.start)
-        }
-        for (let punc in STD_PUNC_TAGS) {
-          if (filter && filter.indexOf(punc) < 0) continue
-          this.declareTag(JSON.stringify(punc), STD_PUNC_TAGS[punc], expr.start)
-        }
-      } else {
-        this.raise(`Unrecognized tag annotation '${expr}'`, expr.start)
-      }
-    }
-  }
-
-  declareTag(id: string, tag: string, pos: number) {
-    if (this.declaredTags[id]) this.raise(`Duplicate tag definition for ${id}`, pos)
-    this.declaredTags[id] = tag
-  }
-
-  makeTerminal(name: string, tag: string | null) {
+  makeTerminal(name: string, tag: string | null, props: Props) {
     for (let i = 0;; i++) {
       let cur = i ? `${name}-${i}` : name
       if (this.terms.terminals.some(t => t.name == cur)) continue
-      return this.terms.makeTerminal(cur, tag)
+      return this.terms.makeTerminal(cur, tag, props)
     }
   }
 
@@ -372,7 +355,7 @@ class Builder {
     let terms: Term[] = this.skipRules.slice()
     for (let i = 0; i < terms.length; i++) {
       for (let rule of terms[i].rules) {
-        for (let part of rule.parts) if (part.tag && !terms.includes(part)) terms.push(part)
+        for (let part of rule.parts) if (part.nodeType && !terms.includes(part)) terms.push(part)
       }
     }
     return terms
@@ -452,39 +435,47 @@ class Builder {
           this.raise(`Passing arguments to a parameter that already has arguments`, expr.start)
         }
         return arg
-      } else if (expr instanceof TaggedExpression) {
-        return new TaggedExpression(expr.start, expr.expr, this.substituteArgsInTag(expr.tag, args, params))
-      } else if (expr instanceof TagExpression) {
-        return new TagExpression(expr.start, this.substituteArgsInTag(expr.tag, args, params))
+      } else if (expr instanceof InlineRuleExpression) {
+        let r = expr.rule, props = this.substituteArgsInProps(r.props, args, params)
+        return props == r.props ? expr :
+          new InlineRuleExpression(expr.start, new RuleDeclaration(r.start, r.id, r.exported, props, r.params, r.expr))
+      } else if (expr instanceof SpecializeExpression) {
+        let props = this.substituteArgsInProps(expr.props, args, params)
+        return props == expr.props ? expr :
+          new SpecializeExpression(expr.start, expr.type, props, expr.token, expr.content)
       }
       return expr
     })
   }
 
-  substituteArgsInTag(tag: TagNode, args: readonly Expression[], params: readonly Identifier[]) {
-    function substParts(parts: readonly TagPart[]) {
-      let result = []
-      for (let part of parts) for (let p of substPart(part)) result.push(p)
+  substituteArgsInProps(props: readonly Prop[], args: readonly Expression[], params: readonly Identifier[]) {
+    let substituteInValue = (value: readonly PropPart[]) => {
+      let result = value as PropPart[]
+      for (let i = 0; i < value.length; i++) {
+        let part = value[i]
+        if (!part.name) continue
+        let found = params.findIndex(p => p.name == part.name)
+        if (found < 0) continue
+        if (result == value) result = value.slice()
+        let expr = args[found]
+        if (expr instanceof NameExpression && !expr.namespace && !expr.args.length)
+          result[i] = new PropPart(part.start, expr.id.name, null)
+        else if (expr instanceof LiteralExpression)
+          result[i] = new PropPart(part.start, expr.value, null)
+        else
+          this.raise(`Trying to interpolate expression '${expr}' into a prop`, part.start)
+      }
       return result
     }
-    let substPart = (part: TagPart): readonly TagPart[] => {
-      let index
-      if (part instanceof TagInterpolation && (index = params.findIndex(p => p.name == part.id.name)) > -1) {
-        let value = args[index]
-        if (value instanceof Identifier) return [new TagName(value.start, value.name)]
-        if (value instanceof LiteralExpression && value.value.length) return [new TagName(value.start, value.value)]
-        if (value instanceof TagExpression) return substParts(value.tag.parts)
-        return this.raise(`Expression '${value}' can't be used in a tag`, value.start)
-      } else if (part instanceof ValueTag) {
-        let name = substPart(part.name), val = substPart(part.value)
-        if (name.length != 1) this.raise(`Using a composite tag as tag name`, part.name.start)
-        if (val.length != 1) this.raise(`Using a composite tag as tag value`, part.value.start) 
-        return [new ValueTag(part.start, name[0], val[0])]
-      } else {
-        return [part]
+    let result = props as Prop[]
+    for (let i = 0; i < props.length; i++) {
+      let prop = props[i], value = substituteInValue(prop.value)
+      if (value != prop.value) {
+        if (result == props) result = props.slice()
+        result[i] = new Prop(prop.start, prop.name, value)
       }
     }
-    return new TagNode(tag.start, substParts(tag.parts))
+    return result
   }
 
   conflictsFor(markers: readonly ConflictMarker[]) {
@@ -546,15 +537,9 @@ class Builder {
         return this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
       if (known.rule.params.length != expr.args.length)
         this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
+      this.used(known.rule.id.name)
       return [p(this.buildRule(known.rule, expr.args, known.skip))]
     }
-  }
-
-  resolveAt(expr: AtExpression): Parts[] {
-    if (expr.id == "specialize" || expr.id == "extend")
-      return [p(this.resolveSpecialization(expr))]
-    else
-      return this.raise(`Unknown @-expression type: @${expr.id}`, expr.start)
   }
 
   // For tree-balancing reasons, repeat expressions X* have to be
@@ -571,7 +556,7 @@ class Builder {
     if (known) return p(known.term)
 
     let name = expr.expr instanceof SequenceExpression || expr.expr instanceof ChoiceExpression ? `(${expr.expr})${expr.kind}` : expr.toString()
-    let inner = this.newName(name, true)
+    let inner = this.newName(name, true, {repeated: true})
     inner.repeated = true
 
     let outer = inner
@@ -619,12 +604,10 @@ class Builder {
       return [p(this.tokens.getLiteral(expr)!)]
     } else if (expr instanceof NameExpression) {
       return this.resolve(expr)
-    } else if (expr instanceof AtExpression) {
-      return this.resolveAt(expr)
-    } else if (expr instanceof TaggedExpression) {
-      let tag = this.addDelimiters(this.finishTag(expr.tag)!, expr.expr)
-      let name = this.newName(`tag.${tag}`, tag)
-      return [p(this.defineRule(name, this.normalizeExpr(expr.expr)))]
+    } else if (expr instanceof SpecializeExpression) {
+      return [p(this.resolveSpecialization(expr))]
+    } else if (expr instanceof InlineRuleExpression) {
+      return [p(this.buildRule(expr.rule, none, this.currentSkip[this.currentSkip.length - 1]))]
     } else {
       return this.raise(`This type of expression ('${expr}') may not occur in non-token rules`, expr.start)
     }
@@ -632,17 +615,11 @@ class Builder {
 
   buildRule(rule: RuleDeclaration, args: readonly Expression[], skip: Term): Term {
     let expr = this.substituteArgs(rule.expr, args, rule.params)
-    this.used(rule.id.name)
-    let tag = this.finishTag(rule.tag, args, rule.params)
-    let tagDecl = this.declaredTags[rule.id.name]
-    if (tagDecl) {
-      if (tag) this.raise(`Duplicate tag definition for rule '${rule.id.name}'`, rule.tag!.start)
-      tag = tagDecl
-    }
-    tag = this.addDelimiters(tag, rule.expr)
-    let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), tag || true)
-    if ((tag || rule.exported) && rule.params.length == 0) {
-      if (!tag) name.preserve = true
+    let {name: nodeName, props} = this.nodeInfo(rule.props || none, rule.id.name, args, rule.params, rule.expr)
+    if (rule.exported && rule.params.length) this.warn(`Can't export parameterized rules`, rule.start)
+    let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), nodeName || true, props)
+    if ((name.nodeType || rule.exported) && rule.params.length == 0) {
+      if (!nodeName) name.preserve = true
       this.namedTerms[rule.id.name] = name
     }
 
@@ -653,43 +630,61 @@ class Builder {
     return result
   }
 
-  finishTag(tag: TagNode | null, args?: readonly Expression[], params?: readonly Identifier[]): string | null {
-    if (!tag) return null
-    if (params) tag = this.substituteArgsInTag(tag, args!, params)
-    return tag.parts.map(part => this.finishTagPart(part)).join(".")
-  }
-
-  finishTagPart(part: TagPart): string {
-    if (part instanceof ValueTag) return this.finishTagPart(part.name) + "=" + this.finishTagPart(part.value)
-    if (part instanceof TagInterpolation) return this.raise(`Tag interpolation '${part}' does not refer to a rule parameter`, part.start)
-    return part.toString()
-  }
-
-  resolveSpecialization(expr: AtExpression) {
-    let type = expr.id
-    if (expr.args.length < 2 || expr.args.length > 3) this.raise(`'${type}' takes two or three arguments`, expr.start)
-    let values, nameArg = expr.args[1]
-    if (nameArg instanceof LiteralExpression)
-      values = [nameArg.value]
-    else if ((nameArg instanceof ChoiceExpression) && nameArg.exprs.every(e => e instanceof LiteralExpression))
-      values = nameArg.exprs.map(expr => (expr as LiteralExpression).value)
-    else
-      return this.raise(`The second argument to '${type}' must be a literal or choice of literals`, expr.args[1].start)
-    let tag = null
-    if (expr.args.length == 3) {
-      let tagExpr = expr.args[2]
-      if (!(tagExpr instanceof TagExpression)) return this.raise(`The third argument to '${type}' must be a tag expression`, tagExpr.start)
-      tag = this.finishTag(tagExpr.tag)
+  nodeInfo(props: readonly Prop[], defaultName: string | null = null,
+           args: readonly Expression[] = none, params: readonly Identifier[] = none,
+           expr?: Expression): {name: string | null, props: Props} {
+    let result: Props = noProps, name = defaultName && !ignored(defaultName) ? defaultName : null
+    for (let prop of props) {
+      if (prop.name == "name") { name = this.finishProp(prop, args, params); continue }
+      if (RESERVED_PROPS.includes(prop.name)) this.raise(`Prop name '${prop.name}' is reserved`, prop.start)
+      if (!this.knownProps[prop.name]) this.raise(`Unknown prop name '${prop.name}'`, prop.start)
+      if (result == noProps) result = Object.create(null)
+      result[prop.name] = this.finishProp(prop, args, params)
     }
-    let terminal = this.normalizeExpr(expr.args[0])
+    if (expr && this.ast.autoDelim && (name || result != noProps)) {
+      let delim = this.findDelimiters(expr)
+      if (delim) {
+        if (result == noProps) result = Object.create(null)
+        result.delim = delim
+      }
+    }
+    if (result != noProps && !name)
+      this.raise(`Node has properties but no name`, props.length ? props[0].start : expr!.start)
+    return {name, props: result}
+  }
+
+  finishProp(prop: Prop, args: readonly Expression[], params: readonly Identifier[]): string {
+    return prop.value.map(part => {
+      if (part.value) return part.value
+      let pos = params.findIndex(param => param.name == part.name)
+      if (pos < 0) this.raise(`Property refers to '${part.name}', but no parameter by that name is in scope`, part.start)
+      let expr = args[pos]
+      if (expr instanceof NameExpression && !expr.args.length && !expr.namespace) return expr.id.name
+      if (expr instanceof LiteralExpression) return expr.value
+      return this.raise(`Expression '${expr}' can not be used as part of a property value`, part.start)
+    }).join("")
+  }
+
+  resolveSpecialization(expr: SpecializeExpression) {
+    let type = expr.type
+    let {name, props} = this.nodeInfo(expr.props)
+    let terminal = this.normalizeExpr(expr.token)
     if (terminal.length != 1 || terminal[0].terms.length != 1 || !terminal[0].terms[0].terminal)
-      this.raise(`The first argument to '${type}' must resolve to a token`, expr.args[0].start)
+      this.raise(`The first argument to '${type}' must resolve to a token`, expr.token.start)
+    let values
+    if (expr.content instanceof LiteralExpression)
+      values = [expr.content.value]
+    else if ((expr.content instanceof ChoiceExpression) && expr.content.exprs.every(e => e instanceof LiteralExpression))
+      values = expr.content.exprs.map(expr => (expr as LiteralExpression).value)
+    else
+      return this.raise(`The second argument to '${expr.type}' must be a literal or choice of literals`, expr.content.start)
+
     let term = terminal[0].terms[0], token = null
     let table = this.specialized[term.name] || (this.specialized[term.name] = [])
     for (let value of values) {
       let known = table.find(sp => sp.value == value)
       if (known == null) {
-        if (!token) token = this.makeTerminal(term.name + "/" + JSON.stringify(value), tag)
+        if (!token) token = this.makeTerminal(term.name + "/" + JSON.stringify(value), name, props)
         table.push({value, term: token, type})
         this.tokenOrigins[token.name] = term
       } else {
@@ -703,10 +698,8 @@ class Builder {
     return token!
   }
 
-  addDelimiters(tag: string | null, expr: Expression) {
-    if (!tag || !this.detectDelimiters) return tag
-
-    if (!(expr instanceof SequenceExpression) || expr.exprs.length < 2) return tag
+  findDelimiters(expr: Expression) {
+    if (!(expr instanceof SequenceExpression) || expr.exprs.length < 2) return null
     let findToken = (expr: Expression): string | null => {
       if (expr instanceof LiteralExpression) return expr.value
       if (expr instanceof NameExpression && expr.args.length == 0) {
@@ -718,15 +711,17 @@ class Builder {
       return null
     }
     let lastToken = findToken(expr.exprs[expr.exprs.length - 1])
-    if (!lastToken) return tag
+    if (!lastToken) return null
     const brackets = ["()", "[]", "{}", "<>"]
     let bracket = brackets.find(b => lastToken!.indexOf(b[1]) > -1 && lastToken!.indexOf(b[0]) < 0)
-    if (!bracket) return tag
+    if (!bracket) return null
     let firstToken = findToken(expr.exprs[0])
-    if (!firstToken || firstToken.indexOf(bracket[0]) < 0 || firstToken.indexOf(bracket[1]) > -1) return tag
-    return tag + ".delim=" + JSON.stringify(firstToken + " " + lastToken)
+    if (!firstToken || firstToken.indexOf(bracket[0]) < 0 || firstToken.indexOf(bracket[1]) > -1) return null
+    return firstToken + " " + lastToken
   }
 }
+
+const RESERVED_PROPS = ["error", "repeated"]
 
 function reduceAction(rule: Rule, partOfSkip: Term | null, depth = rule.parts.length) {
   return rule.name.id | Action.ReduceFlag |
@@ -898,7 +893,7 @@ function findExprAfter(ast: GrammarDeclaration, expr: Expression) {
     return cur
   }
   for (let rule of ast.rules) rule.expr.walk(walk)
-  ast.topExpr.walk(walk)
+  ast.topRule.expr.walk(walk)
   return found
 }
 
@@ -928,11 +923,13 @@ class TokenSet {
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    let term = this.b.makeTerminal(expr.toString(), this.b.finishTag(rule.tag, expr.args,
-                                                                     rule.params.length != expr.args.length ? undefined : rule.params))
-    if ((term.tag || rule.exported) && rule.params.length == 0) {
-      if (!term.tag) term.preserve = true
-      this.b.namedTerms[expr.id.name] = term
+    let {name: nodeName, props} =
+      this.b.nodeInfo(rule.props, name, expr.args, rule.params.length != expr.args.length ? none : rule.params)
+    let term = this.b.makeTerminal(expr.toString(), nodeName, props)
+                                                                     
+    if ((term.nodeType || rule.exported) && rule.params.length == 0) {
+      if (!term.nodeType) term.preserve = true
+      this.b.namedTerms[name] = term
     }
     this.buildRule(rule, expr, this.startState, new State([term]))
     this.built.push(new BuiltRule(name, expr.args, term))
@@ -942,8 +939,15 @@ class TokenSet {
   getLiteral(expr: LiteralExpression) {
     let id = JSON.stringify(expr.value)
     for (let built of this.built) if (built.id == id) return built.term
-    let decl = this.b.declaredTags[id]
-    let term = this.b.makeTerminal(id, decl || null)
+    let name = null, props = noProps
+    let decl = this.ast ? this.ast.literals.find(l => l.literal == expr.value) : null
+    if (decl) ({name, props} = this.b.nodeInfo(decl.props))
+    if (expr.value.length == 1 && this.b.ast.autoPunctuation.indexOf(expr.value) > -1) {
+      let style = STD_PUNC_STYLES[expr.value]
+      if (style) { if (props == noProps) props = Object.create(null); props.style = style }
+      if (!name) name = id
+    }
+    let term = this.b.makeTerminal(id, name, props) // FIXME @punctuation support
     this.build(expr, this.startState, new State([term]), none)
     this.built.push(new BuiltRule(id, none, term))
     return term
@@ -1232,22 +1236,22 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
                [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]]
 }
 
-const STD_PUNC_TAGS: {[char: string]: string} = {
-  "(": "open.paren.punctuation",
-  ")": "close.paren.punctuation",
-  "[": "open.bracket.punctuation",
-  "]": "close.bracket.punctuation",
-  "{": "open.brace.punctuation",
-  "}": "close.brace.punctuation",
-  ",": "comma.punctuation",
-  ":": "colon.punctuation",
-  ".": "dot.punctuation",
-  ";": "semicolon.punctuation",
-  "#": "hash.punctuation",
-  "?": "question.punctuation",
-  "!": "exclamation.punctuation",
-  "@": "at.punctuation",
-  "|": "bar.punctuation"
+const STD_PUNC_STYLES: {[char: string]: string} = {
+  "(": "punctuation.paren.open",
+  ")": "punctuation.paren.close",
+  "[": "punctuation.bracket.open",
+  "]": "punctuation.bracket.close",
+  "{": "punctuation.brace.open",
+  "}": "punctuation.brace.close",
+  ",": "punctuation.comma",
+  ":": "punctuation.colon",
+  ".": "punctuation.dot",
+  ";": "punctuation.semicolon",
+  "#": "punctuation.hash",
+  "?": "punctuation.question",
+  "!": "punctuation.exclamation",
+  "@": "punctuation.at",
+  "|": "punctuation.bar"
 }
 
 function isEmpty(expr: Expression) {
@@ -1260,7 +1264,8 @@ class ExternalTokenSet {
   constructor(readonly b: Builder, readonly ast: ExternalTokenDeclaration) {
     for (let token of ast.tokens) {
       b.unique(token.id)
-      let term = b.makeTerminal(token.id.name, b.finishTag(token.tag))
+      let {name, props} = b.nodeInfo(token.props, token.id.name)
+      let term = b.makeTerminal(token.id.name, name, props)
       b.namedTerms[token.id.name] = this.tokens[token.id.name] = term
       this.b.tokenOrigins[term.name] = this
     }
@@ -1452,6 +1457,25 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
 ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
   })
 
+  let nodeInfo: any[] = [], builtinProps: string[] = []
+  for (let type of parser.group.types) {
+    nodeInfo.push(JSON.stringify(type.name))
+    let propData = (type as any).props.propData
+    for (let i = 0; i < propData.length; i += 2) {
+      let source = propData[i], value = propData[i + 1], propID
+      if (source.from == null) {
+        if (!builtinProps.includes(source.name)) builtinProps.push(source.name)
+        propID = source.name // FIXME name clashes?
+      } else {
+        propID = importName(source.name, source.from, "prop")
+      }
+      nodeInfo.push(propID, value)
+    }
+  }
+
+  let builtinImport = !builtinProps.length ? "" :
+    `const {${builtinProps.join(", ")}} = ${importName("NodeProp", "lezer", "NodeProp")}\n`
+
   for (let source in imports) {
     if (mod == "cjs")
       head += `const {${imports[source].join(", ")}} = require(${source})\n`
@@ -1459,13 +1483,13 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
       head += `import {${imports[source].join(", ")}} from ${source}\n`
   }
 
-  let nodeTypes = parser.group.types.map(type => (type.skipped ? "~" : type.repeated ? "+" : "") + type.tag)
+  head += builtinImport
 
   let parserStr = `Parser.deserialize(
   ${encodeArray(parser.states, 0xffffffff)},
   ${encodeArray(parser.data)},
   ${encodeArray(parser.goto)},
-  ${JSON.stringify(nodeTypes)},
+  [${nodeInfo.join(", ")}],
   ${encodeArray(tokenData || [])},
   [${tokenizers.join(", ")}],
   [${nested.join(", ")}],
@@ -1491,4 +1515,9 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
     terms: mod == "cjs" ? `${gen}module.exports = {\n  ${terms.join(",\n  ")}\n}`
       : `${gen}export const\n  ${terms.join(",\n  ")}\n`
   }
+}
+
+function ignored(name: string) {
+  let first = name[0]
+  return first == "_" || first.toUpperCase() != first
 }

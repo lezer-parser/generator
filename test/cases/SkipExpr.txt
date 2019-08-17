@@ -1,17 +1,17 @@
-@top { "foo":foo+ }
+@top { Foo { "foo" }+ }
 
 @skip { " " | "<" skipContent* ">" }
 
-skipContent { "a":a | "b":b }
+skipContent { A { "a" } | B { "b" } }
 
 # Can skip the simple part of the skip expression
 
 foo foo
 
-==> foo,foo
+==> Foo,Foo
 
 # Outputs tags from skipped content
 
 foo <aba> foo
 
-==> foo,a,b,a,foo
+==> Foo,A,B,A,Foo

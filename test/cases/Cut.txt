@@ -5,7 +5,7 @@
 @top { statement* }
 
 statement {
-  (!statement "{" statement* "}"):block |
+  Block { !statement "{" statement* "}" } |
   expression ";"
 }
 
@@ -15,4 +15,4 @@ expression { "x" | "(" expression ")" | "{" "}" }
 
 {}
 
-==> block
+==> Block

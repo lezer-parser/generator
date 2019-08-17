@@ -1,13 +1,13 @@
-@top { a* }
+@top { A* }
 
-a:a { b ~ambig "." | c ~ambig "." }
+A { B ~ambig "." | C ~ambig "." }
 
-b:b { c }
+B { C }
 
-c:c { "x" }
+C { "x" }
 
 # Resolve
 
 x.
 
-==> a(c)
+==> A(C)

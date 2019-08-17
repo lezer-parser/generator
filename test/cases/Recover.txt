@@ -1,8 +1,8 @@
-@top { (class | block)* }
+@top { (Class | Block)* }
 
-class:class { "class" "{" "classitem"* "}" }
+Class { "class" "{" "classitem"* "}" }
 
-block:block { "{" (block | "statement")* "}" }
+Block { "{" (Block | "statement")* "}" }
 
 @skip { whitespace }
 
@@ -14,10 +14,10 @@ block:block { "{" (block | "statement")* "}" }
 
 { { { class { classitem }
 
-==> block(block(block(error),error),error),class
+==> Block(Block(Block(⚠),⚠),⚠),Class
 
 # Properly places end-of-file errors
 
 { { {	
 
-==> block(block(block(error),error),error)
+==> Block(Block(Block(⚠),⚠),⚠)

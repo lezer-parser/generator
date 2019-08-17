@@ -11,7 +11,9 @@ export class GrammarDeclaration extends Node {
               readonly precedences: PrecDeclaration | null,
               readonly mainSkip: Expression | null,
               readonly scopedSkip: readonly {expr: Expression, rules: readonly RuleDeclaration[]}[],
-              readonly grammars: readonly ExternalGrammarDeclaration[]) {
+              readonly grammars: readonly ExternalGrammarDeclaration[],
+              readonly autoDelim: boolean,
+              readonly autoPunctuation: string) {
     super(start)
   }
   toString() { return Object.values(this.rules).join("\n") }
@@ -21,7 +23,6 @@ export class RuleDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
               readonly exported: boolean,
-              readonly hidden: boolean,
               readonly props: readonly Prop[],
               readonly params: readonly Identifier[],
               readonly expr: Expression) {
@@ -49,16 +50,23 @@ export class TokenPrecDeclaration extends Node {
 export class TokenDeclaration extends Node {
   constructor(start: number,
               readonly precedences: readonly TokenPrecDeclaration[],
-              readonly rules: readonly RuleDeclaration[]) {
+              readonly rules: readonly RuleDeclaration[],
+              readonly literals: readonly LiteralDeclaration[]) {
     super(start)
   }
+}
+
+export class LiteralDeclaration extends Node {
+  constructor(start: number,
+              readonly literal: string,
+              readonly props: readonly Prop[]) { super(start) }
 }
 
 export class ExternalTokenDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
               readonly source: string,
-              readonly tokens: readonly {id: Identifier, props: null | readonly Prop[]}[]) {
+              readonly tokens: readonly {id: Identifier, props: readonly Prop[]}[]) {
     super(start)
   }
 }
@@ -99,15 +107,17 @@ export class NameExpression extends Expression {
   }
 }
 
-export class AtExpression extends Expression {
-  constructor(start: number, readonly id: string, readonly args: readonly Expression[]) { super(start) }
-  toString() { return `@${this.id}` + (this.args.length ? `<${this.args.join()}>` : "") }
-  eq(other: AtExpression) {
-    return this.id == other.id && exprsEq(this.args, other.args)
+export class SpecializeExpression extends Expression {
+  constructor(start: number, readonly type: string, readonly props: readonly Prop[],
+              readonly token: Expression, readonly content: Expression) { super(start) }
+  toString() { return `@${this.type}[${this.props.join(",")}]<${this.token}, ${this.content}>` }
+  eq(other: SpecializeExpression) {
+    return this.type == other.type && Prop.eqProps(this.props, other.props) && exprEq(this.token, other.token) &&
+      exprEq(this.content, other.content)
   }
   walk(f: (expr: Expression) => Expression): Expression {
-    let args = walkExprs(this.args, f)
-    return f(args == this.args ? this : new AtExpression(this.start, this.id, args))
+    let token = this.token.walk(f), content = this.content.walk(f)
+    return f(token == this.token && content == this.content ? this : new SpecializeExpression(this.start, this.type, this.props, token, content))
   }
 }
 
@@ -120,13 +130,12 @@ export class InlineRuleExpression extends Expression {
   }
   eq(other: InlineRuleExpression) {
     let rule = this.rule, oRule = other.rule
-    return exprEq(rule.expr, oRule.expr) && rule.id.name == oRule.id.name &&
-      rule.props.length == oRule.props.length && rule.props.every((p, i) => p.eq(oRule.props[i]))
+    return exprEq(rule.expr, oRule.expr) && rule.id.name == oRule.id.name && Prop.eqProps(rule.props, oRule.props)
   }
   walk(f: (expr: Expression) => Expression): Expression {
     let rule = this.rule, expr = rule.expr.walk(f)
     return f(expr == rule.expr ? this :
-             new InlineRuleExpression(this.start, new RuleDeclaration(rule.start, rule.id, false, false, rule.props, [], expr)))
+             new InlineRuleExpression(this.start, new RuleDeclaration(rule.start, rule.id, false, rule.props, [], expr)))
   }
 }
 
@@ -251,6 +260,10 @@ export class Prop extends Node {
         result += name ? `{${name}}` : /[^\w-]/.test(value!) ? JSON.stringify(value) : value
     }
     return result
+  }
+
+  static eqProps(a: readonly Prop[], b: readonly Prop[]) {
+    return a.length == b.length && a.every((p, i) => p.eq(b[i]))
   }
 }
 

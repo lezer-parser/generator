@@ -1,9 +1,9 @@
-@top { a+ }
+@top { A+ }
 
 @skip { space }
 
 @skip {} {
-  a:a { "a" "b"? }
+  A { "a" "b"? }
 }
 
 @tokens { space { " "+ } }

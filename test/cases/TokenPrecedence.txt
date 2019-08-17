@@ -1,15 +1,15 @@
-@top { (a | b | bb)+ }
+@top { (A | B | BB)+ }
 
 @tokens {
-  @precedence { bb, b }
+  @precedence { BB, B }
 
-  a:a { "A" }
-  b:b { "B" "."? }
-  bb:bb { "BB" }
+  A { "A" }
+  B { "B" "."? }
+  BB { "BB" }
 }
 
 # Token precedence
 
 ABBAB
 
-==> a, bb, a, b
+==> A, BB, A, B

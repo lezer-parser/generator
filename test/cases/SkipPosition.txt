@@ -1,17 +1,17 @@
-@top { statement+ }
+@top { Statement+ }
 
-statement:stat {
-  variable ";" |
-  variable variable ";"
+Statement {
+  Variable ";" |
+  Variable Variable ";"
 }
 
-variable:var { identifier }
+Variable { identifier }
 
-@skip { space | comment }
+@skip { space | Comment }
 
 @tokens {
   space { std.whitespace+ }
-  comment:comment { "'" [^']* "'" }
+  Comment { "'" ![']* "'" }
   identifier { "x" }
 }
 
@@ -19,4 +19,4 @@ variable:var { identifier }
 
 x'c';'c' x 'c' x 'c'; 'c'
 
-==> stat(var, comment), comment, stat(var, comment, var, comment), comment
+==> Statement(Variable, Comment), Comment, Statement(Variable, Comment, Variable, Comment), Comment

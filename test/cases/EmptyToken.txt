@@ -1,7 +1,7 @@
-@top { x }
+@top { X }
 
 @tokens {
-  x:x { "x"* }
+  X { "x"* }
 }
 
 //! zero-length

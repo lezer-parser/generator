@@ -1,11 +1,11 @@
 // This grammar is LR(1) but not LALR(1)
 
-@top { "a" e "a" | "b" e "b" | "a" f "b" | "b" f "a" }
-e:e { "e" }
-f:f { "e" }
+@top { "a" E "a" | "b" E "b" | "a" F "b" | "b" F "a" }
+E { "e" }
+F { "e" }
 
 # Can parse
 
 aeb
 
-==> f
+==> F

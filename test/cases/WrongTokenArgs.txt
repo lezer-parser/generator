@@ -1,7 +1,7 @@
-@top { x<"hi"> }
+@top { X<"hi"> }
 
 @tokens {
-  x<a, b>:x { a b }
+  X<a, b> { a b }
 }
 
 //! Incorrect number of arguments

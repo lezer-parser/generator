@@ -1,55 +1,48 @@
 @top { expr+ }
 
 expr {
-  ("(" number ")"):paren.expr |
-  bracketExpr |
-  weirdExpr |
-  dualExpr
+  ParenExpr { "(" Number ")" } |
+  BracketExpr |
+  WeirdExpr |
+  DualExpr
 }
 
-bracketExpr:bracket.expr {
-  bOpen number bClose
+BracketExpr {
+  "[|" Number "|]"
 }
 
-weirdExpr:weird.expr {
-  "((" number "()"
+WeirdExpr {
+  "((" Number "()"
 }
 
-dualExpr:dual.expr {
-  ("{" | "{{") number ("}" | "}}")
+DualExpr {
+  ("{" | "{{") Number ("}" | "}}")
 }
 
-@tokens {
-  number:number.expr { std.digit+ }
-  bOpen { "[|" }
-  bClose { "|]" }
-}
+@tokens { Number { std.digit+ } }
 
-@tags {
-  @detect-delim
-}
+@detectDelim
 
 # Assigns delim to tagged expressions
 
 (11)
 
-==> paren.expr.delim="( )"(number)
+==> ParenExpr[delim="( )"](Number)
 
 # Sees through rules
 
 [|50|]
 
-==> bracket.expr.delim="[| |]"(number)
+==> BracketExpr[delim="[| |]"](Number)
 
 # Doesn't assign delim when tokens self-close
 
 ((5()
 
-==> weird.expr$(number)
+==> WeirdExpr[delim=""](Number)
 
 # Doesn't assign delim when tokens are part of a choice
 
 {{8}}
 
-==> dual.expr$(number)
-
+==> DualExpr[delim=""](Number)

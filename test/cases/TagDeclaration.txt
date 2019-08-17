@@ -1,21 +1,23 @@
-@top:document.lang=foo { ("a" | "(" b ")")+ }
+@top[name=Doc,lang=foo] { ("a" | "(" B ")")+ }
 
-b { "b" }
+B { "b" }
 
-@tags {
-  @punctuation<"()">
-  "a":a
-  b:b
+@tokens {
+  "a"[name=A]
+  "("[name=ParenOpen]
+  ")"[name=ParenClose]
 }
+
+@punctuation<"()">
 
 # Adds a document node
 
 a
 
-==> document.lang=foo(a)
+==> Doc[lang=foo](A)
 
-# Applies punctuation tags
+# Applies punctuation info
 
 (b)
 
-==> open.paren.punctuation b close.paren.punctuation
+==> Doc(ParenOpen, B, ParenClose)

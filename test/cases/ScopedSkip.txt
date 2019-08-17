@@ -1,9 +1,9 @@
-@top { a+ }
+@top { A+ }
 
 @skip { spaces }
 
 @skip { dashes } {
-  a:a { "x" | "(" "b" ")" }
+  A { "x" | "(" "b" ")" }
 }
 
 @tokens {
@@ -15,10 +15,10 @@
 
 x (---b---) (b)
 
-==> a, a, a
+==> A, A, A
 
 # Marks invalid whitespace
 
 ( b )
 
-==> a(error, error)
+==> A(⚠, ⚠)

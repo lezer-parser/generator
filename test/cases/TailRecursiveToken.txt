@@ -1,39 +1,39 @@
-@top { (single | open "." close)+ }
+@top { (Single | Open "." Close)+ }
 
 @skip { spaces }
 
 @tokens {
   spaces { " "+ }
 
-  single:single { "`" toEnd }
+  Single { "`" toEnd }
 
-  toEnd { "`" | [^`$] toEnd | "$" afterDollarToEnd }
+  toEnd { "`" | ![`$] toEnd | "$" afterDollarToEnd }
 
-  afterDollarToEnd { "`" | [^`{$] toEnd | "$" afterDollarToEnd }
+  afterDollarToEnd { "`" | ![`{$] toEnd | "$" afterDollarToEnd }
 
-  open:open { "`" toBrace }
+  Open { "`" toBrace }
 
-  toBrace { [^`$] toBrace | "$" afterDollarToBrace }
+  toBrace { ![`$] toBrace | "$" afterDollarToBrace }
 
-  afterDollarToBrace { "{" | [^`\{$] toBrace | "$" afterDollarToBrace }
+  afterDollarToBrace { "{" | ![`\{$] toBrace | "$" afterDollarToBrace }
 
-  close:close { "}" toEnd }
+  Close { "}" toEnd }
 }
 
 # Single part
 
 `foo`
 
-==> single
+==> Single
 
 # Interpolation
 
 `foo${.}bar`
 
-==> open, close
+==> Open, Close
 
 # Dollar signs
 
 `$$` `$` `$${.}`
 
-==> single, single, open, close
+==> Single, Single, Open, Close

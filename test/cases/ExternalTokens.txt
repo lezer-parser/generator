@@ -1,15 +1,18 @@
 @top { expr* }
 
-expr { (braceOpen expr braceClose):braced | ("x" (dot "y":y)?):x }
+expr {
+  Braced { braceOpen expr braceClose } |
+  X { "x" (Dot Y { "y" })? }
+}
 
-@external-tokens ext1 from "./external_tokens.js" {
+@external tokens ext1 from "./external_tokens.js" {
   braceOpen,
   braceClose,
-  dot:dot
+  Dot
 }
 
 # Uses external tokens
 
 x{x}x.y
 
-==> x, braced(x), x(dot, y)
+==> X, Braced(X), X(Dot, Y)

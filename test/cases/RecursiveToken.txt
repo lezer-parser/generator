@@ -1,8 +1,8 @@
-@top { foo }
+@top { Foo }
 
 @tokens {
-  foo:foo { bar+ }
-  bar { foo }
+  Foo { bar+ }
+  bar { Foo }
 }
 
 //! recursion in token rules
