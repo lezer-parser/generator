@@ -91,6 +91,9 @@ export type BuildOptions = {
   /// Only relevant when using `buildParser`. Provides placeholders
   /// for nested grammars.
   nestedGrammar?: (name: string, terms: {[name: string]: number}) => NestedGrammar
+  // If given, will be used to initialize external props in the parser
+  // returned by `buildParser`.
+  externalProp?: (name: string) => NodeProp<any>
 }
 
 class Builder {
@@ -127,6 +130,12 @@ class Builder {
     let NP: {[key: string]: any} = NodeProp
     for (let prop in NP) {
       if (NP[prop] instanceof NodeProp) this.knownProps[prop] = {prop: NP[prop], source: {name: prop, from: null}}
+    }
+    for (let prop of this.ast.externalProps) {
+      this.knownProps[prop.id.name] = {
+        prop: this.options.externalProp ? this.options.externalProp(prop.id.name) : NodeProp.string(),
+        source: {name: prop.externalID.name, from: prop.source}
+      }
     }
 
     this.noSkip = this.newName("%noskip", true)

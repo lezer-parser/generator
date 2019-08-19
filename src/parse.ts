@@ -1,6 +1,6 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
         TokenPrecDeclaration, TokenDeclaration, LiteralDeclaration, ExternalTokenDeclaration,
-        ExternalGrammarDeclaration, Identifier,
+        ExternalGrammarDeclaration, ExternalPropDeclaration, Identifier,
         Expression, NameExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, InlineRuleExpression, Prop, PropPart,
         SpecializeExpression, AnyExpression, ConflictMarker} from "./node"
@@ -127,6 +127,7 @@ function parseGrammar(input: Input) {
   let scopedSkip: {expr: Expression, rules: readonly RuleDeclaration[]}[] = []
   let external: ExternalTokenDeclaration[] = []
   let nested: ExternalGrammarDeclaration[] = []
+  let props: ExternalPropDeclaration[] = []
   let top: RuleDeclaration | null = null
   let autoDelim = false, autoPunctuation = ""
 
@@ -141,6 +142,7 @@ function parseGrammar(input: Input) {
     } else if (input.eat("at", "external")) {
       if (input.eat("id", "tokens")) external.push(parseExternalTokens(input, start))
       else if (input.eat("id", "grammar")) nested.push(parseExternalGrammar(input, start))
+      else if (input.eat("id", "prop")) nested.push(parseExternalProp(input, start))
       else input.unexpected()
     } else if (input.type == "at" && input.value == "precedence") {
       if (prec) input.raise(`Multiple precedence declarations`, input.start)
@@ -167,7 +169,7 @@ function parseGrammar(input: Input) {
     }
   }
   if (!top) return input.raise(`Missing @top declaration`)
-  return new GrammarDeclaration(start, rules, top, tokens, external, prec, mainSkip, scopedSkip, nested, autoDelim, autoPunctuation)
+  return new GrammarDeclaration(start, rules, top, tokens, external, prec, mainSkip, scopedSkip, nested, props, autoDelim, autoPunctuation)
 }
 
 function parseRule(input: Input, named?: Identifier) {
@@ -418,12 +420,21 @@ function parseExternalTokens(input: Input, start: number) {
 
 function parseExternalGrammar(input: Input, start: number) {
   let externalID = parseIdent(input)
-  // FIXME this is ambigous with a rule names as or from coming after
+  // FIXME this is ambigous with a rule named `as` or `from` coming after
   // a null import
   let id = input.eat("id", "as") ? parseIdent(input) : externalID
   let from = input.eat("id", "from") ? input.value : null
   if (from) input.expect("string")
   return new ExternalGrammarDeclaration(start, id, externalID, from)
+}
+
+function parseExternalProp(input: Input, start: number) {
+  let externalID = parseIdent(input)
+  // FIXME this is ambigous with a rule named `as`
+  let id = input.eat("id", "as") ? parseIdent(input) : externalID
+  input.expect("id", "from")
+  let from = input.expect("string")
+  return new ExternalPropDeclaration(start, id, externalID, from)
 }
 
 function readString(string: string) {

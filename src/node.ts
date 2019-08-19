@@ -12,6 +12,7 @@ export class GrammarDeclaration extends Node {
               readonly mainSkip: Expression | null,
               readonly scopedSkip: readonly {expr: Expression, rules: readonly RuleDeclaration[]}[],
               readonly grammars: readonly ExternalGrammarDeclaration[],
+              readonly externalProps: readonly ExternalPropDeclaration[],
               readonly autoDelim: boolean,
               readonly autoPunctuation: string) {
     super(start)
@@ -76,6 +77,15 @@ export class ExternalGrammarDeclaration extends Node {
               readonly id: Identifier,
               readonly externalID: Identifier,
               readonly source: string | null) {
+    super(start)
+  }
+}
+
+export class ExternalPropDeclaration extends Node {
+  constructor(start: number,
+              readonly id: Identifier,
+              readonly externalID: Identifier,
+              readonly source: string) {
     super(start)
   }
 }
