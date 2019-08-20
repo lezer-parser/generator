@@ -1486,6 +1486,10 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
 
   head += builtinImport
 
+  function specializationString(table: {[name: string]: number}) {
+    return "{" + Object.keys(table).map(key => `${/\W/.test(key) ? JSON.stringify(key) : key}:${table[key]}`).join(", ") + "}"
+  }
+
   let parserStr = `Parser.deserialize(
   ${encodeArray(parser.states, 0xffffffff)},
   ${encodeArray(parser.data)},
@@ -1495,7 +1499,7 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
   [${tokenizers.join(", ")}],
   [${nested.join(", ")}],
   ${parser.specializeTable},
-  ${JSON.stringify(parser.specializations)},
+  [${parser.specializations.map(specializationString).join(",\n   ")}],
   ${parser.tokenPrecTable}${options.includeNames ? `,
   ${JSON.stringify(parser.termNames)}` : ''}
 )`
