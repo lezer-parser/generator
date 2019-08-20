@@ -25,7 +25,7 @@ class TestSpec {
       }
       if (next == '"') {
         let content = /^"((?:[^\\"]|\\.)*)"/.exec(spec.slice(pos - 1)) || err()
-        value = JSON.parse(content[0])
+        value = content[0]
         pos += content[0].length - 1
         return tok = "name"
       }
@@ -84,7 +84,7 @@ class TestSpec {
 }
 
 function defaultIgnore(type: NodeType) {
-  return /^punctuation\./.test(type.prop(NodeProp.style) || "")
+  return type.name.charCodeAt(0) == 34 // '"'
 }
 
 export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) {

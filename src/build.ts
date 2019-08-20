@@ -122,11 +122,6 @@ class Builder {
     this.input = new Input(text, options.fileName)
     this.ast = this.input.parse()
 
-    this.tokens = new TokenSet(this, this.ast.tokens)
-    this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
-
-    this.defineNamespace("nest", new NestNamespace)
-
     let NP: {[key: string]: any} = NodeProp
     for (let prop in NP) {
       if (NP[prop] instanceof NodeProp) this.knownProps[prop] = {prop: NP[prop], source: {name: prop, from: null}}
@@ -137,6 +132,11 @@ class Builder {
         source: {name: prop.externalID.name, from: prop.source}
       }
     }
+
+    this.tokens = new TokenSet(this, this.ast.tokens)
+    this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
+
+    this.defineNamespace("nest", new NestNamespace)
 
     this.noSkip = this.newName("%noskip", true)
     this.defineRule(this.noSkip, [])
@@ -950,7 +950,7 @@ class TokenSet {
     for (let built of this.built) if (built.id == id) return built.term
     let name = null, props = noProps
     let decl = this.ast ? this.ast.literals.find(l => l.literal == expr.value) : null
-    if (decl) ({name, props} = this.b.nodeInfo(decl.props))
+    if (decl) ({name, props} = this.b.nodeInfo(decl.props, id))
     if (expr.value.length == 1 && this.b.ast.autoPunctuation.indexOf(expr.value) > -1) {
       let style = STD_PUNC_STYLES[expr.value]
       if (style) { if (props == noProps) props = Object.create(null); props.style = style }
@@ -1245,22 +1245,14 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
                [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]]
 }
 
+// FIXME remove this feature?
 const STD_PUNC_STYLES: {[char: string]: string} = {
-  "(": "punctuation.paren.open",
-  ")": "punctuation.paren.close",
-  "[": "punctuation.bracket.open",
-  "]": "punctuation.bracket.close",
-  "{": "punctuation.brace.open",
-  "}": "punctuation.brace.close",
-  ",": "punctuation.comma",
-  ":": "punctuation.colon",
-  ".": "punctuation.dot",
-  ";": "punctuation.semicolon",
-  "#": "punctuation.hash",
-  "?": "punctuation.question",
-  "!": "punctuation.exclamation",
-  "@": "punctuation.at",
-  "|": "punctuation.bar"
+  "(": "bracket.paren.open",
+  ")": "bracket.paren.close",
+  "[": "bracket.square.open",
+  "]": "bracket.square.close",
+  "{": "bracket.brace.open",
+  "}": "bracket.brace.close"
 }
 
 function isEmpty(expr: Expression) {
@@ -1478,7 +1470,7 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
       } else {
         propID = importName(source.name, source.from, "prop")
       }
-      nodeInfo.push(propID, value)
+      nodeInfo.push(propID, JSON.stringify(value))
     }
   }
 

@@ -132,6 +132,7 @@ function parseGrammar(input: Input) {
   let autoDelim = false, autoPunctuation = ""
 
   while (input.type != "eof") {
+    let start = input.start
     if (input.type == "at" && input.value == "top") {
       if (top) input.raise(`Multiple @top declarations`, input.start)
       input.next()
@@ -203,8 +204,8 @@ function parseProp(input: Input) {
     if (input.type == "string" || input.type == "id") {
       value.push(new PropPart(input.start, input.value, null))
       input.next()
-    } else if (input.type == ".") {
-      value.push(new PropPart(input.start, input.type, null))
+    } else if (input.eat(".")) {
+      value.push(new PropPart(input.start, ".", null))
     } else if (input.eat("{")) {
       value.push(new PropPart(input.start, null, input.expect("id")))
       input.expect("}")
@@ -262,9 +263,9 @@ function parseExprInner(input: Input): Expression {
     input.next()
     let props = parseProps(input)
     input.expect("<")
-    let token = parseExprSequence(input)
+    let token = parseExprChoice(input)
     input.expect(",")
-    let content = parseExprSequence(input)
+    let content = parseExprChoice(input)
     input.expect(">")
     return new SpecializeExpression(start, value, props, token, content)
   } else {
