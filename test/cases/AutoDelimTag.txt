@@ -23,7 +23,7 @@ DualExpr {
 
 @detectDelim
 
-# Assigns delim to tagged expressions
+# Assigns delim node prop
 
 (11)
 

@@ -54,7 +54,7 @@ class TestSpec {
           if (tok as any == "=") {
             next()
             if (tok as any != "name") err()
-            val = value
+            val = value[0] == '"' ? JSON.parse(value) : value
             next()
           }
           props.push({prop, value: prop.fromString(val)})
@@ -78,7 +78,7 @@ class TestSpec {
   matches(type: NodeType) {
     if (type.name != this.name) return false
     for (let {prop, value} of this.props)
-      if (type.prop(prop) !== value && (value || type.prop(prop))) return false
+      if (type.prop(prop) != value && (value || type.prop(prop))) return false
     return true
   }
 }
