@@ -642,9 +642,13 @@ class Builder {
   nodeInfo(props: readonly Prop[], defaultName: string | null = null,
            args: readonly Expression[] = none, params: readonly Identifier[] = none,
            expr?: Expression): {name: string | null, props: Props} {
-    let result: Props = noProps, name = defaultName && !ignored(defaultName) ? defaultName : null
+    let result: Props = noProps, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
     for (let prop of props) {
-      if (prop.name == "name") { name = this.finishProp(prop, args, params); continue }
+      if (prop.name == "name") {
+        name = this.finishProp(prop, args, params)
+        if (/ /.test(name)) this.raise(`Prop names cannot have spaces ('${name}')`, prop.start)
+        continue
+      }
       if (RESERVED_PROPS.includes(prop.name)) this.raise(`Prop name '${prop.name}' is reserved`, prop.start)
       if (!this.knownProps[prop.name]) this.raise(`Unknown prop name '${prop.name}'`, prop.start)
       if (result == noProps) result = Object.create(null)
