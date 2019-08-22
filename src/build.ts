@@ -1485,7 +1485,7 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
   specializations: [${parser.specializations.map(specializationString).join(",\n   ")}],` : ""}
   tokenPrec: ${parser.tokenPrecTable}${options.includeNames ? `,
   termNames: ${JSON.stringify(parser.termNames)}` : ''}
-})`
+})` // FIXME more compact format for term names (omit named nodes, drop quotes)
 
   let terms: string[] = []
   for (let name in builder.termTable) {
