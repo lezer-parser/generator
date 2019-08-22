@@ -9,11 +9,8 @@ import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
 import {encodeArray} from "./encode"
 import {Parser, TokenGroup as LezerTokenGroup, ExternalTokenizer,
-        NestedGrammar, InputStream, Token, Stack, NodeGroup} from "lezer"
-import {NodeProp, NodeType} from "lezer-tree" // FIXME from lezer
+        NestedGrammar, InputStream, Token, Stack, NodeGroup, NodeProp, NodeType} from "lezer"
 import {Action, Specialize, StateFlag, Term as T, Seq, ParseState} from "lezer/src/constants"
-
-// FIXME ensure node names are unique?
 
 const none: readonly any[] = []
 
@@ -220,7 +217,7 @@ class Builder {
   newName(base: string, nodeName: string | null | true = null, props: Props = noProps): Term {
     for (let i = nodeName ? 0 : 1;; i++) {
       let name = i ? `${base}-${i}` : base
-      if (!this.terms.nonTerminals.some(t => t.name == name))
+      if (!this.terms.names[name])
         return this.terms.makeNonTerminal(name, nodeName === true ? null : nodeName, props)
     }
   }
@@ -258,7 +255,7 @@ class Builder {
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
     let specialized = [], specializations = []
     for (let name in this.specialized) {
-      specialized.push(this.terms.terminals.find(t => t.name == name)!.id)
+      specialized.push(this.terms.names[name]!.id)
       let table: {[value: string]: number} = {}
       for (let {value, term, type} of this.specialized[name]) {
         let code = type == "specialize" ? Specialize.Specialize : Specialize.Extend
@@ -355,7 +352,7 @@ class Builder {
   makeTerminal(name: string, tag: string | null, props: Props) {
     for (let i = 0;; i++) {
       let cur = i ? `${name}-${i}` : name
-      if (this.terms.terminals.some(t => t.name == cur)) continue
+      if (this.terms.names[cur]) continue
       return this.terms.makeTerminal(cur, tag, props)
     }
   }
@@ -566,7 +563,6 @@ class Builder {
 
     let name = expr.expr instanceof SequenceExpression || expr.expr instanceof ChoiceExpression ? `(${expr.expr})${expr.kind}` : expr.toString()
     let inner = this.newName(name, true, {repeated: ""})
-    inner.repeated = true
 
     let outer = inner
     if (expr.kind == "*") {
@@ -1170,8 +1166,8 @@ class TokenSet {
     for (let state of states) checkState(state)
     for (let states of skipStates) if (states) for (let state of states) checkState(state)
 
-    // FIXME more helpful message?
-    if (groups.length > 16) this.b.raise(`Too many different token groups to represent them as a 16-bit bitfield`)
+    if (groups.length > 16)
+      this.b.raise(`Too many different token groups (${groups.length}) to represent them as a 16-bit bitfield`)
 
     let tokenPrec = this.precedences.filter(term => usedPrec.includes(term)).map(t => t.id)
     return {tokenMasks: buildTokenMasks(groups), tokenGroups: groups, tokenPrec}
@@ -1301,10 +1297,6 @@ function tempNestedGrammar(b: Builder, grammar: NestedGrammarSpec): NestedGramma
   ;(result as any).spec = grammar
   return result
 }
-
-// FIXME maybe add a pass that, if there's a tagless token whole only
-// use is in a tagged single-term rule, move the tag to the token and
-// collapse the rule.
 
 function inlineRules(rules: readonly Rule[], preserve: readonly Term[]): readonly Rule[] {
   for (;;) {

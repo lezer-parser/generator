@@ -57,7 +57,7 @@ class TestSpec {
             val = value
             next()
           }
-          props.push({prop, value: prop.fromString(val)})
+          props.push({prop, value: prop.deserialize(val)})
         }
         next()
       }

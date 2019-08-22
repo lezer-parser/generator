@@ -316,10 +316,10 @@ function addTo<T>(value: T, array: T[]) {
 
 export function computeFirstSets(terms: TermSet) {
   let table: {[term: string]: Term[]} = {}
-  for (let t of terms.nonTerminals) table[t.name] = []
+  for (let t of terms.terms) if (!t.terminal) table[t.name] = []
   for (;;) {
     let change = false
-    for (let nt of terms.nonTerminals) for (let rule of nt.rules) {
+    for (let nt of terms.terms) if (!nt.terminal) for (let rule of nt.rules) {
       let set = table[nt.name]
       let found = false, startLen = set.length
       for (let part of rule.parts) {
@@ -372,7 +372,7 @@ export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[nam
     ;(cores[coreHash] || (cores[coreHash] = [])).push(new Core(core, found))
     return found
   }
-  let startSkip = startTerm.rules.length ? startTerm.rules[0].skip : terms.nonTerminals.find(t => t.name == "%noskip")!
+  let startSkip = startTerm.rules.length ? startTerm.rules[0].skip : terms.names["%noskip"]!
   getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null, 0)))
 
   for (let filled = 0; filled < states.length; filled++) {

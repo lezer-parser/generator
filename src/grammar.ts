@@ -3,16 +3,12 @@ import {Term as T} from "lezer/src/constants"
 const enum TermFlag {
   // This term is a terminal
   Terminal = 1,
-  // This is the inner term generated for a repetition operator
-  Repeated = 2, // FIXME replace with props.repeated
   // This is the top production
-  Top = 4,
-  // This is the error term
-  Error = 8, // FIXME use props.error?
+  Top = 2,
   // This represents end-of-file
-  Eof = 16,
+  Eof = 4,
   // This should be preserved, even if it doesn't occur in any rule
-  Preserve = 32
+  Preserve = 8
 }
 
 export type Props = {[name: string]: string}
@@ -41,32 +37,31 @@ export class Term {
   get nodeType() { return this.nodeName != null || this.props != noProps || this.repeated }
   get terminal() { return (this.flags & TermFlag.Terminal) > 0 }
   get eof() { return (this.flags & TermFlag.Eof) > 0 }
-  get error() { return (this.flags & TermFlag.Error) > 0 }
+  get error() { return "error" in this.props }
   get top() { return (this.flags & TermFlag.Top) > 0 }
   get interesting() { return this.flags > 0 || this.nodeName != null }
-  set repeated(value: boolean) { this.flags = value ? this.flags | TermFlag.Repeated : this.flags & ~TermFlag.Repeated }
-  get repeated() { return (this.flags & TermFlag.Repeated) > 0 }
+  get repeated() { return "repeated" in this.props }
   set preserve(value: boolean) { this.flags = value ? this.flags | TermFlag.Preserve : this.flags & ~TermFlag.Preserve }
   get preserve() { return (this.flags & TermFlag.Preserve) > 0 }
   cmp(other: Term) { return this.hash - other.hash }
 }
 
 export class TermSet {
-  // FIXME make this one array (or maybe a map?)
-  nonTerminals: Term[] = []
-  terminals: Term[] = []
+  terms: Term[] = []
+  names: {[name: string]: Term} = Object.create(null)
   eof: Term
   error: Term
   top!: Term
 
   constructor() {
     this.eof = this.term("␄", null, TermFlag.Terminal | TermFlag.Eof)
-    this.error = this.term("⚠", "⚠", TermFlag.Error | TermFlag.Preserve, {error: ""})
+    this.error = this.term("⚠", "⚠", TermFlag.Preserve, {error: ""})
   }
 
   term(name: string, nodeName: string | null, flags: number = 0, props: Props = noProps) {
     let term = new Term(name, flags, nodeName, props)
-    ;(term.terminal ? this.terminals : this.nonTerminals).push(term)
+    this.terms.push(term)
+    this.names[name] = term
     return term
   }
 
@@ -85,18 +80,17 @@ export class TermSet {
   finish(rules: readonly Rule[]) {
     for (let rule of rules) rule.name.rules.push(rule)
 
-    this.nonTerminals = this.nonTerminals.filter(t => t.preserve || rules.some(r => r.name == t || r.parts.includes(t)))
+    this.terms = this.terms.filter(t => t.terminal || t.preserve || rules.some(r => r.name == t || r.parts.includes(t)))
 
     let names: {[id: number]: string} = {}
     let nodeTypes = [this.error, this.top]
-    let all = this.terminals.concat(this.nonTerminals)
 
     this.error.id = T.Err
     this.top.id = T.Top
     let nextID = 2
     // Assign ids to terms that represent node types, with the repeated terms at the end
     for (let first = true;; first = false) {
-      for (let term of all) {
+      for (let term of this.terms) {
         if (term.id < 0 && term.nodeType && !(first && term.repeated)) {
           term.id = nextID++
           nodeTypes.push(term)
@@ -105,7 +99,7 @@ export class TermSet {
       if (!first) break
     }
     this.eof.id = nextID++
-    for (let term of all) {
+    for (let term of this.terms) {
       if (term.id < 0) term.id = nextID++
       names[term.id] = term.name
     }
