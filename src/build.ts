@@ -1479,19 +1479,19 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
     return "{" + Object.keys(table).map(key => `${/\W/.test(key) ? JSON.stringify(key) : key}:${table[key]}`).join(", ") + "}"
   }
 
-  let parserStr = `Parser.deserialize(
-  ${encodeArray(parser.states, 0xffffffff)},
-  ${encodeArray(parser.data)},
-  ${encodeArray(parser.goto)},
-  [${nodeInfo.join(", ")}],
-  ${encodeArray(tokenData || [])},
-  [${tokenizers.join(", ")}],
-  [${nested.join(", ")}],
-  ${parser.specializeTable},
-  [${parser.specializations.map(specializationString).join(",\n   ")}],
-  ${parser.tokenPrecTable}${options.includeNames ? `,
-  ${JSON.stringify(parser.termNames)}` : ''}
-)`
+  let parserStr = `Parser.deserialize({
+  states: ${encodeArray(parser.states, 0xffffffff)},
+  stateData: ${encodeArray(parser.data)},
+  goto: ${encodeArray(parser.goto)},
+  nodeTypeData: [${nodeInfo.join(", ")}],
+  tokenData: ${encodeArray(tokenData || [])},
+  tokenizers: [${tokenizers.join(", ")}],${nested.length ? `
+  nested: [${nested.join(", ")}],` : ""}
+  specializeTable: ${parser.specializeTable},${parser.specializations.length ? `
+  specializations: [${parser.specializations.map(specializationString).join(",\n   ")}],` : ""}
+  tokenPrec: ${parser.tokenPrecTable}${options.includeNames ? `,
+  termNames: ${JSON.stringify(parser.termNames)}` : ''}
+})`
 
   let terms: string[] = []
   for (let name in builder.termTable) {
