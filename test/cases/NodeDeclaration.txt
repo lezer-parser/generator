@@ -8,8 +8,6 @@ B { "b" }
   ")"[name=ParenClose]
 }
 
-@punctuation<"()">
-
 # Adds a document node
 
 a

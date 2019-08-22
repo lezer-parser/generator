@@ -129,7 +129,7 @@ function parseGrammar(input: Input) {
   let nested: ExternalGrammarDeclaration[] = []
   let props: ExternalPropDeclaration[] = []
   let top: RuleDeclaration | null = null
-  let autoDelim = false, autoPunctuation = ""
+  let autoDelim = false
 
   while (input.type != "eof") {
     let start = input.start
@@ -150,10 +150,6 @@ function parseGrammar(input: Input) {
       else prec = parsePrecedence(input)
     } else if (input.eat("at", "detectDelim")) {
       autoDelim = true
-    } else if (input.eat("at", "punctuation")) {
-      input.expect("<")
-      autoPunctuation += input.expect("string")
-      input.expect(">")
     } else if (input.eat("at", "skip")) {
       let skip = parseBracedExpr(input)
       if (input.type == "{") {
@@ -170,7 +166,7 @@ function parseGrammar(input: Input) {
     }
   }
   if (!top) return input.raise(`Missing @top declaration`)
-  return new GrammarDeclaration(start, rules, top, tokens, external, prec, mainSkip, scopedSkip, nested, props, autoDelim, autoPunctuation)
+  return new GrammarDeclaration(start, rules, top, tokens, external, prec, mainSkip, scopedSkip, nested, props, autoDelim)
 }
 
 function parseRule(input: Input, named?: Identifier) {

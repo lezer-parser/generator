@@ -13,8 +13,7 @@ export class GrammarDeclaration extends Node {
               readonly scopedSkip: readonly {expr: Expression, rules: readonly RuleDeclaration[]}[],
               readonly grammars: readonly ExternalGrammarDeclaration[],
               readonly externalProps: readonly ExternalPropDeclaration[],
-              readonly autoDelim: boolean,
-              readonly autoPunctuation: string) {
+              readonly autoDelim: boolean) {
     super(start)
   }
   toString() { return Object.values(this.rules).join("\n") }

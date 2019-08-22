@@ -950,13 +950,8 @@ class TokenSet {
     for (let built of this.built) if (built.id == id) return built.term
     let name = null, props = noProps
     let decl = this.ast ? this.ast.literals.find(l => l.literal == expr.value) : null
-    if (decl) ({name, props} = this.b.nodeInfo(decl.props, id))
-    if (expr.value.length == 1 && this.b.ast.autoPunctuation.indexOf(expr.value) > -1) {
-      let style = STD_PUNC_STYLES[expr.value]
-      if (style) { if (props == noProps) props = Object.create(null); props.style = style }
-      if (!name) name = id
-    }
-    let term = this.b.makeTerminal(id, name, props) // FIXME @punctuation support
+    if (decl) ({name, props} = this.b.nodeInfo(decl.props, expr.value))
+    let term = this.b.makeTerminal(id, name, props)
     this.build(expr, this.startState, new State([term]), none)
     this.built.push(new BuiltRule(id, none, term))
     return term
@@ -1243,16 +1238,6 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
   digit: [[48, 58]],
   whitespace: [[9, 14], [32, 33], [133, 134], [160, 161], [5760, 5761], [8192, 8203],
                [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]]
-}
-
-// FIXME remove this feature?
-const STD_PUNC_STYLES: {[char: string]: string} = {
-  "(": "bracket.paren.open",
-  ")": "bracket.paren.close",
-  "[": "bracket.square.open",
-  "]": "bracket.square.close",
-  "{": "bracket.brace.open",
-  "}": "bracket.brace.close"
 }
 
 function isEmpty(expr: Expression) {

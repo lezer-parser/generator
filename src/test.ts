@@ -25,7 +25,7 @@ class TestSpec {
       }
       if (next == '"') {
         let content = /^"((?:[^\\"]|\\.)*)"/.exec(spec.slice(pos - 1)) || err()
-        value = content[0]
+        value = JSON.parse(content[0])
         pos += content[0].length - 1
         return tok = "name"
       }
@@ -54,7 +54,7 @@ class TestSpec {
           if (tok as any == "=") {
             next()
             if (tok as any != "name") err()
-            val = value[0] == '"' ? JSON.parse(value) : value
+            val = value
             next()
           }
           props.push({prop, value: prop.fromString(val)})
@@ -84,7 +84,7 @@ class TestSpec {
 }
 
 function defaultIgnore(type: NodeType) {
-  return type.name.charCodeAt(0) == 34 // '"'
+  return /\W/.test(type.name)
 }
 
 export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) {
