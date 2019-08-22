@@ -332,7 +332,7 @@ class Builder {
     for (let prop in term.props) {
       let propType = this.knownProps[prop]
       if (!propType) throw new Error("No known prop type for " + prop)
-      props[propType.prop.id] = propType.prop.fromString(term.props[prop])
+      props[propType.prop.id] = propType.prop.deserialize(term.props[prop])
       propData.push(propType.source, term.props[prop])
     }
     return new NodeType(term.nodeName || "", props, id)
@@ -1450,12 +1450,14 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
   })
 
   let nodeNames = [], nodeProps: {prop: string, terms: (number | string)[]}[] = []
+  let repeatCount = 0
   for (let type of parser.group.types) {
-    nodeNames.push(type.name)
+    if (type.prop(NodeProp.repeated)) repeatCount++
+    else nodeNames.push(type.name)
     let propData = (type as any).props.propData
     for (let i = 0; i < propData.length; i += 2) {
       let source = propData[i], value = propData[i + 1]
-      if (source.from == null && (/*source.name == "repeated" ||*/ source.name == "error")) continue
+      if (source.from == null && (source.name == "repeated" || source.name == "error")) continue
       let propID = source.from ? importName(source.name, source.from, "prop") :
         importName("NodeProp", "lezer", "NodeProp") + "." + source.name
       let known = nodeProps.find(p => p.prop == propID)
@@ -1483,6 +1485,7 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
   nodeProps: [
     ${nodeProps.map(p => `[${p.prop}, ${p.terms.map(val => JSON.stringify(val)).join(",")}]`).join(",\n    ")}
   ],` : ""}
+  repeatNodeCount: ${repeatCount},
   tokenData: ${encodeArray(tokenData || [])},
   tokenizers: [${tokenizers.join(", ")}],${nested.length ? `
   nested: [${nested.join(", ")}],` : ""}

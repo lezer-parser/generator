@@ -94,11 +94,15 @@ export class TermSet {
     this.error.id = T.Err
     this.top.id = T.Top
     let nextID = 2
-    for (let term of all) {
-      if (term.id < 0 && term.nodeType) {
-        term.id = nextID++
-        nodeTypes.push(term)
+    // Assign ids to terms that represent node types, with the repeated terms at the end
+    for (let first = true;; first = false) {
+      for (let term of all) {
+        if (term.id < 0 && term.nodeType && !(first && term.repeated)) {
+          term.id = nextID++
+          nodeTypes.push(term)
+        }
       }
+      if (!first) break
     }
     this.eof.id = nextID++
     for (let term of all) {
