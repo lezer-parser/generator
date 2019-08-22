@@ -417,17 +417,15 @@ function parseExternalTokens(input: Input, start: number) {
 
 function parseExternalGrammar(input: Input, start: number) {
   let externalID = parseIdent(input)
-  // FIXME this is ambigous with a rule named `as` or `from` coming after
-  // a null import
   let id = input.eat("id", "as") ? parseIdent(input) : externalID
-  let from = input.eat("id", "from") ? input.value : null
-  if (from) input.expect("string")
+  let from = null
+  if (input.eat("id", "from")) from = input.expect("string")
+  else input.expect("id", "empty")
   return new ExternalGrammarDeclaration(start, id, externalID, from)
 }
 
 function parseExternalProp(input: Input, start: number) {
   let externalID = parseIdent(input)
-  // FIXME this is ambigous with a rule named `as`
   let id = input.eat("id", "as") ? parseIdent(input) : externalID
   input.expect("id", "from")
   let from = input.expect("string")

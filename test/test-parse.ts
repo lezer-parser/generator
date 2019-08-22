@@ -331,7 +331,7 @@ Close { "</" name ">" }
   })
 
   it("skips ranges with missing nested parsers", () => {
-    let outer = buildParser(`@external grammar inner @top { "[" nest.inner "]" } @tokens { "["[name=O] "]"[name=C] }`)
+    let outer = buildParser(`@external grammar inner empty @top { "[" nest.inner "]" } @tokens { "["[name=O] "]"[name=C] }`)
     testTree(outer.parse("[lfkdsajfa]"), 'O,C')
   })
 })
