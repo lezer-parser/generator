@@ -15,7 +15,7 @@ const enum TermFlag {
   Preserve = 32
 }
 
-export type Props = {[name: string]: any}
+export type Props = {[name: string]: string}
 
 export const noProps: Props = Object.create(null)
 
@@ -61,7 +61,7 @@ export class TermSet {
 
   constructor() {
     this.eof = this.term("␄", null, TermFlag.Terminal | TermFlag.Eof)
-    this.error = this.term("⚠", "⚠", TermFlag.Error | TermFlag.Preserve, {error: true})
+    this.error = this.term("⚠", "⚠", TermFlag.Error | TermFlag.Preserve, {error: ""})
   }
 
   term(name: string, nodeName: string | null, flags: number = 0, props: Props = noProps) {
