@@ -88,8 +88,8 @@ export type BuildOptions = {
   /// Only relevant when using `buildParser`. Provides placeholders
   /// for nested grammars.
   nestedGrammar?: (name: string, terms: {[name: string]: number}) => NestedGrammar
-  // If given, will be used to initialize external props in the parser
-  // returned by `buildParser`.
+  /// If given, will be used to initialize external props in the parser
+  /// returned by `buildParser`.
   externalProp?: (name: string) => NodeProp<any>
 }
 
@@ -325,11 +325,11 @@ class Builder {
   toNodeType(term: Term, skipped: readonly Term[], id: number) {
     let propData: any[] = []
     let props = {propData} as {[id: number]: any}
-    if (skipped.includes(term)) props[NodeProp.skipped.id] = true
+    if (skipped.includes(term)) NodeProp.skipped.set(props, true)
     for (let prop in term.props) {
       let propType = this.knownProps[prop]
       if (!propType) throw new Error("No known prop type for " + prop)
-      props[propType.prop.id] = propType.prop.deserialize(term.props[prop])
+      propType.prop.set(props, propType.prop.deserialize(term.props[prop]))
       propData.push(propType.source, term.props[prop])
     }
     return new NodeType(term.nodeName || "", props, id)
