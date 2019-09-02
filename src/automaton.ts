@@ -418,6 +418,8 @@ export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[nam
         state.goto.splice(i--, 1)
     }
   }
+  // Resolve alwaysReduce and sort actions
+  for (let state of states) state.finish()
   return states
 }
 
@@ -501,13 +503,11 @@ function collapseAutomaton(states: readonly State[]): readonly State[] {
         markConflicts(mapping, newID, states, newStates, conflicts)
       }
     }
-    if (!conflicting.length) return mergeIdentical(newStates)
+    if (!conflicting.length) return newStates
   }
 }
 
 function mergeIdentical(states: readonly State[]): readonly State[] {
-  // Resolve alwaysReduce and sort actions
-  for (let state of states) state.finish()
   for (;;) {
     let mapping: number[] = [], didMerge = false
     let newStates: State[] = []
@@ -542,5 +542,5 @@ function mergeIdentical(states: readonly State[]): readonly State[] {
 const none: readonly any[] = []
 
 export function finishAutomaton(full: readonly State[], first: {[term: string]: Term[]}) {
-  return collapseAutomaton(full)
+  return mergeIdentical(collapseAutomaton(full))
 }
