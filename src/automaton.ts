@@ -159,7 +159,6 @@ export class State {
   actions: (Shift | Reduce)[] = []
   actionPositions: (readonly Pos[])[] = []
   goto: Shift[] = []
-  recover: Shift[] = []
   tokenGroup: number = -1
   defaultReduce: Rule | null = null
   partOfSkip: Term | null = null
@@ -241,7 +240,6 @@ export class State {
     }
     this.actions.sort((a, b) => a.cmp(b))
     this.goto.sort((a, b) => a.cmp(b))
-    this.recover.sort((a, b) => a.cmp(b))
   }
 
   eq(other: State) {
@@ -251,8 +249,7 @@ export class State {
     return this.skip == other.skip &&
       this.tokenGroup == other.tokenGroup &&
       eqSet(this.actions, other.actions) &&
-      eqSet(this.goto, other.goto) &&
-      eqSet(this.recover, other.recover)
+      eqSet(this.goto, other.goto)
   }
 }
 
@@ -421,8 +418,6 @@ export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[nam
         state.goto.splice(i--, 1)
     }
   }
-
-  for (let state of states) state.finish()
   return states
 }
 
@@ -536,7 +531,6 @@ function mergeIdentical(states: readonly State[]): readonly State[] {
     // Make sure actions point at merged state objects
     for (let state of newStates) if (!state.defaultReduce) {
       state.actions = state.actions.map(a => a.map(mapping, newStates))
-      state.recover = state.recover.map(a => a.map(mapping, newStates))
       state.goto = state.goto.map(a => a.map(mapping, newStates))
     }
     // Renumber ids
@@ -547,24 +541,6 @@ function mergeIdentical(states: readonly State[]): readonly State[] {
 
 const none: readonly any[] = []
 
-function addRecoveryRules(table: readonly State[], first: {[name: string]: Term[]}) {
-  for (let state of table) {
-    for (let pos of state.set) if (pos.pos > 0) {
-      for (let i = pos.pos + 1; i < pos.rule.parts.length; i++) {
-        let part = pos.rule.parts[i]
-        terms: for (let term of (part.terminal ? [part] : first[part.name])) if (term && !state.recover.some(a => a.term == term)) {
-          let next = pos.rule.parts[pos.pos]
-          let action = next.terminal ? state.actions.find(t => t.term == next) : state.getGoto(next)
-          if (!action || !(action instanceof Shift)) continue
-          state.recover.push(new Shift(term, action.target))
-        }
-      }
-    }
-  }
-}
-
 export function finishAutomaton(full: readonly State[], first: {[term: string]: Term[]}) {
-  let table = collapseAutomaton(full)
-  addRecoveryRules(table, first)
-  return table
+  return collapseAutomaton(full)
 }

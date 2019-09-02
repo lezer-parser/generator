@@ -102,11 +102,11 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
     } else {
       let parent = last > 0 ? stack[last - 1][pos[last - 1]].name : "tree"
       let after = next ? next.name + (parent == "tree" ? "" : " in " + parent) : `end of ${parent}`
-      throw new Error(`Expected ${after}, got ${type.name} at ${start}`)
+      throw new Error(`Expected ${after}, got ${type.name} at ${start} \n${tree}`)
     }
   }, (type, start) => {
     let last = stack.length - 1, index = pos[last], seq = stack[last]
-    if (index < seq.length) throw new Error(`Unexpected end of ${type.name}. Expected ${seq.slice(index).map(s => s.name).join(", ")} at ${start}`)
+    if (index < seq.length) throw new Error(`Unexpected end of ${type.name}. Expected ${seq.slice(index).map(s => s.name).join(", ")} at ${start}\n${tree}`)
     pos.pop()
     stack.pop()
     pos[last - 1]++

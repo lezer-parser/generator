@@ -370,7 +370,7 @@ class Builder {
   finishState(state: LRState, tokenizers: (LezerTokenGroup | TempExternalTokenizer)[],
               data: DataBuilder, skipTable: number, skipState: LRState | null, isSkip: boolean,
               stateArray: Uint32Array) {
-    let actions = [], recover = [], forcedReduce = 0
+    let actions = [], forcedReduce = 0
     let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, state.partOfSkip) : 0
     let flags = (isSkip ? StateFlag.Skipped : 0) |
       (state.nested > -1 ? StateFlag.StartNest | (state.nested << StateFlag.NestShift) : 0)
@@ -387,10 +387,6 @@ class Builder {
     }
     if (other > -1) actions.push(T.Err, other & Action.ValueMask, other >> 16)
     actions.push(Seq.End)
-
-    for (let action of state.recover)
-      recover.push(action.term.id, action.target.id)
-    recover.push(Seq.End)
 
     let forceCandidates = state.set.filter(pos => pos.pos > 0)
     if (forceCandidates.length) {
@@ -421,7 +417,6 @@ class Builder {
     let base = state.id * ParseState.Size
     stateArray[base + ParseState.Flags] = flags
     stateArray[base + ParseState.Actions] = data.storeArray(actions)
-    stateArray[base + ParseState.Recover] = data.storeArray(recover)
     stateArray[base + ParseState.Skip] = skipTable
     stateArray[base + ParseState.TokenizerMask] = tokenizerMask
     stateArray[base + ParseState.DefaultReduce] = defaultReduce
