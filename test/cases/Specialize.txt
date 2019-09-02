@@ -32,7 +32,7 @@ exit;
 print 10;
 let print 2;
 
-==> Print(Number),Decl(⚠, Number)
+==> Print(Number),Decl(⚠),⚠,Print(Number)
 
 # Use of extended token can be determined by next token
 

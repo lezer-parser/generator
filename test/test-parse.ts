@@ -213,6 +213,17 @@ Bin { expr !plus "+" expr | expr !times "*" expr }
     let ast2 = comments.parse(doc.slice(1), {cache: change(ast, [0, 1, 0, 0]), bufferLength: 10})
     ist(shared(ast, ast2), 80, ">")
   })
+
+  it("doesn't get slow on long invalid input", () => {
+    let t0 = Date.now()
+    let ast = p1().parse("#".repeat(2000))
+    // Testing for timing is always dodgy, but I'm trying to ensure
+    // there's no exponential complexity here. This runs (cold) in
+    // ~60ms on my machine. In case of exponentiality it should become
+    // _extremely_ slow.
+    ist(Date.now() - t0 < 500)
+    ist(ast.toString(), "⚠")
+  })
 })
 
 describe("sequences", () => {

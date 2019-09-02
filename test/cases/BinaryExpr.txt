@@ -47,7 +47,7 @@ x*x+y/y
 
 x++y
 
-==> BinaryExpr(Symbol,AddOp,⚠(AddOp),Symbol)
+==> BinaryExpr(BinaryExpr(Symbol,AddOp,⚠),AddOp,Symbol)
 
 # Dropped character 
 
