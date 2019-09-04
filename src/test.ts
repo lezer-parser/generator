@@ -90,26 +90,29 @@ function defaultIgnore(type: NodeType) {
 export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) {
   let specs = TestSpec.parse(expect)
   let stack = [specs], pos = [0]
-  tree.iterate(0, tree.length, (type, start) => {
-    let last = stack.length - 1, index = pos[last], seq = stack[last]
-    let next = index < seq.length ? seq[index] : null
-    if (next && next.matches(type)) {
-      pos.push(0)
-      stack.push(next.children)
-      return undefined
-    } else if (mayIgnore(type)) {
-      return false
-    } else {
-      let parent = last > 0 ? stack[last - 1][pos[last - 1]].name : "tree"
-      let after = next ? next.name + (parent == "tree" ? "" : " in " + parent) : `end of ${parent}`
-      throw new Error(`Expected ${after}, got ${type.name} at ${start} \n${tree}`)
+  tree.iterate({
+    enter(type, start) {
+      let last = stack.length - 1, index = pos[last], seq = stack[last]
+      let next = index < seq.length ? seq[index] : null
+      if (next && next.matches(type)) {
+        pos.push(0)
+        stack.push(next.children)
+        return undefined
+      } else if (mayIgnore(type)) {
+        return false
+      } else {
+        let parent = last > 0 ? stack[last - 1][pos[last - 1]].name : "tree"
+        let after = next ? next.name + (parent == "tree" ? "" : " in " + parent) : `end of ${parent}`
+        throw new Error(`Expected ${after}, got ${type.name} at ${start} \n${tree}`)
+      }
+    },
+    leave(type, start) {
+      let last = stack.length - 1, index = pos[last], seq = stack[last]
+      if (index < seq.length) throw new Error(`Unexpected end of ${type.name}. Expected ${seq.slice(index).map(s => s.name).join(", ")} at ${start}\n${tree}`)
+      pos.pop()
+      stack.pop()
+      pos[last - 1]++
     }
-  }, (type, start) => {
-    let last = stack.length - 1, index = pos[last], seq = stack[last]
-    if (index < seq.length) throw new Error(`Unexpected end of ${type.name}. Expected ${seq.slice(index).map(s => s.name).join(", ")} at ${start}\n${tree}`)
-    pos.pop()
-    stack.pop()
-    pos[last - 1]++
   })
   if (pos[0] != specs.length)
     throw new Error(`Unexpected end of tree. Expected ${stack[0].slice(pos[0]).map(s => s.name).join(", ")} at ${tree.length}`)

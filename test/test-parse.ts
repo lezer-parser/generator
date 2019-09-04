@@ -48,9 +48,9 @@ describe("parsing", () => {
   function qq(parser: Parser, ast: Tree) {
     return function(query: string, offset = 1): {start: number, end: number} {
       let result = null
-      ast.iterate(0, ast.length, (type, start, end) => {
+      ast.iterate({enter(type, start, end) {
         if (type.name == query && --offset == 0) result = {start, end}
-      })
+      }})
       if (result) return result
       throw new Error("Couldn't find " + query)
     }
@@ -149,9 +149,12 @@ describe("parsing", () => {
   function testIter(bufferLength: number, partial: boolean) {
     let parser = p1(), output: any[] = []
     let ast = parser.parse(iterDoc, {strict: true, bufferLength})
-    ast.iterate(partial ? 13 : 0, partial ? 19 : ast.length,
-                (open, start) => { output.push(open.name, start) },
-                (close, _, end) => { output.push("/" + close.name, end) })
+    ast.iterate({
+      from: partial ? 13 : 0,
+      to: partial ? 19 : ast.length,
+      enter(open, start) { output.push(open.name, start) },
+      leave(close, _, end) { output.push("/" + close.name, end) }
+    })
     ist(output.join(), (partial ? partialSeq : iterSeq).join())
   }
 
@@ -166,9 +169,12 @@ describe("parsing", () => {
   function testIterRev(bufferLength: number, partial: boolean) {
     let parser = p1(), output: any[] = []
     let ast = parser.parse(iterDoc, {strict: true, bufferLength})
-    ast.iterate(partial ? 19 : ast.length, partial ? 13 : 0,
-                (close, _, end) => { output.push(end, "/" + close.name) },
-                (open, start) => { output.push(start, open.name) })
+    ast.iterate({
+      from: partial ? 19 : ast.length,
+      to: partial ? 13 : 0,
+      enter(close, _, end) { output.push(end, "/" + close.name) },
+      leave(open, start) { output.push(start, open.name) }
+    })
     ist(output.reverse().join(), (partial ? partialSeq : iterSeq).join())
   }
 
@@ -269,7 +275,7 @@ describe("sequences", () => {
     let parser = p1()
     let ast = parser.parse(doc, {bufferLength: 10})
     let i = 0
-    ast.iterate(0, ast.length, (type, start, end) => {
+    ast.iterate({enter(type, start, end) {
       if (i == 100) {
         ist(type.name, "Y")
         ist(start, 100)
@@ -280,7 +286,7 @@ describe("sequences", () => {
         ist(start, i < 100 ? i : i + 9)
       }
       i++
-    })
+    }})
   })
 })
 
