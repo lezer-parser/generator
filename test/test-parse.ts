@@ -91,8 +91,7 @@ describe("parsing", () => {
   let resolveDoc = "while 111 { one; two(three 20); }"
 
   function testResolve(bufferLength: number) {
-    let parser = p1()
-    let ast = parser.parse(resolveDoc, {strict: true, bufferLength})
+    let ast = p1().parse(resolveDoc, {strict: true, bufferLength})
 
     let cx111 = ast.resolve(7)
     ist(cx111.depth, 2)
@@ -135,6 +134,13 @@ describe("parsing", () => {
   it("can resolve positions in buffers", () => testResolve(1024))
 
   it("can resolve positions in trees", () => testResolve(2))
+
+  it("caches resolved trees", () => {
+    let tree = p1().parse(resolveDoc, {strict: true, bufferLength: 2})
+    let one = tree.resolve(13)
+    ist(tree.resolve(13), one)
+    ist(tree.resolve(11), one.parent)
+  })
 
   let iterDoc = "while 1 { a; b; c(d e); } while 2 { f; }"
   let iterSeq = ["Loop", 0, "Num", 6, "/Num", 7, "Block", 8, "Var", 10, "/Var", 11,
