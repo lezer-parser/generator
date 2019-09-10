@@ -1,3 +1,13 @@
+## 0.4.0 (2019-09-10)
+
+### Bug fixes
+
+Fix bug that made matching single-token skipped expressions unnecessarily expensive.
+
+### Breaking changes
+
+Do not emit recovery actions in the parse table anymore.
+
 ## 0.3.0 (2019-08-22)
 
 ### Bug fixes
