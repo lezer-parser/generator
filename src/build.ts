@@ -326,6 +326,7 @@ class Builder {
     let propData: any[] = []
     let props = {propData} as {[id: number]: any}
     if (skipped.includes(term)) NodeProp.skipped.set(props, true)
+    if (term.top) NodeProp.top.set(props, true)
     for (let prop in term.props) {
       let propType = this.knownProps[prop]
       if (!propType) throw new Error("No known prop type for " + prop)
