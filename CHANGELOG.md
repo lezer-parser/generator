@@ -1,3 +1,9 @@
+## 0.5.1 (2019-10-22)
+
+### Bug fixes
+
+Fix issue where serialized parsers didn't have the top node prop set.
+
 ## 0.5.0 (2019-10-22)
 
 ### New features
