@@ -177,7 +177,7 @@ class Builder {
 
     this.currentSkip.push(mainSkip)
     let top = this.ast.topRule
-    let {name, props} = this.nodeInfo(top.props, null, none, none, top.expr)
+    let {name, props} = this.nodeInfo(top.props, null, none, none, top.expr, {top: true})
     this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
     this.currentSkip.pop()
 
@@ -326,7 +326,6 @@ class Builder {
     let propData: any[] = []
     let props = {propData} as {[id: number]: any}
     if (skipped.includes(term)) NodeProp.skipped.set(props, true)
-    if (term.top) NodeProp.top.set(props, true)
     for (let prop in term.props) {
       let propType = this.knownProps[prop]
       if (!propType) throw new Error("No known prop type for " + prop)
@@ -633,8 +632,8 @@ class Builder {
 
   nodeInfo(props: readonly Prop[], defaultName: string | null = null,
            args: readonly Expression[] = none, params: readonly Identifier[] = none,
-           expr?: Expression): {name: string | null, props: Props} {
-    let result: Props = noProps, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
+           expr?: Expression, startProps: Props = noProps): {name: string | null, props: Props} {
+    let result = startProps, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
     for (let prop of props) {
       if (prop.name == "name") {
         name = this.finishProp(prop, args, params)
