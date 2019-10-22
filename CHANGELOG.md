@@ -1,3 +1,9 @@
+## 0.5.0 (2019-10-22)
+
+### New features
+
+The generator now automatically assigns the `top` node prop to the grammar's top node.
+
 ## 0.4.0 (2019-09-10)
 
 ### Bug fixes
