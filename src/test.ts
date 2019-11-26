@@ -44,7 +44,7 @@ class TestSpec {
       let name = value, children = none, props = []
       if (tok != "name") err()
       next()
-      if (tok == "[") {
+      if (tok as any == "[") {
         next()
         while (tok as any != "]") {
           if (tok as any != "name") err()
@@ -61,7 +61,7 @@ class TestSpec {
         }
         next()
       }
-      if (tok == "(") {
+      if (tok as any == "(") {
         next()
         children = parseSeq()
         // @ts-ignore TypeScript doesn't understand that `next` may have mutated `tok` (#9998)
