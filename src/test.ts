@@ -84,7 +84,7 @@ class TestSpec {
 }
 
 function defaultIgnore(type: NodeType) {
-  return /\W/.test(type.name)
+  return /\W/.test(type.name) || type.name == "@top"
 }
 
 export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) {

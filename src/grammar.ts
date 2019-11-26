@@ -11,7 +11,7 @@ const enum TermFlag {
   Preserve = 8
 }
 
-export type Props = {[name: string]: string}
+export type Props = {[name: string]: any}
 
 export const noProps: Props = Object.create(null)
 

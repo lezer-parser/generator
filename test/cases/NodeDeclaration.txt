@@ -1,4 +1,4 @@
-@top[name=Doc,lang=foo] { ("a" | "(" B ")")+ }
+@top[name=Doc] { ("a" | "(" B ")")+ }
 
 B { "b" }
 
@@ -12,7 +12,7 @@ B { "b" }
 
 a
 
-==> Doc[lang=foo](A)
+==> Doc(A)
 
 # Applies punctuation info
 

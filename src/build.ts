@@ -632,8 +632,8 @@ class Builder {
 
   nodeInfo(props: readonly Prop[], defaultName: string | null = null,
            args: readonly Expression[] = none, params: readonly Identifier[] = none,
-           expr?: Expression, startProps: Props = noProps): {name: string | null, props: Props} {
-    let result = startProps, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
+           expr?: Expression, defaultProps?: Props): {name: string | null, props: Props} {
+    let result = noProps, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
     for (let prop of props) {
       if (prop.name == "name") {
         name = this.finishProp(prop, args, params)
@@ -652,8 +652,12 @@ class Builder {
         result.delim = delim
       }
     }
-    if (result != noProps && !name)
-      this.raise(`Node has properties but no name`, props.length ? props[0].start : expr!.start)
+    if (result != noProps) {
+      if (!name)
+        this.raise(`Node has properties but no name`, props.length ? props[0].start : expr!.start)
+      if (defaultProps)
+        for (let prop in defaultProps) if (!(prop in result)) result[prop] = defaultProps[prop]
+    }
     return {name, props: result}
   }
 
