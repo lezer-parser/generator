@@ -1,0 +1,15 @@
+// Issue #9
+
+@precedence { call }
+
+@top[name=Script] { A+ }
+
+A { B | "{" "x" "}" }
+
+B { A !call "{" "}" | "x" | "(" B ")" }
+
+# Incomplete
+
+(x
+
+==> Script(A(B(B,⚠)))
