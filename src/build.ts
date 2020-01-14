@@ -369,26 +369,54 @@ class Builder {
   }
 
   computeForceReductions(states: readonly LRState[]) {
+    // This finds a forced reduction for every state, trying to guard
+    // against cyclic forced reductions, where a given parse stack can
+    // endlessly continue running forced reductions without making any
+    // progress.
+    //
+    // This occurs with length-1 reductions. We never generate
+    // length-0 reductions, and length-2+ reductions always shrink the
+    // stack, so they are guaranteed to make progress.
+    //
+    // If there are states S1 and S2 whose forced reductions reduce
+    // terms T1 and T2 respectively, both with a length of 1, _and_
+    // there is a state S3, which has goto entries T1 -> S2, T2 -> S1,
+    // you can get cyclic reductions. Of course, the cycle may also
+    // contain more than two steps.
     let reductions: number[] = []
     let candidates: Pos[][] = []
-    let gotoEdges: {[term: number]: number[]} = Object.create(null)
+    // A map from terms to states that they are mapped to in goto
+    // entries.
+    let gotoEdges: {[term: number]: {parents: number[], target: number}[]} = Object.create(null)
     for (let state of states) {
       reductions.push(0)
-      for (let edge of state.goto)
-        (gotoEdges[edge.term.id] || (gotoEdges[edge.term.id] = [])).push(edge.target.id)
+      for (let edge of state.goto) {
+        let array = gotoEdges[edge.term.id] || (gotoEdges[edge.term.id] = [])
+        let found = array.find(o => o.target == edge.target.id)
+        if (found) found.parents.push(state.id)
+        else array.push({parents: [state.id], target: edge.target.id})
+      }
       candidates[state.id] = state.set.filter(pos => pos.pos > 0 && !pos.rule.name.top)
         .sort((a, b) => b.pos - a.pos || a.rule.parts.length - b.rule.parts.length)
     }
-    let size1Reductions: {[state: number]: number} = Object.create(null)
-    function createsCycle(term: number, startState: number): boolean {
+    // Mapping from state ids to terms that that state has a length-1
+    // forced reduction for.
+    let length1Reductions: {[state: number]: number} = Object.create(null)
+    function createsCycle(term: number, startState: number, parents: number[] | null = null): boolean {
       let edges = gotoEdges[term]
-      return edges ? edges.some(state => {
-        if (state == startState) return true
-        let found = size1Reductions[state]
-        return found != null && createsCycle(found, startState)
-      }) : false
+      if (!edges) return false
+      return edges.some(val => {
+        let parentIntersection = parents ? parents.filter(id => val.parents.includes(id)) : val.parents
+        if (parentIntersection.length == 0) return false
+        if (val.target == startState) return true
+        let found = length1Reductions[val.target]
+        return found != null && createsCycle(found, startState, parentIntersection)
+      })
     }
 
+    // To avoid painting states that only have one potential forced
+    // reduction into a corner, reduction assignment is done by
+    // candidate size, starting with the states with fewer candidates.
     for (let setSize = 1;; setSize++) {
       let done = true
       for (let state of states) {
@@ -400,7 +428,7 @@ class Builder {
         for (let pos of set) {
           if (pos.pos != 1 || !createsCycle(pos.rule.name.id, state.id)) {
             reductions[state.id] = reduceAction(pos.rule, state.partOfSkip, pos.pos)
-            if (pos.pos == 1) size1Reductions[state.id] = pos.rule.name.id
+            if (pos.pos == 1) length1Reductions[state.id] = pos.rule.name.id
             break
           }
         }
