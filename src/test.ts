@@ -115,7 +115,7 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
     }
   })
   if (pos[0] != specs.length)
-    throw new Error(`Unexpected end of tree. Expected ${stack[0].slice(pos[0]).map(s => s.name).join(", ")} at ${tree.length}`)
+    throw new Error(`Unexpected end of tree. Expected ${stack[0].slice(pos[0]).map(s => s.name).join(", ")} at ${tree.length}\n${tree}`)
 }
 
 export function fileTests(file: string, fileName: string, mayIgnore = defaultIgnore) {
