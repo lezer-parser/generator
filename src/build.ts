@@ -6,7 +6,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDecl
 import {Term, TermSet, PREC_REPEAT, Rule, Conflicts, Props, noProps} from "./grammar"
 import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
-import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce} from "./automaton"
+import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce, Pos} from "./automaton"
 import {encodeArray} from "./encode"
 import {Parser, TokenGroup as LezerTokenGroup, ExternalTokenizer,
         NestedGrammar, InputStream, Token, Stack, NodeGroup, NodeProp, NodeType} from "lezer"
@@ -295,6 +295,7 @@ class Builder {
     })
     let noSkip = data.storeArray([Seq.End])
     let states = new Uint32Array(table.length * ParseState.Size)
+    let forceReductions = this.computeForceReductions(table)
     for (let s of table) {
       let skip = noSkip, skipState = null
       if (s.skip != this.noSkip) {
@@ -302,7 +303,7 @@ class Builder {
         skip = skipData[index]
         skipState = skipStartStates[index]
       }
-      this.finishState(s, tokenizers, data, skip, skipState, s.id >= firstSkipState, states)
+      this.finishState(s, tokenizers, data, skip, skipState, s.id >= firstSkipState, forceReductions[s.id], states)
     }
 
     let nested = this.nestedGrammars.map(g => ({
@@ -367,10 +368,52 @@ class Builder {
     return terms
   }
 
+  computeForceReductions(states: readonly LRState[]) {
+    let reductions: number[] = []
+    let candidates: Pos[][] = []
+    let gotoEdges: {[term: number]: number[]} = Object.create(null)
+    for (let state of states) {
+      reductions.push(0)
+      for (let edge of state.goto)
+        (gotoEdges[edge.term.id] || (gotoEdges[edge.term.id] = [])).push(edge.target.id)
+      candidates[state.id] = state.set.filter(pos => pos.pos > 0 && !pos.rule.name.top)
+        .sort((a, b) => b.pos - a.pos || a.rule.parts.length - b.rule.parts.length)
+    }
+    let size1Reductions: {[state: number]: number} = Object.create(null)
+    function createsCycle(term: number, startState: number): boolean {
+      let edges = gotoEdges[term]
+      return edges ? edges.some(state => {
+        if (state == startState) return true
+        let found = size1Reductions[state]
+        return found != null && createsCycle(found, startState)
+      }) : false
+    }
+
+    for (let setSize = 1;; setSize++) {
+      let done = true
+      for (let state of states) {
+        let set = candidates[state.id]
+        if (set.length != setSize) {
+          if (set.length > setSize) done = false
+          continue
+        }
+        for (let pos of set) {
+          if (pos.pos != 1 || !createsCycle(pos.rule.name.id, state.id)) {
+            reductions[state.id] = reduceAction(pos.rule, state.partOfSkip, pos.pos)
+            if (pos.pos == 1) size1Reductions[state.id] = pos.rule.name.id
+            break
+          }
+        }
+      }
+      if (done) break
+    }
+    return reductions
+  }
+
   finishState(state: LRState, tokenizers: (LezerTokenGroup | TempExternalTokenizer)[],
               data: DataBuilder, skipTable: number, skipState: LRState | null, isSkip: boolean,
-              stateArray: Uint32Array) {
-    let actions = [], forcedReduce = 0
+              forcedReduce: number, stateArray: Uint32Array) {
+    let actions = []
     let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, state.partOfSkip) : 0
     let flags = (isSkip ? StateFlag.Skipped : 0) |
       (state.nested > -1 ? StateFlag.StartNest | (state.nested << StateFlag.NestShift) : 0)
@@ -388,13 +431,6 @@ class Builder {
     if (other > -1) actions.push(T.Err, other & Action.ValueMask, other >> 16)
     actions.push(Seq.End)
 
-    let forceCandidates = state.set.filter(pos => pos.pos > 0)
-    if (forceCandidates.length) {
-      let defaultPos = forceCandidates.reduce((a, b) => (b.depth - a.depth || a.pos - b.pos ||
-                                                         b.rule.parts.length - a.rule.parts.length) < 0 ? b : a)
-      if (!defaultPos.rule.name.top)
-        forcedReduce = reduceAction(defaultPos.rule, state.partOfSkip, defaultPos.pos)
-    }
     if (state.set.some(p => p.rule.name.top && p.pos == p.rule.parts.length)) flags |= StateFlag.Accepting
 
     let external: ExternalTokenSet[] = []

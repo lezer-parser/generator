@@ -1,7 +1,7 @@
 import {Term, TermSet, Rule, cmpSet, Conflicts, union} from "./grammar"
 import {hash, hashString} from "./hash"
 
-class Pos {
+export class Pos {
   hash: number
 
   constructor(readonly rule: Rule,
@@ -9,8 +9,7 @@ class Pos {
               readonly ahead: readonly Term[],
               readonly ambigAhead: readonly string[],
               readonly skipAhead: Term,
-              readonly prev: Pos | null,
-              readonly depth: number) {
+              readonly prev: Pos | null) {
     let h = hash(hash(rule.id, pos), skipAhead.hash)
     for (let a of this.ahead) h = hash(h, a.hash)
     for (let group of ambigAhead) h = hashString(h, group)
@@ -22,11 +21,11 @@ class Pos {
   }
 
   advance() {
-    return new Pos(this.rule, this.pos + 1, this.ahead, this.ambigAhead, this.skipAhead, this, this.depth)
+    return new Pos(this.rule, this.pos + 1, this.ahead, this.ambigAhead, this.skipAhead, this)
   }
 
   reverse() {
-    return new Pos(this.rule, this.pos - 1, this.ahead, this.ambigAhead, this.skipAhead, this.prev!.prev, this.depth)
+    return new Pos(this.rule, this.pos - 1, this.ahead, this.ambigAhead, this.skipAhead, this.prev!.prev)
   }
 
   get skip() {
@@ -259,18 +258,17 @@ class AddedPos {
               readonly origIndex: number,
               public ambigAhead: readonly string[],
               readonly skipAhead: Term,
-              readonly prev: Pos | null,
-              readonly depth: number) {}
+              readonly prev: Pos | null) {}
 }
 
 function closure(set: readonly Pos[], first: {[name: string]: Term[]}) {
   let added: AddedPos[] = [], redo: AddedPos[] = []
-  function addFor(name: Term, ahead: readonly Term[], ambigAhead: readonly string[], skipAhead: Term, prev: Pos | null, depth: number) {
+  function addFor(name: Term, ahead: readonly Term[], ambigAhead: readonly string[], skipAhead: Term, prev: Pos | null) {
     for (let rule of name.rules) {
       let add = added.find(a => a.rule == rule)
       if (!add) {
         let existing = set.findIndex(p => p.pos == 0 && p.rule == rule)
-        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing, ambigAhead, skipAhead, prev, depth + 1)
+        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing, ambigAhead, skipAhead, prev)
         added.push(add)
       } else {
         if (add.skipAhead != skipAhead)
@@ -289,18 +287,18 @@ function closure(set: readonly Pos[], first: {[name: string]: Term[]}) {
     if (next && !next.terminal)
       addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first),
              pos.conflicts(pos.pos + 1).ambigGroups, pos.pos == pos.rule.parts.length - 1 ? pos.skipAhead : pos.rule.skip,
-             pos.prev, pos.depth)
+             pos.prev)
   }
   while (redo.length) {
     let add = redo.pop()!
     addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first),
            union(add.rule.conflicts[1].ambigGroups, add.rule.parts.length == 1 ? add.ambigAhead : none),
-           add.skipAhead, add.prev, add.depth)
+           add.skipAhead, add.prev)
   }
 
   let result = set.slice()
   for (let add of added) {
-    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.ambigAhead, add.skipAhead, add.prev, add.depth)
+    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.ambigAhead, add.skipAhead, add.prev)
     if (add.origIndex > -1) result[add.origIndex] = pos
     else result.push(pos)
   }
@@ -370,7 +368,7 @@ export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[nam
     return found
   }
   let startSkip = startTerm.rules.length ? startTerm.rules[0].skip : terms.names["%noskip"]!
-  getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null, 0)))
+  getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null)))
 
   for (let filled = 0; filled < states.length; filled++) {
     let state = states[filled]
