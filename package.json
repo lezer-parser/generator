@@ -1,6 +1,6 @@
 {
   "name": "lezer-generator",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Parser generator for the incremental lezer parser",
   "main": "dist/index.js",
   "types": "dist/src/index.d.ts",

@@ -1,3 +1,11 @@
+## 0.5.2 (2020-01-15)
+
+### Bug fixes
+
+Fix crash when the top rule had no node name.
+
+Adjust the way states' forced reductions are computed to avoid cycles (where force-reducing multiple times gets you back in your original state).
+
 ## 0.5.1 (2019-10-22)
 
 ### Bug fixes
