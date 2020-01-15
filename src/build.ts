@@ -425,6 +425,10 @@ class Builder {
           if (set.length > setSize) done = false
           continue
         }
+        if (state.defaultReduce && state.defaultReduce.parts.length > 0) {
+          reductions[state.id] = reduceAction(state.defaultReduce, state.partOfSkip)
+          continue
+        }
         for (let pos of set) {
           if (pos.pos != 1 || !createsCycle(pos.rule.name.id, state.id)) {
             reductions[state.id] = reduceAction(pos.rule, state.partOfSkip, pos.pos)
