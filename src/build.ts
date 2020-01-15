@@ -414,19 +414,22 @@ class Builder {
       })
     }
 
+    for (let state of states) {
+      if (state.defaultReduce && state.defaultReduce.parts.length > 0) {
+        reductions[state.id] = reduceAction(state.defaultReduce, state.partOfSkip)
+        if (state.defaultReduce.parts.length == 1) length1Reductions[state.id] = state.defaultReduce.name.id
+      }
+    }
     // To avoid painting states that only have one potential forced
     // reduction into a corner, reduction assignment is done by
     // candidate size, starting with the states with fewer candidates.
     for (let setSize = 1;; setSize++) {
       let done = true
       for (let state of states) {
+        if (state.defaultReduce) continue
         let set = candidates[state.id]
         if (set.length != setSize) {
           if (set.length > setSize) done = false
-          continue
-        }
-        if (state.defaultReduce && state.defaultReduce.parts.length > 0) {
-          reductions[state.id] = reduceAction(state.defaultReduce, state.partOfSkip)
           continue
         }
         for (let pos of set) {
