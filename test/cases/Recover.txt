@@ -12,7 +12,7 @@ Block { "{" (Block | "statement")* "}" }
 
 # Can resynchronize to an outer context
 
-{ { { class { classitem }
+{ { { class { classitem classitem }
 
 ==> Block(Block(Block(⚠),⚠),⚠),Class
 
