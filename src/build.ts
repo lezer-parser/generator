@@ -297,13 +297,12 @@ class Builder {
     let states = new Uint32Array(table.length * ParseState.Size)
     let forceReductions = this.computeForceReductions(table)
     for (let s of table) {
-      let skip = noSkip, skipState = null
+      let skip = noSkip
       if (s.skip != this.noSkip) {
         let index = this.skipRules.indexOf(s.skip)
         skip = skipData[index]
-        skipState = skipStartStates[index]
       }
-      this.finishState(s, tokenizers, data, skip, skipState, s.id >= firstSkipState, forceReductions[s.id], states)
+      this.finishState(s, tokenizers, data, skip, s.id >= firstSkipState, forceReductions[s.id], states)
     }
 
     let nested = this.nestedGrammars.map(g => ({
@@ -446,7 +445,7 @@ class Builder {
   }
 
   finishState(state: LRState, tokenizers: (LezerTokenGroup | TempExternalTokenizer)[],
-              data: DataBuilder, skipTable: number, skipState: LRState | null, isSkip: boolean,
+              data: DataBuilder, skipTable: number, isSkip: boolean,
               forcedReduce: number, stateArray: Uint32Array) {
     let actions = []
     let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, state.partOfSkip) : 0
