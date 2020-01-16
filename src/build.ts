@@ -329,8 +329,9 @@ class Builder {
     for (let prop in term.props) {
       let propType = this.knownProps[prop]
       if (!propType) throw new Error("No known prop type for " + prop)
-      propType.prop.set(props, propType.prop.deserialize(term.props[prop]))
-      propData.push(propType.source, term.props[prop])
+      let value = propType.prop == NodeProp.repeatWrap ? term.props[prop].id : propType.prop.deserialize(term.props[prop])
+      propType.prop.set(props, value)
+      propData.push(propType.source, value)
     }
     return new NodeType(term.nodeName || "", props, id)
   }
@@ -629,11 +630,8 @@ class Builder {
     let name = expr.expr instanceof SequenceExpression || expr.expr instanceof ChoiceExpression ? `(${expr.expr})${expr.kind}` : expr.toString()
     let inner = this.newName(name, true, {repeated: ""})
 
-    let outer = inner
-    if (expr.kind == "*") {
-      outer = this.newName(name + "-wrap", true)
-      this.defineRule(outer, [Parts.none, p(inner)])
-    }
+    let outer = this.newName(name + "-wrap", true, {repeatWrap: inner})
+    this.defineRule(outer, expr.kind == "*" ? [Parts.none, p(inner)] : [p(inner)])
     this.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
     let top = this.normalizeExpr(expr.expr)
