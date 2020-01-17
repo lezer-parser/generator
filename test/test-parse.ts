@@ -45,7 +45,7 @@ describe("parsing", () => {
     }
     @skip { whitespace }`)
 
-  function qq(parser: Parser, ast: Tree) {
+  function qq(ast: Tree) {
     return function(query: string, offset = 1): {start: number, end: number} {
       let result = null
       ast.iterate({enter(type, start, end) {
@@ -72,7 +72,7 @@ describe("parsing", () => {
   it("assigns the correct node positions", () => {
     let doc = "if 1 { while 2 { foo(bar(baz bug)); } }"
     let ast = p1().parse(doc, {bufferLength: 10, strict: true})
-    let q = qq(p1(), ast)
+    let q = qq(ast)
     ist(ast.length, 39)
     let cond = q("Cond"), one = q("Num")
     ist(cond.start, 0); ist(cond.end, 39)
@@ -241,6 +241,8 @@ Bin { expr !plus "+" expr | expr !times "*" expr }
 describe("sequences", () => {
   let p1 = p(`
     @top { (X | Y)+ }
+    @skip { C }
+    C { "c" }
     X { "x" }
     Y { "y" ";"* }`)
 
@@ -254,6 +256,15 @@ describe("sequences", () => {
 
   it("balances parsed sequences", () => {
     let ast = p1().parse("x".repeat(1000), {strict: true, bufferLength: 10})
+    let d = depth(ast), b = breadth(ast)
+    ist(d, 6, "<=")
+    ist(d, 4, ">=")
+    ist(b, 5, ">=")
+    ist(b, 10, "<=")
+  })
+
+  it("balancing doesn't get confused by skipped nodes", () => {
+    let ast = p1().parse("xc".repeat(1000), {strict: true, bufferLength: 10})
     let d = depth(ast), b = breadth(ast)
     ist(d, 6, "<=")
     ist(d, 4, ">=")
