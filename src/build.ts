@@ -177,7 +177,7 @@ class Builder {
 
     this.currentSkip.push(mainSkip)
     let top = this.ast.topRule
-    let {name, props} = this.nodeInfo(top.props, null, none, none, top.expr, {top: true})
+    let {name, props} = this.nodeInfo(top.props, top.id.name == "@top" ? null : top.id.name, none, none, top.expr, {top: true})
     this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
     this.currentSkip.pop()
 
