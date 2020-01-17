@@ -224,7 +224,7 @@ class Builder {
 
   getParser() {
     let rules = simplifyRules(this.rules, [...this.skipRules, ...this.nestedGrammars.map(g => g.placeholder), this.terms.top])
-    let {nodeTypes, names} = this.terms.finish(rules)
+    let {nodeTypes, names, minRepeatTerm} = this.terms.finish(rules)
     for (let prop in this.namedTerms) this.termTable[prop] = this.namedTerms[prop].id
 
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
@@ -317,7 +317,7 @@ class Builder {
     
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
-    return new Parser(states, data.finish(), computeGotoTable(table), group,
+    return new Parser(states, data.finish(), computeGotoTable(table), group, minRepeatTerm,
                       tokenizers, nested,
                       specTable, specializations, precTable, names)
   }
@@ -351,11 +351,7 @@ class Builder {
   }
 
   makeTerminal(name: string, tag: string | null, props: Props) {
-    for (let i = 0;; i++) {
-      let cur = i ? `${name}-${i}` : name
-      if (this.terms.names[cur]) continue
-      return this.terms.makeTerminal(cur, tag, props)
-    }
+    return this.terms.makeTerminal(this.terms.uniqueName(name), tag, props)
   }
 
   gatherSkippedTerms() {
@@ -628,9 +624,9 @@ class Builder {
     if (known) return p(known.term)
 
     let name = expr.expr instanceof SequenceExpression || expr.expr instanceof ChoiceExpression ? `(${expr.expr})${expr.kind}` : expr.toString()
-    let inner = this.newName(name, true, {repeated: ""})
 
-    let outer = this.newName(name + "-wrap", true, {repeatWrap: inner})
+    let {inner, outer} = this.terms.makeRepeat(this.terms.uniqueName(name))
+
     this.defineRule(outer, expr.kind == "*" ? [Parts.none, p(inner)] : [p(inner)])
     this.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
@@ -1509,10 +1505,9 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
   })
 
   let nodeNames = [], nodeProps: {prop: string, terms: (number | string)[]}[] = []
-  let repeatCount = 0
+  let repeatCount = parser.group.types.length - parser.minRepeatTerm
   for (let type of parser.group.types) {
-    if (type.prop(NodeProp.repeated)) repeatCount++
-    else nodeNames.push(type.name)
+    if (type.id < parser.minRepeatTerm) nodeNames.push(type.name)
     let propData = (type as any).props.propData
     for (let i = 0; i < propData.length; i += 2) {
       let source = propData[i], value = propData[i + 1]
@@ -1524,6 +1519,9 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
       known.terms.push(type.id, value)
     }
   }
+  // The number of node names must be even, so that repeat terms start
+  // on an even id.
+  if (nodeNames.length & T.Repeated) throw new Error("Odd number of node names")
 
   for (let source in imports) {
     if (mod == "cjs")
