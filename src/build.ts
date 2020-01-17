@@ -1519,9 +1519,6 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
       known.terms.push(type.id, value)
     }
   }
-  // The number of node names must be even, so that repeat terms start
-  // on an even id.
-  if (nodeNames.length & T.Repeated) throw new Error("Odd number of node names")
 
   for (let source in imports) {
     if (mod == "cjs")

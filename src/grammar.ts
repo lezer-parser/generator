@@ -112,29 +112,27 @@ export class TermSet {
     this.error.id = T.Err
     this.top.id = T.Top
     let nextID = 2
-    // Assign ids to terms that represent node types, with the repeated terms at the end
+    // Assign ids to terms that represent node types
     for (let term of this.terms) if (term.nodeType && !term.repeatRelated) {
       term.id = nextID++
       nodeTypes.push(term)
     }
-    if (nextID & T.Repeated) { // Repeat terms need to start on an even ID
-      let dummy = this.term("", null)
-      dummy.id = nextID++
-      nodeTypes.push(dummy)
-    }
+    // Put all repeated terms after the regular node types
     let minRepeatTerm = nextID
     for (let term of this.terms) if (term.repeated) {
-      // Assign the wrapper an id directly below the matching inner
-      // node, so that the type of repeat node can be identified by
-      // the lower bit, and you can map between outer and inner term
-      // them by taking the adjacent id.
-      let wrap = this.repeatMap[term.name]
-      wrap.id = nextID++
-      nodeTypes.push(wrap)
       term.id = nextID++
       nodeTypes.push(term)
     }
+    // After that, there's a block for repeat-wrap terms, which don't
+    // have node types associated with them. Each wrap term is a
+    // constant factor (nodeTypes.length - minRepeatTerm) ahead of its
+    // inner term.
+    for (let term of this.terms) if (term.repeated) {
+      this.repeatMap[term.name].id = nextID++
+    }
+    // Then comes the EOF term
     this.eof.id = nextID++
+    // And then the remaining (non-node, non-repeat) terms.
     for (let term of this.terms) {
       if (term.id < 0) term.id = nextID++
       if (term.name) names[term.id] = term.name
