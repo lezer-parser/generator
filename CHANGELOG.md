@@ -1,3 +1,13 @@
+## 0.7.0 (2020-01-20)
+
+### New features
+
+You can now write a node name directly after `@top` to give your top node type a name.
+
+### Breaking changes
+
+Changes the way repeated nodes are represented in the generated parser.
+
 ## 0.5.2 (2020-01-15)
 
 ### Bug fixes

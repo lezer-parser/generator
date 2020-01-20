@@ -1,6 +1,6 @@
 {
   "name": "lezer-generator",
-  "version": "0.5.2",
+  "version": "0.7.0",
   "description": "Parser generator for the incremental lezer parser",
   "main": "dist/index.js",
   "types": "dist/src/index.d.ts",
@@ -18,7 +18,7 @@
     "typescript": "^3.7.2"
   },
   "dependencies": {
-    "lezer": "^0.5.0"
+    "lezer": "^0.7.0"
   },
   "scripts": {
     "watch": "rollup -w -c rollup.config.js",
