@@ -5,7 +5,8 @@ const none: readonly any[] = []
 class TestSpec {
   constructor(readonly name: string,
               readonly props: {prop: NodeProp<any>, value: any}[],
-              readonly children: readonly TestSpec[] = none) {}
+              readonly children: readonly TestSpec[] = none,
+              readonly wildcard = false) {}
 
   static parse(spec: string): readonly TestSpec[] {
     let pos = 0, tok = "sof", value = ""
@@ -16,6 +17,10 @@ class TestSpec {
       while (pos < spec.length && /\s/.test(spec.charAt(pos))) pos++
       if (pos == spec.length) return tok = "eof"
       let next = spec.charAt(pos++)
+      if (next == "(" && spec.slice(pos, pos + 4) == "...)") {
+        pos += 4
+        return tok = "..."
+      }
       if (/[\[\](),=]/.test(next)) return tok = next
       if (/[^()\[\],="\s]/.test(next)) {
         let name = /[^()\[\],="\s]*/.exec(spec.slice(pos - 1))
@@ -41,7 +46,7 @@ class TestSpec {
       return seq
     }
     function parse() {
-      let name = value, children = none, props = []
+      let name = value, children = none, props = [], wildcard = false
       if (tok != "name") err()
       next()
       if (tok as any == "[") {
@@ -67,8 +72,11 @@ class TestSpec {
         // @ts-ignore TypeScript doesn't understand that `next` may have mutated `tok` (#9998)
         if (tok != ")") err()
         next()
+      } else if (tok as any == "...") {
+        wildcard = true
+        next()
       }
-      return new TestSpec(name, props, children)
+      return new TestSpec(name, props, children, wildcard)
     }
     let result = parseSeq()
     if (tok != "eof") err()
@@ -95,6 +103,10 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
       let last = stack.length - 1, index = pos[last], seq = stack[last]
       let next = index < seq.length ? seq[index] : null
       if (next && next.matches(type)) {
+        if (next.wildcard) {
+          pos[last]++
+          return false
+        }
         pos.push(0)
         stack.push(next.children)
         return undefined
@@ -128,7 +140,7 @@ export function fileTests(file: string, fileName: string, mayIgnore = defaultIgn
     tests.push({
       name: m[1],
       run(parser: Parser) {
-        let strict = !/⚠/.test(expected)
+        let strict = !/⚠|\.\.\./.test(expected)
         testTree(parser.parse(text, {strict}), expected, mayIgnore)
       }
     })
