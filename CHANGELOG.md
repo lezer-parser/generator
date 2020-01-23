@@ -1,3 +1,9 @@
+## 0.7.1 (2020-01-23)
+
+### New features
+
+Support `Foo(...)` syntax in test specs to indicate "ignore the children of this node".
+
 ## 0.7.0 (2020-01-20)
 
 ### New features
