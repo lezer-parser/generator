@@ -176,9 +176,12 @@ class Builder {
     this.currentSkip.pop()
 
     this.currentSkip.push(mainSkip)
-    let top = this.ast.topRule
-    let {name, props} = this.nodeInfo(top.props, top.id.name == "@top" ? null : top.id.name, none, none, top.expr, {top: true})
-    this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
+
+    for (const top of this.ast.topRules) {
+      let {name, props} = this.nodeInfo(top.props, top.id.name == "@top" ? null : top.id.name, none, none, top.expr, {top: true})
+      this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
+    }
+
     this.currentSkip.pop()
 
     for (let rule of this.ast.rules) {
@@ -270,7 +273,7 @@ class Builder {
       if (tokenizer instanceof TempExternalTokenizer) return tokenizer.set.ast.start
       return this.tokens.ast ? this.tokens.ast.start : -1
     }
-    let tokenizers = 
+    let tokenizers =
       (tokenGroups.map(g => new LezerTokenGroup(tokenData, g.id)) as (LezerTokenGroup | TempExternalTokenizer)[])
       .concat(this.externalTokens.map(ext => new TempExternalTokenizer(ext, this.termTable)))
       .sort((a, b) => tokStart(a) - tokStart(b))
@@ -314,7 +317,7 @@ class Builder {
 
     let skipped = this.gatherSkippedTerms()
     let group = new NodeGroup(nodeTypes.map((term, i) => this.toNodeType(term, skipped, i)))
-    
+
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
     return new Parser(states, data.finish(), computeGotoTable(table), group, minRepeatTerm,
@@ -965,7 +968,7 @@ function findExprAfter(ast: GrammarDeclaration, expr: Expression) {
     return cur
   }
   for (let rule of ast.rules) rule.expr.walk(walk)
-  ast.topRule.expr.walk(walk)
+  for (let topRule of ast.topRules) topRule.expr.walk(walk)
   return found
 }
 
@@ -998,7 +1001,7 @@ class TokenSet {
     let {name: nodeName, props} =
       this.b.nodeInfo(rule.props, name, expr.args, rule.params.length != expr.args.length ? none : rule.params)
     let term = this.b.makeTerminal(expr.toString(), nodeName, props)
-                                                                     
+
     if ((term.nodeType || rule.exported) && rule.params.length == 0) {
       if (!term.nodeType) term.preserve = true
       this.b.namedTerms[name] = term
@@ -1342,7 +1345,7 @@ class TempExternalTokenizer {
     }
     return this._inner
   }
-  
+
   token(stream: InputStream, token: Token, stack: any) {
     this.inner.token(stream, token, stack)
   }

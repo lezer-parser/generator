@@ -5,7 +5,7 @@ export class Node {
 export class GrammarDeclaration extends Node {
   constructor(start: number,
               readonly rules: readonly RuleDeclaration[],
-              readonly topRule: RuleDeclaration,
+              readonly topRules: RuleDeclaration[],
               readonly tokens: TokenDeclaration | null,
               readonly externalTokens: readonly ExternalTokenDeclaration[],
               readonly precedences: PrecDeclaration | null,
