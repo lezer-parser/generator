@@ -61,7 +61,7 @@ export class TermSet {
   repeatMap: {[name: string]: Term} = Object.create(null)
   eof: Term
   error: Term
-  top!: Term
+  tops: Term[] = []
 
   constructor() {
     this.eof = this.term("␄", null, TermFlag.Terminal | TermFlag.Eof)
@@ -75,8 +75,10 @@ export class TermSet {
     return term
   }
 
-  makeTop(nodeName: string | null, props: Props) {
-    return this.top = this.term("@top", nodeName, TermFlag.Top, props)
+  makeTop(nodeName: string | null, props: Props) : Term {
+    const term = this.term("@top", nodeName, TermFlag.Top, props)
+    this.tops.push(term)
+    return term
   }
 
   makeTerminal(name: string, nodeName: string | null, props = noProps) {
@@ -107,10 +109,11 @@ export class TermSet {
     this.terms = this.terms.filter(t => t.terminal || t.preserve || rules.some(r => r.name == t || r.parts.includes(t)))
 
     let names: {[id: number]: string} = {}
-    let nodeTypes = [this.error, this.top]
+    let nodeTypes = [this.error, ...this.tops]
 
     this.error.id = T.Err
-    this.top.id = T.Top
+    for (const term of this.tops) term.id = T.Top
+
     let nextID = 2
     // Assign ids to terms that represent node types
     for (let term of this.terms) if (term.nodeType && !term.repeatRelated) {
