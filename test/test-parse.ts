@@ -307,6 +307,22 @@ describe("sequences", () => {
   })
 })
 
+describe("multiple tops", () => {
+  it('can parse designated top', () => {
+    let parser = buildParser(`
+@top X { FOO C }
+@top Y { B C }
+FOO { B }
+B { "b" }
+C { "c" }
+`);
+
+    testTree(parser.parse("bc"), 'X(FOO(B), C)')
+    testTree(parser.parse("bc", { top: 'X' }), 'X(FOO(B), C)')
+    testTree(parser.parse("bc", { top: 'Y' }), 'Y(B, C)');
+  });
+});
+
 describe("nesting", () => {
   it("can nest grammars", () => {
     let inner = buildParser(`

@@ -18,7 +18,7 @@ export class Input {
   value: any = null
   start = 0
   end = 0
-  
+
   constructor(readonly string: string,
               readonly fileName: string | null = null) {
     this.next()
@@ -128,16 +128,15 @@ function parseGrammar(input: Input) {
   let external: ExternalTokenDeclaration[] = []
   let nested: ExternalGrammarDeclaration[] = []
   let props: ExternalPropDeclaration[] = []
-  let top: RuleDeclaration | null = null
+  let tops: RuleDeclaration[] = []
   let autoDelim = false
 
   while (input.type != "eof") {
     let start = input.start
     if (input.type == "at" && input.value == "top") {
-      if (top) input.raise(`Multiple @top declarations`, input.start)
       input.next()
       let name = input.type as any == "id" ? parseIdent(input) : new Identifier(start, "@top")
-      top = parseRule(input, name)
+      tops.push(parseRule(input, name))
     } else if (input.type == "at" && input.value == "tokens") {
       if (tokens) input.raise(`Multiple @tokens declaractions`, input.start)
       else tokens = parseTokens(input)
@@ -166,8 +165,8 @@ function parseGrammar(input: Input) {
       rules.push(parseRule(input))
     }
   }
-  if (!top) return input.raise(`Missing @top declaration`)
-  return new GrammarDeclaration(start, rules, top, tokens, external, prec, mainSkip, scopedSkip, nested, props, autoDelim)
+  if (!tops.length) return input.raise(`Missing @top declaration`)
+  return new GrammarDeclaration(start, rules, tops, tokens, external, prec, mainSkip, scopedSkip, nested, props, autoDelim)
 }
 
 function parseRule(input: Input, named?: Identifier) {
