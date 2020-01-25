@@ -175,14 +175,12 @@ class Builder {
     }
     this.currentSkip.pop()
 
-    this.currentSkip.push(mainSkip)
-
     for (const top of this.ast.topRules) {
+      this.currentSkip.push(mainSkip)
       let {name, props} = this.nodeInfo(top.props, top.id.name == "@top" ? null : top.id.name, none, none, top.expr, {top: true})
       this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
+      this.currentSkip.pop()
     }
-
-    this.currentSkip.pop()
 
     for (let rule of this.ast.rules) {
       if (rule.exported && this.ruleNames[rule.id.name] && rule.params.length == 0) {
@@ -233,8 +231,8 @@ class Builder {
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
 
     let first = computeFirstSets(this.terms)
-    let fullSkipAutomata = this.skipRules.map(name => name.rules.some(r => r.parts.length > 0) ? buildFullAutomaton(this.terms, name, first) : null)
-    let fullTable = buildFullAutomaton(this.terms, this.terms.top, first)
+    let fullSkipAutomata = this.skipRules.map(name => name.rules.some(r => r.parts.length > 0) ? buildFullAutomaton(this.terms, [ name ], first) : null)
+    let fullTable = buildFullAutomaton(this.terms, this.terms.tops, first)
     let {tokenMasks, tokenGroups, tokenPrec} = this.tokens.buildTokenGroups(fullTable, fullSkipAutomata)
     let table = finishAutomaton(fullTable, first) as LRState[]
     let firstSkipState = table.length + 1

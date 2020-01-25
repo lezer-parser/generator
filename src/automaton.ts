@@ -281,7 +281,7 @@ function closure(set: readonly Pos[], first: {[name: string]: Term[]}) {
       }
     }
   }
-  
+
   for (let pos of set) {
     let next = pos.next
     if (next && !next.terminal)
@@ -341,7 +341,7 @@ class Core {
 }
 
 // Builds a full LR(1) automaton
-export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[name: string]: Term[]}) {
+export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[name: string]: Term[]}) {
   let states: State[] = []
   let cores: {[hash: number]: Core[]} = {}
   function getState(core: readonly Pos[]) {
@@ -367,8 +367,11 @@ export function buildFullAutomaton(terms: TermSet, startTerm: Term, first: {[nam
     ;(cores[coreHash] || (cores[coreHash] = [])).push(new Core(core, found))
     return found
   }
-  let startSkip = startTerm.rules.length ? startTerm.rules[0].skip : terms.names["%noskip"]!
-  getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null)))
+
+  for (const startTerm of startTerms) {
+    const startSkip = startTerm.rules.length ? startTerm.rules[0].skip : terms.names["%noskip"]!
+    getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null)))
+  }
 
   for (let filled = 0; filled < states.length; filled++) {
     let state = states[filled]
