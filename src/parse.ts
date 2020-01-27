@@ -136,6 +136,9 @@ function parseGrammar(input: Input) {
     if (input.type == "at" && input.value == "top") {
       input.next()
       let name = input.type as any == "id" ? parseIdent(input) : new Identifier(start, "@top")
+      if (tops.length && name.name === '@top') {
+        input.raise(`Unnamed secondary @top declaration`, input.start)
+      }
       tops.push(parseRule(input, name))
     } else if (input.type == "at" && input.value == "tokens") {
       if (tokens) input.raise(`Multiple @tokens declaractions`, input.start)
