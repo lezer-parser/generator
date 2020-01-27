@@ -112,9 +112,10 @@ export class TermSet {
     let nodeTypes = [this.error, ...this.tops]
 
     this.error.id = T.Err
-    for (const term of this.tops) term.id = T.Top
 
-    let nextID = 2
+    let nextID = 1
+    for (const term of this.tops) term.id = nextID++
+
     // Assign ids to terms that represent node types
     for (let term of this.terms) if (term.nodeType && !term.repeatRelated) {
       term.id = nextID++
