@@ -20,6 +20,10 @@
   "dependencies": {
     "lezer": "^0.7.0"
   },
+  "repository": {
+    "type" : "git",
+    "url" : "https://github.com/lezer-parser/lezer-generator.git"
+  },
   "scripts": {
     "watch": "rollup -w -c rollup.config.js",
     "prepare": "rollup -c rollup.config.js && rollup -c rollup.config.bin.js && tsc src/test.ts -d --outDir dist",
