@@ -167,7 +167,8 @@ export class State {
               public set: readonly Pos[],
               public flags = 0,
               readonly skip: Term,
-              public hash = hashPositions(set)) {}
+              readonly hash = hashPositions(set),
+              readonly topRule: Term | null = null) {}
 
   toString() {
     let actions = this.actions.map(t => t.term + "=" + t).join(",") +
@@ -344,7 +345,7 @@ class Core {
 export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[name: string]: Term[]}) {
   let states: State[] = []
   let cores: {[hash: number]: Core[]} = {}
-  function getState(core: readonly Pos[]) {
+  function getState(core: readonly Pos[], top?: Term) {
     if (core.length == 0) return null
     let coreHash = hashPositions(core), byHash = cores[coreHash]
     let skip: Term | undefined
@@ -359,9 +360,9 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
 
     let set = closure(core, first)
     let hash = hashPositions(set), found
-    for (let state of states) if (state.hash == hash && state.hasSet(set)) found = state
+    if (!top) for (let state of states) if (state.hash == hash && state.hasSet(set)) found = state
     if (!found) {
-      found = new State(states.length, set, 0, skip!, hash)
+      found = new State(states.length, set, 0, skip!, hash, top)
       states.push(found)
     }
     ;(cores[coreHash] || (cores[coreHash] = [])).push(new Core(core, found))
@@ -370,7 +371,7 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
 
   for (const startTerm of startTerms) {
     const startSkip = startTerm.rules.length ? startTerm.rules[0].skip : terms.names["%noskip"]!
-    getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null)))
+    getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null)), startTerm)
   }
 
   for (let filled = 0; filled < states.length; filled++) {
@@ -486,7 +487,7 @@ function collapseAutomaton(states: readonly State[]): readonly State[] {
       })
       if (newID < 0) {
         newID = newStates.length
-        let newState = new State(newID, set, state.flags, state.skip, state.hash)
+        let newState = new State(newID, set, state.flags, state.skip, state.hash, state.topRule)
         newState.tokenGroup = state.tokenGroup
         newState.defaultReduce = state.defaultReduce
         newStates.push(newState)
@@ -542,6 +543,6 @@ function mergeIdentical(states: readonly State[]): readonly State[] {
 
 const none: readonly any[] = []
 
-export function finishAutomaton(full: readonly State[], first: {[term: string]: Term[]}) {
+export function finishAutomaton(full: readonly State[]) {
   return mergeIdentical(collapseAutomaton(full))
 }

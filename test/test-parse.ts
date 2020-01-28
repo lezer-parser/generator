@@ -308,7 +308,7 @@ describe("sequences", () => {
 })
 
 describe("multiple tops", () => {
-  it('parses named tops', () => {
+  it("parses named tops", () => {
     let parser = buildParser(`
 @top X { FOO C }
 @top Y { B C }
@@ -317,12 +317,12 @@ B { "b" }
 C { "c" }
 `);
 
-    testTree(parser.parse("bc"), 'X(FOO(B), C)')
-    testTree(parser.parse("bc", { top: 'X' }), 'X(FOO(B), C)')
-    testTree(parser.parse("bc", { top: 'Y' }), 'Y(B, C)');
+    testTree(parser.parse("bc"), "X(FOO(B), C)")
+    testTree(parser.parse("bc", { top: "X" }), "X(FOO(B), C)")
+    testTree(parser.parse("bc", { top: "Y" }), "Y(B, C)");
   });
 
-  it('parses unnamed top as default', () => {
+  it("parses unnamed top as default", () => {
     let parser = buildParser(`
 @top { FOO C }
 @top Y { B C }
@@ -331,11 +331,11 @@ B { "b" }
 C { "c" }
 `);
 
-    testTree(parser.parse("bc"), 'FOO(B), C')
-    testTree(parser.parse("bc", { top: 'Y' }), 'Y(B, C)');
+    testTree(parser.parse("bc"), "FOO(B), C")
+    testTree(parser.parse("bc", { top: "Y" }), "Y(B, C)");
   });
 
-  it('fails on secondary unnamed to', () => {
+  it("fails on secondary unnamed to", () => {
     let errorMessage;
     try {
       buildParser(`
@@ -346,8 +346,8 @@ X { "X" }
     } catch (error) {
       errorMessage = error.message;
     }
-    if (errorMessage !== 'Unnamed secondary @top declaration (3:5)') {
-      throw new Error('Expected parse error: Unnamed secondary @top declaration');
+    if (errorMessage !== "Unnamed secondary @top declaration (3:5)") {
+      throw new Error("Expected parse error: Unnamed secondary @top declaration");
     }
   });
 });

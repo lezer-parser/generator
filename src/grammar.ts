@@ -38,7 +38,7 @@ export class Term {
   }
 
   toString() { return this.name }
-  get nodeType() { return this.nodeName != null || this.props != noProps || this.repeatRelated }
+  get nodeType() { return this.top || this.nodeName != null || this.props != noProps || this.repeatRelated }
   get terminal() { return (this.flags & TermFlag.Terminal) > 0 }
   get eof() { return (this.flags & TermFlag.Eof) > 0 }
   get error() { return "error" in this.props }
@@ -109,15 +109,13 @@ export class TermSet {
     this.terms = this.terms.filter(t => t.terminal || t.preserve || rules.some(r => r.name == t || r.parts.includes(t)))
 
     let names: {[id: number]: string} = {}
-    let nodeTypes = [this.error, ...this.tops]
+    let nodeTypes = [this.error]
 
     this.error.id = T.Err
-
-    let nextID = 1
-    for (const term of this.tops) term.id = nextID++
+    let nextID = T.Err + 1
 
     // Assign ids to terms that represent node types
-    for (let term of this.terms) if (term.nodeType && !term.repeatRelated) {
+    for (let term of this.terms) if (term.id < 0 && term.nodeType && !term.repeatRelated) {
       term.id = nextID++
       nodeTypes.push(term)
     }
