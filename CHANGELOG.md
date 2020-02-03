@@ -1,3 +1,13 @@
+## 0.8.0 (2020-02-03)
+
+### Breaking changes
+
+Changes the serialized parser format.
+
+### New features
+
+Add support for multiple `@top` rules.
+
 ## 0.7.1 (2020-01-23)
 
 ### New features
