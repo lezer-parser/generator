@@ -35,7 +35,7 @@ export function encode(value: number, max = 0xffff) {
 }
 
 export function encodeArray(values: {length: number, readonly [i: number]: number}, max = 0xffff) {
-  let result = '"' + encode(values.length)
+  let result = '"' + encode(values.length, 0xffffffff)
   for (let i = 0; i < values.length; i++) result += encode(values[i], max)
   result += '"'
   return result
