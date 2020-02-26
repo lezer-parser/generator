@@ -192,6 +192,18 @@ describe("parsing", () => {
 
   it("supports partial reverse iteration in trees", () => testIterRev(2, true))
 
+  it("can skip individual nodes during iteration", () => {
+    let ast = p1().parse("foo(baz(baz), bug(quux)")
+    let ids = 0
+    ast.iterate({
+      enter(type, start) {
+        if (type.name == "Var") ids++
+        return start == 4 && type.name == "Call" ? false : undefined
+      }
+    })
+    ist(ids, 3)
+  })
+
   it("doesn't incorrectly reuse nodes", () => {
     let parser = buildParser(`
 @precedence { times @left, plus @left }
