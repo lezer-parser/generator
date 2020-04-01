@@ -1,3 +1,9 @@
+## 0.8.2 (2020-04-01)
+
+### Bug fixes
+
+Fix an issue that broke the bin command.
+
 ## 0.8.1 (2020-04-01)
 
 ### Bug fixes
