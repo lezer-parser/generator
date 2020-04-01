@@ -4,11 +4,16 @@ import commonjs from "rollup-plugin-commonjs"
 
 export default {
   input: "./src/index.ts",
-  output: {
+  output: [{
     format: "cjs",
-    file: "./dist/index.js",
+    file: "./dist/index.cjs",
     sourcemap: true
-  },
+  }, {
+    format: "es",
+    file: "./dist/index.es.js",
+    sourcemap: true,
+    externalLiveBindings: false
+  }],
   external(id) { return !/^[\.\/]/.test(id) },
   plugins: [
     nodeResolve(),

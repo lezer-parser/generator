@@ -2,7 +2,13 @@
   "name": "lezer-generator",
   "version": "0.8.0",
   "description": "Parser generator for the incremental lezer parser",
-  "main": "dist/index.js",
+  "main": "dist/index.cjs",
+  "type": "module",
+  "exports": {
+    "import": "./dist/index.es.js",
+    "require": "./dist/index.cjs"
+  },
+  "module": "dist/index.es.js",
   "types": "dist/src/index.d.ts",
   "author": "Marijn Haverbeke <marijnh@gmail.com>",
   "license": "MIT",
