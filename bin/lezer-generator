@@ -1,2 +1,2 @@
 #!/usr/bin/env node
-require("../dist/lezer-generator.js")
+require("../dist/lezer-generator.cjs")

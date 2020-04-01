@@ -5,9 +5,9 @@ import commonjs from "rollup-plugin-commonjs"
 export default {
   input: "bin/lezer-generator.ts",
   output: {
-    file: "dist/lezer-generator.js",
+    file: "dist/lezer-generator.cjs",
     format: "cjs",
-    paths: {"..": "./index.js"}
+    paths: {"..": "./index.cjs"}
   },
   external: ["fs", ".."],
   plugins: [
