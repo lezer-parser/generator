@@ -1,3 +1,11 @@
+## 0.8.3 (2020-04-09)
+
+### Bug fixes
+
+Make dist/test loadable from CommonJS modules again.
+
+Fix a bug that prevented `NodeProp.top` from being assigned to top rules in most cases.
+
 ## 0.8.2 (2020-04-01)
 
 ### Bug fixes
