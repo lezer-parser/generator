@@ -1,6 +1,6 @@
 import {buildParser, BuildOptions} from ".."
 import {Parser, InputStream, Stack, Tree} from "lezer"
-import {testTree} from "../dist/test"
+import {testTree} from "../dist/test.cjs"
 const ist = require("ist")
 
 function p(text: string, options?: BuildOptions): () => Parser {

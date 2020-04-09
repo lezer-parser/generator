@@ -7,7 +7,7 @@
     "strict": true,
     "target": "es2018",
     "newLine": "lf",
-    "moduleResolution": "Node"
+    "moduleResolution": "node"
   },
   "include": ["src/*.ts", "test/*.ts"]
 }
