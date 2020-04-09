@@ -723,12 +723,12 @@ class Builder {
         result.delim = delim
       }
     }
-    if (result != noProps) {
-      if (!name)
-        this.raise(`Node has properties but no name`, props.length ? props[0].start : expr!.start)
-      if (defaultProps)
-        for (let prop in defaultProps) if (!(prop in result)) result[prop] = defaultProps[prop]
+    if (defaultProps && defaultProps != noProps) {
+      if (result == noProps) result = Object.create(null)
+      for (let prop in defaultProps) if (!(prop in result)) result[prop] = defaultProps[prop]
     }
+    if (result != noProps && !name && !result.top)
+      this.raise(`Node has properties but no name`, props.length ? props[0].start : expr!.start)
     return {name, props: result}
   }
 
