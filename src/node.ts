@@ -98,8 +98,11 @@ export class Identifier extends Node {
 
 export class Expression extends Node {
   walk(f: (expr: Expression) => Expression): Expression { return f(this) }
-  eq(other: Expression): boolean { return false }
+  eq(_other: Expression): boolean { return false }
+  prec!: number
 }
+
+Expression.prototype.prec = 10
 
 export class NameExpression extends Expression {
   constructor(start: number, readonly namespace: Identifier | null, readonly id: Identifier, readonly args: readonly Expression[]) {
@@ -152,7 +155,7 @@ export class ChoiceExpression extends Expression {
   constructor(start: number, readonly exprs: readonly Expression[]) {
     super(start)
   }
-  toString() { return this.exprs.join(" | ") }
+  toString() { return this.exprs.map(e => maybeParens(e, this)).join(" | ") }
   eq(other: ChoiceExpression) {
     return exprsEq(this.exprs, other.exprs)
   }
@@ -162,11 +165,13 @@ export class ChoiceExpression extends Expression {
   }
 }
 
+ChoiceExpression.prototype.prec = 1
+
 export class SequenceExpression extends Expression {
   constructor(start: number, readonly exprs: readonly Expression[], readonly markers: readonly (readonly ConflictMarker[])[]) {
     super(start)
   }
-  toString() { return this.exprs.join(" ") }
+  toString() { return this.exprs.map(e => maybeParens(e, this)).join(" ") }
   eq(other: SequenceExpression) {
     return exprsEq(this.exprs, other.exprs) && this.markers.every((m, i) => {
       let om = other.markers[i]
@@ -178,6 +183,8 @@ export class SequenceExpression extends Expression {
     return f(exprs == this.exprs ? this : new SequenceExpression(this.start, exprs, this.markers))
   }
 }
+
+SequenceExpression.prototype.prec = 2
 
 export class ConflictMarker extends Node {
   constructor(start: number, readonly id: Identifier, readonly type: "ambig" | "prec") {
@@ -193,7 +200,7 @@ export class RepeatExpression extends Expression {
   constructor(start: number, readonly expr: Expression, readonly kind: "?" | "*" | "+") {
     super(start)
   }
-  toString() { return this.expr + this.kind }
+  toString() { return maybeParens(this.expr, this) + this.kind }
   eq(other: RepeatExpression) {
     return exprEq(this.expr, other.expr) && this.kind == other.kind
   }
@@ -202,6 +209,8 @@ export class RepeatExpression extends Expression {
     return f(expr == this.expr ? this : new RepeatExpression(this.start, expr, this.kind))
   }
 }
+
+RepeatExpression.prototype.prec = 3
 
 export class LiteralExpression extends Expression {
   // value.length is always > 0
@@ -278,4 +287,8 @@ export class Prop extends Node {
 
 export class PropPart extends Node {
   constructor(start: number, readonly value: string | null, readonly name: string | null) { super(start) }
+}
+
+function maybeParens(node: Expression, parent: Expression) {
+  return node.prec < parent.prec ? "(" + node.toString() + ")" : node.toString()
 }
