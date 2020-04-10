@@ -8,6 +8,7 @@ import {State, MAX_CHAR} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce, Pos} from "./automaton"
 import {encodeArray} from "./encode"
+import {GenError} from "./error"
 import {Parser, TokenGroup as LezerTokenGroup, ExternalTokenizer,
         NestedGrammar, InputStream, Token, Stack, NodeGroup, NodeProp, NodeType} from "lezer"
 import {Action, Specialize, StateFlag, Term as T, Seq, ParseState} from "lezer/src/constants"
@@ -335,7 +336,7 @@ class Builder {
     if (skipped.includes(term)) NodeProp.skipped.set(props, true)
     for (let prop in term.props) {
       let propType = this.knownProps[prop]
-      if (!propType) throw new Error("No known prop type for " + prop)
+      if (!propType) throw new GenError("No known prop type for " + prop)
       let value = propType.prop.deserialize(term.props[prop])
       propType.prop.set(props, value)
       propData.push(propType.source, value)
@@ -899,7 +900,7 @@ function computeGotoTable(states: readonly LRState[]) {
     }
     index.push(data.storeArray(termTable) + offset)
   }
-  if (index.some(n => n > 0xffff)) throw new Error("Goto table too large")
+  if (index.some(n => n > 0xffff)) throw new GenError("Goto table too large")
 
   return Uint16Array.from([maxTerm + 1, ...index, ...data.data])
 }
@@ -1506,7 +1507,7 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
 
   let nested = parser.nested.map(({name, grammar, end, placeholder}) => {
     let spec: NestedGrammarSpec = (grammar as any).spec
-    if (!spec) throw new Error("Spec-less nested grammar in parser")
+    if (!spec) throw new LezerError("Spec-less nested grammar in parser")
     return `[${JSON.stringify(name)}, ${spec.source ? importName(spec.extName, spec.source, spec.name) : "null"},\
 ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
   })

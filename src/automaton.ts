@@ -1,5 +1,6 @@
 import {Term, TermSet, Rule, cmpSet, Conflicts, union} from "./grammar"
 import {hash, hashString} from "./hash"
+import {GenError} from "./error"
 
 export class Pos {
   hash: number
@@ -217,7 +218,7 @@ export class State {
       let trail = positions[0].trail()
       if (trail.length > 50) trail = trail.slice(trail.length - 50).replace(/.*? /, "… ")
       error += `\nWith input:\n  ${trail} · ${value.term} …`
-      throw new Error(error)
+      throw new GenError(error)
     }
   }
 
@@ -273,7 +274,7 @@ function closure(set: readonly Pos[], first: {[name: string]: Term[]}) {
         added.push(add)
       } else {
         if (add.skipAhead != skipAhead)
-          throw new Error("Inconsistent skip sets after " + add.prev!.trail())
+          throw new GenError("Inconsistent skip sets after " + add.prev!.trail())
         add.ambigAhead = union(add.ambigAhead, ambigAhead)
       }
       for (let term of ahead) if (!add.ahead.includes(term)) {
@@ -351,10 +352,10 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
     let skip: Term | undefined
     for (let pos of core) {
       if (!skip) skip = pos.skip
-      else if (skip != pos.skip) throw new Error("Inconsistent skip sets after " + pos.trail())
+      else if (skip != pos.skip) throw new GenError("Inconsistent skip sets after " + pos.trail())
     }
     if (byHash) for (let known of byHash) if (eqSet(core, known.set)) {
-      if (known.state.skip != skip) throw new Error("Inconsistent skip sets after " + known.set[0].trail())
+      if (known.state.skip != skip) throw new GenError("Inconsistent skip sets after " + known.set[0].trail())
       return known.state
     }
 

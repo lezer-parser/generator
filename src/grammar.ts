@@ -1,4 +1,5 @@
 import {Term as T} from "lezer/src/constants"
+import {GenError} from "./error"
 
 const enum TermFlag {
   // This term is a terminal
@@ -139,7 +140,7 @@ export class TermSet {
       if (term.id < 0) term.id = nextID++
       if (term.name) names[term.id] = term.name
     }
-    if (nextID >= 0xfffe) throw new Error("Too many terms")
+    if (nextID >= 0xfffe) throw new GenError("Too many terms")
 
     return {nodeTypes, names, minRepeatTerm}
   }

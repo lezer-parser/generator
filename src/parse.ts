@@ -4,6 +4,7 @@ import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
         Expression, NameExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, InlineRuleExpression, Prop, PropPart,
         SpecializeExpression, AnyExpression, ConflictMarker} from "./node"
+import {GenError} from "./error"
 
 // Note that this is the parser for grammar files, not the generated parser
 
@@ -46,7 +47,7 @@ export class Input {
   }
 
   raise(msg: string, pos: number = -1): never {
-    throw new SyntaxError(this.message(msg, pos))
+    throw new GenError(this.message(msg, pos))
   }
 
   match(pos: number, re: RegExp) {

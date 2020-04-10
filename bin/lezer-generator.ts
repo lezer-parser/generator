@@ -1,4 +1,4 @@
-import {buildParserFile} from ".."
+import {buildParserFile, GenError} from ".."
 
 let file = undefined, out = undefined, moduleStyle = "es", includeNames = false, exportName = undefined, noTerms = false
 
@@ -42,7 +42,7 @@ let parser, terms
 try {
   ;({parser, terms} = buildParserFile(readFileSync(file, "utf8"), {fileName: file, moduleStyle, includeNames, exportName}))
 } catch (e) {
-  console.error(e instanceof SyntaxError ? e.message : e.stack)
+  console.error(e instanceof GenError ? e.message : e.stack)
   process.exit(1)
 }
 
