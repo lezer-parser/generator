@@ -446,8 +446,10 @@ function mergeState(mapping: number[], newStates: State[], state: State, target:
     if (target.addActionInner(state.actions[j].map(mapping, newStates), state.actionPositions[j]))
       return false
   for (let goto of state.goto) {
-    if (!target.goto.find(a => a.term == goto.term))
-      target.goto.push(goto.map(mapping, newStates))
+    let found = target.goto.find(a => a.term == goto.term)
+    let mapped = goto.map(mapping, newStates)
+    if (!found) target.goto.push(mapped)
+    else if (found.target.id != mapped.target.id) return false
   }
   return true
 }
