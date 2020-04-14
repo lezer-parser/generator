@@ -1,3 +1,13 @@
+## 0.8.4 (2020-04-14)
+
+### Bug fixes
+
+Fix an issue where token groups were inappropriately merged when conflicting tokens didn't appear in overlapping state sets.
+
+Fix an issue where external tokenizers needed for skipped tokens were not properly enabled for some states.
+
+Fix a bug where the tool would sometimes overeagerly merge states, resulting in incorrect output.
+
 ## 0.8.3 (2020-04-09)
 
 ### Bug fixes
