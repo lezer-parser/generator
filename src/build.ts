@@ -1173,7 +1173,7 @@ class TokenSet {
   buildTokenGroups(states: readonly LRState[], skipStates: (LRState[] | null)[]) {
     let tokens = this.startState.compile()
     let usedPrec: Term[] = []
-    let conflicts = tokens.findConflicts().filter(({a, b}) => {
+    let conflicts = tokens.findConflicts(checkTogether(states)).filter(({a, b}) => {
       // If both tokens have a precedence, the conflict is resolved
       addToSet(usedPrec, a)
       addToSet(usedPrec, b)
@@ -1242,6 +1242,17 @@ class TokenSet {
 
     let tokenPrec = this.precedences.filter(term => usedPrec.includes(term)).map(t => t.id)
     return {tokenMasks: buildTokenMasks(groups), tokenGroups: groups, tokenPrec}
+  }
+}
+
+function checkTogether(states: readonly LRState[]) {
+  let cache: {[id: number]: boolean} = Object.create(null)
+  return (a: Term, b: Term) => {
+    if (a.id < b.id) [a, b] = [b, a]
+    let key = a.id | (b.id << 16), cached = cache[key]
+    if (cached != null) return cached
+    return cache[key] = states.some(state => state.actions.some(action => action.term == a) &&
+                                             state.actions.some(action => action.term == b))
   }
 }
 
@@ -1507,7 +1518,7 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
 
   let nested = parser.nested.map(({name, grammar, end, placeholder}) => {
     let spec: NestedGrammarSpec = (grammar as any).spec
-    if (!spec) throw new LezerError("Spec-less nested grammar in parser")
+    if (!spec) throw new GenError("Spec-less nested grammar in parser")
     return `[${JSON.stringify(name)}, ${spec.source ? importName(spec.extName, spec.source, spec.name) : "null"},\
 ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
   })

@@ -66,7 +66,7 @@ export class State {
     return result
   }
 
-  findConflicts(): Conflict[] {
+  findConflicts(appearTogether: (a: Term, b: Term) => boolean): Conflict[] {
     let conflicts: Conflict[] = [], cycleTerms = this.cycleTerms()
     function add(a: Term, b: Term) {
       if (a.id < b.id) [a, b] = [b, a]
@@ -81,7 +81,7 @@ export class State {
         if (s != state) for (let term of s.accepting) {
           let hasCycle = cycleTerms.includes(term)
           for (let orig of state.accepting)
-            if (term != orig && (hasCycle || cycleTerms.includes(orig))) add(term, orig)
+            if (term != orig && (hasCycle || cycleTerms.includes(orig) || !appearTogether(term, orig))) add(term, orig)
         }
       })
     })
