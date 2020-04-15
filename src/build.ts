@@ -1185,6 +1185,7 @@ class TokenSet {
 
     let groups: TokenGroup[] = []
     let checkState = (state: LRState) => {
+      if (state.defaultReduce) return
       // Find potentially-conflicting terms (in terms) and the things
       // they conflict with (in conflicts), and raise an error if
       // there's a token conflict directly in this state.
