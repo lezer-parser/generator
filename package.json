@@ -32,6 +32,7 @@
   "dependencies": {
     "lezer": "^0.8.0"
   },
+  "files": ["dist", "bin"],
   "repository": {
     "type" : "git",
     "url" : "https://github.com/lezer-parser/lezer-generator.git"
@@ -43,6 +44,6 @@
     "test": "mocha -r ts-node/register/transpile-only test/test-*.ts"
   },
   "bin": {
-    "lezer-generator": "./bin/lezer-generator"
+    "lezer-generator": "./dist/lezer-generator.cjs"
   }
 }
