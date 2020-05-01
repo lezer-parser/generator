@@ -1,6 +1,6 @@
 {
   "name": "lezer-generator",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "description": "Parser generator for the incremental lezer parser",
   "main": "dist/index.cjs",
   "type": "module",
@@ -32,7 +32,7 @@
   "dependencies": {
     "lezer": "^0.8.0"
   },
-  "files": ["dist", "bin"],
+  "files": ["dist"],
   "repository": {
     "type" : "git",
     "url" : "https://github.com/lezer-parser/lezer-generator.git"
