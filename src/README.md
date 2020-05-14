@@ -3,3 +3,5 @@
 @buildParserFile
 
 @buildParser
+
+@GenError
