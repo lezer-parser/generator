@@ -1,3 +1,9 @@
+## 0.9.0 (2020-06-08)
+
+### Breaking changes
+
+The `@detectDelim` directive now assigns `NodeProp.openedBy`/`closedBy` props to the bracket nodes, instead of `NodeProp.delim` to the parent node.
+
 ## 0.8.5 (2020-05-01)
 
 ### Bug fixes
