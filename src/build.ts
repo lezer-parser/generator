@@ -178,7 +178,7 @@ class Builder {
 
     for (const top of this.ast.topRules) {
       this.currentSkip.push(mainSkip)
-      let {name, props} = this.nodeInfo(top.props, top.id.name == "@top" ? null : top.id.name, none, none, top.expr, {top: true})
+      let {name, props} = this.nodeInfo(top.props, top.id.name == "@top" ? null : top.id.name, none, none, top.expr, {top: "true"})
       this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
       this.currentSkip.pop()
     }
@@ -341,7 +341,7 @@ class Builder {
       if (!propType) throw new GenError("No known prop type for " + prop)
       let value = propType.prop.deserialize(term.props[prop])
       propType.prop.set(props, value)
-      propData.push(propType.source, value)
+      propData.push(propType.source, term.props[prop])
     }
     return new NodeType(term.nodeName || "", props, id)
   }
@@ -789,7 +789,7 @@ class Builder {
         let rule = this.ast.rules.find(r => r.id.name == expr.id.name)
         if (rule) return findToken(rule.expr)
         let token = this.tokens.rules.find(r => r.id.name == expr.id.name)
-        if (token && token.expr instanceof LiteralExpression) return {term: this.tokens.getToken(expr), str: token.expr.value}
+        if (token && token.expr instanceof LiteralExpression) return {term: this.tokens.getToken(expr)!, str: token.expr.value}
       }
       return null
     }
@@ -1561,13 +1561,17 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
     return "{" + Object.keys(table).map(key => `${/\W/.test(key) ? JSON.stringify(key) : key}:${table[key]}`).join(", ") + "}"
   }
 
+  function serializePropValue(value: any) {
+    return typeof value != "string" || /^(true|false|\d+(\.\d+)?|\.\d+)$/.test(value) ? value : JSON.stringify(value)
+  }
+
   let parserStr = `Parser.deserialize({
   states: ${encodeArray(parser.states, 0xffffffff)},
   stateData: ${encodeArray(parser.data)},
   goto: ${encodeArray(parser.goto)},
   nodeNames: ${JSON.stringify(nodeNames.join(" "))},${nodeProps.length ? `
   nodeProps: [
-    ${nodeProps.map(p => `[${p.prop}, ${p.terms.map(val => JSON.stringify(val)).join(",")}]`).join(",\n    ")}
+    ${nodeProps.map(p => `[${p.prop}, ${p.terms.map(serializePropValue).join(",")}]`).join(",\n    ")}
   ],` : ""}
   repeatNodeCount: ${repeatCount},
   tokenData: ${encodeArray(tokenData || [])},

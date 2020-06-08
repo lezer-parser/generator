@@ -16,7 +16,7 @@ const enum TermFlag {
   RepeatWrap = 32
 }
 
-export type Props = {[name: string]: any}
+export type Props = {[name: string]: string}
 
 export const noProps: Props = Object.create(null)
 
