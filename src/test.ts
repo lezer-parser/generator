@@ -86,7 +86,7 @@ class TestSpec {
   matches(type: NodeType) {
     if (type.name != this.name) return false
     for (let {prop, value} of this.props)
-      if (type.prop(prop) != value && (value || type.prop(prop))) return false
+      if ((value || type.prop(prop)) && JSON.stringify(type.prop(prop)) != JSON.stringify(value)) return false
     return true
   }
 }

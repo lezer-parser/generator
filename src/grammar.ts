@@ -31,7 +31,7 @@ export class Term {
   constructor(readonly name: string,
               private flags: number,
               readonly nodeName: string | null,
-              readonly props: Props = noProps) {
+              public props: Props = noProps) {
     nope: { // Make sure props == noProps when the object is empty
       for (let _ in props) break nope
       this.props = noProps

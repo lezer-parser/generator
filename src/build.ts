@@ -723,8 +723,8 @@ class Builder {
     if (expr && this.ast.autoDelim && (name || result != noProps)) {
       let delim = this.findDelimiters(expr)
       if (delim) {
-        if (result == noProps) result = Object.create(null)
-        result.delim = delim
+        addToProp(delim[0], "closedBy", delim[1].nodeName!)
+        addToProp(delim[1], "openedBy", delim[0].nodeName!)
       }
     }
     if (defaultProps && defaultProps != noProps) {
@@ -783,25 +783,32 @@ class Builder {
 
   findDelimiters(expr: Expression) {
     if (!(expr instanceof SequenceExpression) || expr.exprs.length < 2) return null
-    let findToken = (expr: Expression): string | null => {
-      if (expr instanceof LiteralExpression) return expr.value
+    let findToken = (expr: Expression): {term: Term, str: string} | null => {
+      if (expr instanceof LiteralExpression) return {term: this.tokens.getLiteral(expr), str: expr.value}
       if (expr instanceof NameExpression && expr.args.length == 0) {
         let rule = this.ast.rules.find(r => r.id.name == expr.id.name)
         if (rule) return findToken(rule.expr)
         let token = this.tokens.rules.find(r => r.id.name == expr.id.name)
-        if (token && token.expr instanceof LiteralExpression) return token.expr.value
+        if (token && token.expr instanceof LiteralExpression) return {term: this.tokens.getToken(expr), str: token.expr.value}
       }
       return null
     }
     let lastToken = findToken(expr.exprs[expr.exprs.length - 1])
-    if (!lastToken) return null
+    if (!lastToken || !lastToken.term.nodeName) return null
     const brackets = ["()", "[]", "{}", "<>"]
-    let bracket = brackets.find(b => lastToken!.indexOf(b[1]) > -1 && lastToken!.indexOf(b[0]) < 0)
+    let bracket = brackets.find(b => lastToken!.str.indexOf(b[1]) > -1 && lastToken!.str.indexOf(b[0]) < 0)
     if (!bracket) return null
     let firstToken = findToken(expr.exprs[0])
-    if (!firstToken || firstToken.indexOf(bracket[0]) < 0 || firstToken.indexOf(bracket[1]) > -1) return null
-    return firstToken + " " + lastToken
+    if (!firstToken || !firstToken.term.nodeName ||
+        firstToken.str.indexOf(bracket[0]) < 0 || firstToken.str.indexOf(bracket[1]) > -1) return null
+    return [firstToken.term, lastToken.term]
   }
+}
+
+function addToProp(term: Term, prop: string, value: string) {
+  if (term.props == noProps) term.props = Object.create(null)
+  let cur = term.props[prop]
+  if (!cur || cur.split(" ").indexOf(value) < 0) term.props[prop] = cur ? cur + " " + value : value
 }
 
 const RESERVED_PROPS = ["error", "repeated"]
@@ -1025,6 +1032,7 @@ class TokenSet {
     let name = null, props = noProps
     let decl = this.ast ? this.ast.literals.find(l => l.literal == expr.value) : null
     if (decl) ({name, props} = this.b.nodeInfo(decl.props, expr.value))
+
     let term = this.b.makeTerminal(id, name, props)
     this.build(expr, this.startState, new State([term]), none)
     this.built.push(new BuiltRule(id, none, term))
