@@ -131,7 +131,7 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
 }
 
 export function fileTests(file: string, fileName: string, mayIgnore = defaultIgnore) {
-  let caseExpr = /\s*#\s*(.*)\n([^]*?)==+>([^]*?)\n+(?=#|$)/gy
+  let caseExpr = /\s*#\s*(.*)\n([^]*?)==+>([^]*?)(?:$|\n+(?=#))/gy
   let tests: {name: string, run(parser: Parser): void}[] = []
   for (;;) {
     let m = caseExpr.exec(file)
