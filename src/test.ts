@@ -130,12 +130,20 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
     throw new Error(`Unexpected end of tree. Expected ${stack[0].slice(pos[0]).map(s => s.name).join(", ")} at ${tree.length}\n${tree}`)
 }
 
+function toLineContext(file: string, index: number) {
+  const endIndex = Math.min(index + 80, file.length);
+
+  return file.substring(index, endIndex).split(/\n/).map(str => '  | ' + str).join('\n');
+}
+
 export function fileTests(file: string, fileName: string, mayIgnore = defaultIgnore) {
   let caseExpr = /\s*#\s*(.*)\n([^]*?)==+>([^]*?)(?:$|\n+(?=#))/gy
   let tests: {name: string, run(parser: Parser): void}[] = []
+  let lastIndex = 0;
   for (;;) {
     let m = caseExpr.exec(file)
-    if (!m) throw new Error("Unexpected file format in " + fileName)
+    if (!m) throw new Error(`Unexpected file format in ${fileName} around\n\n${toLineContext(file, lastIndex)}`)
+
     let text = m[2].trim(), expected = m[3]
     tests.push({
       name: m[1],
@@ -144,7 +152,8 @@ export function fileTests(file: string, fileName: string, mayIgnore = defaultIgn
         testTree(parser.parse(text, {strict}), expected, mayIgnore)
       }
     })
-    if (m.index + m[0].length == file.length) break
+    lastIndex = m.index + m[0].length
+    if (lastIndex == file.length) break
   }
   return tests
 }
