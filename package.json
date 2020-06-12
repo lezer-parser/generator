@@ -32,10 +32,12 @@
   "dependencies": {
     "lezer": "^0.9.0"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "repository": {
-    "type" : "git",
-    "url" : "https://github.com/lezer-parser/lezer-generator.git"
+    "type": "git",
+    "url": "https://github.com/lezer-parser/lezer-generator.git"
   },
   "scripts": {
     "watch": "rollup -w -c rollup.config.js",

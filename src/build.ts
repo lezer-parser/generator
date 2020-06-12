@@ -11,7 +11,7 @@ import {encodeArray} from "./encode"
 import {GenError} from "./error"
 import {Parser, TokenGroup as LezerTokenGroup, ExternalTokenizer,
         NestedGrammar, InputStream, Token, Stack, NodeGroup, NodeProp, NodeType} from "lezer"
-import {Action, Specialize, StateFlag, Term as T, Seq, ParseState} from "lezer/src/constants"
+import {Action, Specialize, StateFlag, Term as T, Seq, ParseState} from "lezer/dist/constants"
 
 const none: readonly any[] = []
 
