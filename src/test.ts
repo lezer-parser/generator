@@ -130,8 +130,16 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
     throw new Error(`Unexpected end of tree. Expected ${stack[0].slice(pos[0]).map(s => s.name).join(", ")} at ${tree.length}\n${tree}`)
 }
 
+/**
+ * Returns a line context for the given file.
+ *
+ * @param {string} file
+ * @param {number} index
+ */
 function toLineContext(file: string, index: number) {
-  const endIndex = Math.min(index + 80, file.length);
+  const endEol = file.indexOf('\n', index + 80);
+
+  const endIndex = endEol === -1 ? file.length : endEol;
 
   return file.substring(index, endIndex).split(/\n/).map(str => '  | ' + str).join('\n');
 }
