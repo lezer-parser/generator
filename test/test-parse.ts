@@ -65,7 +65,7 @@ describe("parsing", () => {
     let pos = doc.indexOf("false"), doc2 = doc.slice(0, pos) + "x" + doc.slice(pos + 5)
     let ast2 = p1().parse(doc2, {bufferLength: 2, cache: change(ast, [pos, pos + 5, pos, pos + 1])})
     testTree(ast, expected)
-    ist(shared(ast, ast2), 60, ">")
+    ist(shared(ast, ast2), 40, ">")
     ist(ast2.length, 66)
   })
 
