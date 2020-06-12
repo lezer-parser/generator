@@ -13,14 +13,20 @@ b
 
 # Broken Spec
 
-b
+bbbb bbbb bbbb bbbb
+bbbb bbbb bbbb bbbb
+bbbb bbbb bbbb bbbb
+bbbb bbbb bbbb bbbb aaaa
+bbbb
 `
     const expectedError = `Unexpected file format in test-error.txt around
 
   | # Broken Spec
   |${ ' ' }
-  | b
-  | `;
+  | bbbb bbbb bbbb bbbb
+  | bbbb bbbb bbbb bbbb
+  | bbbb bbbb bbbb bbbb
+  | bbbb bbbb bbbb bbbb aaaa`;
 
     const file = "test-error.txt"
 
