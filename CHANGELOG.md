@@ -1,3 +1,9 @@
+## 0.9.1 (2020-07-08)
+
+### New features
+
+The test runner helper now allows tests to pass additional configuration options.
+
 ## 0.9.0 (2020-06-08)
 
 ### Breaking changes
