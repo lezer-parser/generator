@@ -68,20 +68,22 @@ export class State {
 
   findConflicts(appearTogether: (a: Term, b: Term) => boolean): Conflict[] {
     let conflicts: Conflict[] = [], cycleTerms = this.cycleTerms()
-    function add(a: Term, b: Term) {
+    function add(a: Term, b: Term, aEdges: Edge[], bEdges?: Edge[]) {
       if (a.id < b.id) [a, b] = [b, a]
-      if (!conflicts.some(c => c.a == a && c.b == b)) conflicts.push(new Conflict(a, b))
+      if (!conflicts.some(c => c.a == a && c.b == b))
+        conflicts.push(new Conflict(a, b, exampleFromEdges(aEdges), bEdges && exampleFromEdges(bEdges)))
     }
-    this.reachable(state => {
+    this.reachable((state, edges) => {
       if (state.accepting.length == 0) return
       for (let i = 0; i < state.accepting.length; i++)
         for (let j = i + 1; j < state.accepting.length; j++)
-          add(state.accepting[i], state.accepting[j])
-      state.reachable(s => {
+          add(state.accepting[i], state.accepting[j], edges)
+      state.reachable((s, es) => {
         if (s != state) for (let term of s.accepting) {
           let hasCycle = cycleTerms.includes(term)
           for (let orig of state.accepting)
-            if (term != orig && (hasCycle || cycleTerms.includes(orig) || !appearTogether(term, orig))) add(term, orig)
+            if (term != orig && (hasCycle || cycleTerms.includes(orig) || !appearTogether(term, orig)))
+              add(term, orig, edges, edges.concat(es))
         }
       })
     })
@@ -111,13 +113,16 @@ export class State {
     return result
   }
 
-  reachable(f: (s: State) => void) {
-    let seen: State[] = []
+  reachable(f: (s: State, edges: Edge[]) => void) {
+    let seen: State[] = [], edges: Edge[] = []
     ;(function explore(s: State) {
-      f(s)
+      f(s, edges)
       seen.push(s)
-      for (let edge of s.edges)
-        if (!seen.includes(edge.target)) explore(edge.target)
+      for (let edge of s.edges) if (!seen.includes(edge.target)) {
+        edges.push(edge)
+        explore(edge.target)
+        edges.pop()
+      }
     })(this)
   }
 
@@ -173,7 +178,13 @@ export class State {
 }
 
 export class Conflict {
-  constructor(readonly a: Term, readonly b: Term) {}
+  constructor(readonly a: Term, readonly b: Term, readonly exampleA: string, readonly exampleB?: string) {}
+}
+
+function exampleFromEdges(edges: readonly Edge[]) {
+  let str = ""
+  for (let i = 0; i < edges.length; i++) str += String.fromCharCode(edges[i].from)
+  return str
 }
 
 function ids(states: State[]) {

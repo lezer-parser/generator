@@ -1220,7 +1220,9 @@ class TokenSet {
           hasConflict = true
           if (!incompatible.includes(conflicting)) {
             if (state.actions.some(a => a.term == conflicting))
-              this.b.raise(`Overlapping tokens ${term.name} and ${conflicting.name} used in same context`)
+              this.b.raise(`Overlapping tokens ${term.name} and ${conflicting.name} used in same context ` +
+                           `(example: ${JSON.stringify(conflict.exampleA)}${
+                              conflict.exampleB ? ` vs ${JSON.stringify(conflict.exampleB)}` : ""})\n\n`)
             incompatible.push(conflicting)
           }
         }
