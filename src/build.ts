@@ -1380,6 +1380,7 @@ class TempExternalTokenizer {
   }
 
   get contextual() { return this.inner.contextual }
+  get fallback() { return this.inner.fallback }
 }
 
 function tempNestedGrammar(b: Builder, grammar: NestedGrammarSpec): NestedGrammar {
