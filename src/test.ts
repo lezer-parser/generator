@@ -152,9 +152,8 @@ export function fileTests(file: string, fileName: string, mayIgnore = defaultIgn
     let m = caseExpr.exec(file)
     if (!m) throw new Error(`Unexpected file format in ${fileName} around\n\n${toLineContext(file, lastIndex)}`)
 
-    let [ _, name, configStr ] = /(.*?)(\{.*?\})?$/.exec(m[1])!;
-
-    const extraConfig = configStr ? JSON.parse(configStr) : {};
+    let [_, name, configStr] = /(.*?)(\{.*?\})?$/.exec(m[1])!
+    let extraConfig = configStr ? JSON.parse(configStr) : {}
 
     let text = m[2].trim(), expected = m[3]
     tests.push({
