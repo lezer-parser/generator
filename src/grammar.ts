@@ -142,7 +142,7 @@ export class TermSet {
     }
     if (nextID >= 0xfffe) throw new GenError("Too many terms")
 
-    return {nodeTypes, names, minRepeatTerm}
+    return {nodeTypes, names, minRepeatTerm, maxTerm: nextID - 1}
   }
 }
 

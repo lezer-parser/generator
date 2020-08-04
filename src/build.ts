@@ -230,7 +230,7 @@ class Builder {
     let rules = simplifyRules(this.rules, [...this.skipRules,
                                            ...this.nestedGrammars.map(g => g.placeholder),
                                            ...this.terms.tops])
-    let {nodeTypes, names, minRepeatTerm} = this.terms.finish(rules)
+    let {nodeTypes, names, minRepeatTerm, maxTerm} = this.terms.finish(rules)
     for (let prop in this.namedTerms) this.termTable[prop] = this.namedTerms[prop].id
 
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
@@ -332,7 +332,7 @@ class Builder {
 
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
-    return new Parser(states, data.finish(), computeGotoTable(table), group, minRepeatTerm,
+    return new Parser(states, data.finish(), computeGotoTable(table), group, maxTerm, minRepeatTerm,
                       tokenizers, topRules, nested, dialects,
                       specTable, specializations, precTable, names)
   }
@@ -1619,7 +1619,8 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
   states: ${encodeArray(parser.states, 0xffffffff)},
   stateData: ${encodeArray(parser.data)},
   goto: ${encodeArray(parser.goto)},
-  nodeNames: ${JSON.stringify(nodeNames.join(" "))},${nodeProps.length ? `
+  nodeNames: ${JSON.stringify(nodeNames.join(" "))},
+  maxTerm: ${parser.maxTerm},${nodeProps.length ? `
   nodeProps: [
     ${nodeProps.map(p => `[${p.prop}, ${p.terms.map(serializePropValue).join(",")}]`).join(",\n    ")}
   ],` : ""}
