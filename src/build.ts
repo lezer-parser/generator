@@ -1181,6 +1181,28 @@ class TokenSet {
     return found && found.after.includes(b)
   }
 
+  // Token groups are a mechanism for allowing conflicting (matching
+  // overlapping input, without an explicit precedence being given)
+  // tokens to exist in a grammar _if_ they don't occur in the same
+  // place (aren't used in the same states).
+  //
+  // States that use tokens that conflict will raise an error when any
+  // of the conflicting pairs of tokens both occur in that state.
+  // Otherwise, they are assigned a token group, which includes all
+  // the potentially-conflicting tokens they use. If there's already a
+  // group that doesn't have any conflicts with those tokens, that is
+  // reused, otherwise a new group is created.
+  //
+  // So each state has zero or one token groups, and each conflicting
+  // token may belong to one or more groups. Tokens get assigned a
+  // 16-bit bitmask with the groups they belong to set to 1 (all-1s
+  // for non-conflicting tokens). When tokenizing, that mask is
+  // compared to the current state's group (again using all-1s for
+  // group-less states) to determine whether a token is applicable for
+  // this state.
+  //
+  // Extended/specialized tokens are treated as their parent token for
+  // this purpose.
   buildTokenGroups(states: readonly LRState[], skipStates: readonly (LRState[] | null)[], skipTokens: readonly (readonly Term[])[]) {
     let tokens = this.startState.compile()
     let usedPrec: Term[] = []
