@@ -126,6 +126,7 @@ function parseGrammar(input: Input) {
   let tokens: TokenDeclaration | null = null
   let mainSkip: Expression | null = null
   let scopedSkip: {expr: Expression, rules: readonly RuleDeclaration[]}[] = []
+  let dialects: Identifier[] = []
   let external: ExternalTokenDeclaration[] = []
   let nested: ExternalGrammarDeclaration[] = []
   let props: ExternalPropDeclaration[] = []
@@ -149,6 +150,12 @@ function parseGrammar(input: Input) {
       else if (input.eat("id", "grammar")) nested.push(parseExternalGrammar(input, start))
       else if (input.eat("id", "prop")) nested.push(parseExternalProp(input, start))
       else input.unexpected()
+    } else if (input.eat("at", "dialects")) {
+      input.expect("{")
+      for (let first = true; !input.eat("}"); first = false) {
+        if (!first) input.expect(",")
+        dialects.push(parseIdent(input))
+      }
     } else if (input.type == "at" && input.value == "precedence") {
       if (prec) input.raise(`Multiple precedence declarations`, input.start)
       else prec = parsePrecedence(input)
@@ -170,7 +177,7 @@ function parseGrammar(input: Input) {
     }
   }
   if (!tops.length) return input.raise(`Missing @top declaration`)
-  return new GrammarDeclaration(start, rules, tops, tokens, external, prec, mainSkip, scopedSkip, nested, props, autoDelim)
+  return new GrammarDeclaration(start, rules, tops, tokens, external, prec, mainSkip, scopedSkip, dialects, nested, props, autoDelim)
 }
 
 function parseRule(input: Input, named?: Identifier) {

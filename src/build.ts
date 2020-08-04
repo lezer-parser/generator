@@ -110,6 +110,7 @@ class Builder {
   namedTerms: {[name: string]: Term} = Object.create(null)
   termTable: {[name: string]: number} = Object.create(null)
   knownProps: {[name: string]: {prop: NodeProp<any>, source: {name: string, from: string | null}}} = Object.create(null)
+  dialects: readonly string[]
 
   astRules: {skip: Term, rule: RuleDeclaration}[] = []
   currentSkip: Term[] = []
@@ -131,6 +132,7 @@ class Builder {
       }
     }
 
+    this.dialects = this.ast.dialects.map(d => d.name)
     this.tokens = new TokenSet(this, this.ast.tokens)
     this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
 
@@ -310,6 +312,9 @@ class Builder {
       }
       this.finishState(s, tokenizers, data, skip, skipTerms, s.id >= firstSkipState, forceReductions[s.id], states)
     }
+    let dialects: {[name: string]: number} = Object.create(null)
+    for (let i = 0; i < this.dialects.length; i++)
+      dialects[this.dialects[i]] = data.storeArray((this.tokens.byDialect[i] || none).map(t => t.id).concat(Seq.End))
 
     let nested = this.nestedGrammars.map(g => ({
       name: g.name,
@@ -328,7 +333,7 @@ class Builder {
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let specTable = data.storeArray(specialized)
     return new Parser(states, data.finish(), computeGotoTable(table), group, minRepeatTerm,
-                      tokenizers, topRules, nested,
+                      tokenizers, topRules, nested, dialects,
                       specTable, specializations, precTable, names)
   }
 
@@ -708,17 +713,34 @@ class Builder {
   nodeInfo(props: readonly Prop[], defaultName: string | null = null,
            args: readonly Expression[] = none, params: readonly Identifier[] = none,
            expr?: Expression, defaultProps?: Props): {name: string | null, props: Props} {
+    let result = this.nodeInfoInner(props, defaultName, args, params, expr, defaultProps)
+    if (result.dialect != null) this.raise("Can't specify a dialect on non-token rules", props[0].start)
+    return result
+  }
+    
+  nodeInfoInner(props: readonly Prop[], defaultName: string | null = null,
+                args: readonly Expression[] = none, params: readonly Identifier[] = none,
+                expr?: Expression, defaultProps?: Props): {name: string | null, props: Props, dialect: number | null} {
     let result = noProps, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
+    let dialect = null
     for (let prop of props) {
       if (prop.name == "name") {
         name = this.finishProp(prop, args, params)
         if (/ /.test(name)) this.raise(`Node names cannot have spaces ('${name}')`, prop.start)
-        continue
+      } else if (prop.name == "dialect") {
+        if (prop.value.length != 1 && !prop.value[0].value)
+          this.raise("The 'dialect' rule prop must hold a plain string value")
+        let dialectID = this.dialects.indexOf(prop.value[0].value!)
+        if (dialectID < 0) this.raise(`Unknown dialect '${prop.value[0].value}'`, prop.value[0].start)
+        dialect = dialectID
+      } else if (RESERVED_PROPS.includes(prop.name)) {
+        this.raise(`Prop name '${prop.name}' is reserved`, prop.start)
+      } else if (!this.knownProps[prop.name]) {
+        this.raise(`Unknown prop name '${prop.name}'`, prop.start)
+      } else {
+        if (result == noProps) result = Object.create(null)
+        result[prop.name] = this.finishProp(prop, args, params)
       }
-      if (RESERVED_PROPS.includes(prop.name)) this.raise(`Prop name '${prop.name}' is reserved`, prop.start)
-      if (!this.knownProps[prop.name]) this.raise(`Unknown prop name '${prop.name}'`, prop.start)
-      if (result == noProps) result = Object.create(null)
-      result[prop.name] = this.finishProp(prop, args, params)
     }
     if (expr && this.ast.autoDelim && (name || result != noProps)) {
       let delim = this.findDelimiters(expr)
@@ -733,7 +755,7 @@ class Builder {
     }
     if (result != noProps && !name && !result.top)
       this.raise(`Node has properties but no name`, props.length ? props[0].start : expr!.start)
-    return {name, props: result}
+    return {name, props: result, dialect}
   }
 
   finishProp(prop: Prop, args: readonly Expression[], params: readonly Identifier[]): string {
@@ -1000,6 +1022,7 @@ class TokenSet {
   built: BuiltRule[] = []
   building: BuildingRule[] = [] // Used for recursion check
   rules: readonly RuleDeclaration[]
+  byDialect: {[dialect: number]: Term[]} = Object.create(null)
   precedences: Term[] = []
   precedenceRelations: readonly {term: Term, after: readonly Term[]}[] = []
 
@@ -1013,9 +1036,10 @@ class TokenSet {
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    let {name: nodeName, props} =
-      this.b.nodeInfo(rule.props, name, expr.args, rule.params.length != expr.args.length ? none : rule.params)
+    let {name: nodeName, props, dialect} =
+      this.b.nodeInfoInner(rule.props, name, expr.args, rule.params.length != expr.args.length ? none : rule.params)
     let term = this.b.makeTerminal(expr.toString(), nodeName, props)
+    if (dialect != null) (this.byDialect[dialect] || (this.byDialect[dialect] = [])).push(term)
 
     if ((term.nodeType || rule.exported) && rule.params.length == 0) {
       if (!term.nodeType) term.preserve = true
@@ -1029,11 +1053,12 @@ class TokenSet {
   getLiteral(expr: LiteralExpression) {
     let id = JSON.stringify(expr.value)
     for (let built of this.built) if (built.id == id) return built.term
-    let name = null, props = noProps
+    let name = null, props = noProps, dialect = null
     let decl = this.ast ? this.ast.literals.find(l => l.literal == expr.value) : null
-    if (decl) ({name, props} = this.b.nodeInfo(decl.props, expr.value))
+    if (decl) ({name, props, dialect} = this.b.nodeInfoInner(decl.props, expr.value))
 
     let term = this.b.makeTerminal(id, name, props)
+    if (dialect != null) (this.byDialect[dialect] || (this.byDialect[dialect] = [])).push(term)
     this.build(expr, this.startState, new State([term]), none)
     this.built.push(new BuiltRule(id, none, term))
     return term
@@ -1618,6 +1643,8 @@ ${encodeArray((end as LezerTokenGroup).data)}, ${placeholder}]`
     }
     terms.push(`${id}${mod == "cjs" ? ":" : " ="} ${builder.termTable[name]}`)
   }
+  for (let id = 0; id < builder.dialects.length; id++)
+    terms.push(`Dialect_${builder.dialects[id]}${mod == "cjs" ? ":" : " ="} ${id}`)
 
   let exportName = options.exportName || "parser"
   return {
