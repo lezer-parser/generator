@@ -156,7 +156,7 @@ function parseGrammar(input: Input) {
     } else if (input.eat("at", "dialects")) {
       input.expect("{")
       for (let first = true; !input.eat("}"); first = false) {
-        if (!first) input.expect(",")
+        if (!first) input.eat(",")
         dialects.push(parseIdent(input))
       }
     } else if (input.type == "at" && input.value == "precedence") {
@@ -370,7 +370,7 @@ function parsePrecedence(input: Input) {
   input.expect("{")
   let items: {id: Identifier, type: "left" | "right" | "cut" | null}[] = []
   while (!input.eat("}")) {
-    if (items.length) input.expect(",")
+    if (items.length) input.eat(",")
     items.push({
       id: parseIdent(input),
       type: input.eat("at", "left") ? "left" : input.eat("at", "right") ? "right" : input.eat("at", "cut") ? "cut" : null
@@ -418,7 +418,7 @@ function parseExternalTokenSet(input: Input) {
   let tokens: {id: Identifier, props: readonly Prop[]}[] = []
   input.expect("{")
   while (!input.eat("}")) {
-    if (tokens.length) input.expect(",")
+    if (tokens.length) input.eat(",")
     let id = parseIdent(input)
     let props = parseProps(input)
     tokens.push({id, props})
