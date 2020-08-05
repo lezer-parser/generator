@@ -1,0 +1,50 @@
+@dialects { a, b }
+
+@top { (A | B | C)+ }
+
+A { "a" }
+
+B { "b" }
+
+C { "c" }
+
+@tokens {
+  "a"[dialect=a]
+  "b"[dialect=b]
+}
+
+# No dialect
+
+cc
+
+==> C, C
+
+# No dialect, error
+
+ca
+
+==> C, ⚠
+
+# Dialect A {"dialect": "a"}
+
+ca
+
+==> C, A
+
+# Dialect A, error {"dialect": "a"}
+
+cab
+
+==> C, A, ⚠
+
+# Dialect B {"dialect": "b"}
+
+bc
+
+==> B, C
+
+# Both dialects {"dialect": "a b"}
+
+abc
+
+==> A, B, C
