@@ -260,17 +260,12 @@ class Builder {
     this.addNestedGrammars(table)
 
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
-    let specialized = [], specializations = []
+    let specialized = new Uint16Array(Object.keys(this.specialized).length), specializers = []
     for (let name in this.specialized) {
-      specialized.push(this.terms.names[name]!.id)
-      let table: {[value: string]: number} = {}
-      for (let {value, term, type} of this.specialized[name]) {
-        let code = type == "specialize" ? Specialize.Specialize : Specialize.Extend
-        table[value] = (term.id << 1) | code
-      }
-      specializations.push(table)
+      specialized[specializers.length] = this.terms.names[name]!.id
+      let table = buildSpecializeTable(this.specialized[name])
+      specializers.push((value: string) => table[value] || -1)
     }
-    specialized.push(Seq.End)
 
     let tokenData = this.tokens.tokenizer(tokenMasks, tokenPrec)
     let tokStart = (tokenizer: any) => {
@@ -331,10 +326,9 @@ class Builder {
     let group = new NodeGroup(nodeTypes.map((term, i) => this.toNodeType(term, skipped, i)))
 
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
-    let specTable = data.storeArray(specialized)
     return new (Parser as any)(states, data.finish(), computeGotoTable(table), group, maxTerm, minRepeatTerm,
                                tokenizers, topRules, nested, dialects,
-                               specTable, specializations, precTable, names)
+                               specialized, specializers, precTable, names)
   }
 
   toNodeType(term: Term, skipped: readonly Term[], id: number) {
@@ -831,6 +825,15 @@ function addToProp(term: Term, prop: string, value: string) {
   if (term.props == noProps) term.props = Object.create(null)
   let cur = term.props[prop]
   if (!cur || cur.split(" ").indexOf(value) < 0) term.props[prop] = cur ? cur + " " + value : value
+}
+
+function buildSpecializeTable(spec: {value: string, term: Term, type: string}[]): {[value: string]: number} {
+  let table: {[value: string]: number} = Object.create(null)
+  for (let {value, term, type} of spec) {
+    let code = type == "specialize" ? Specialize.Specialize : Specialize.Extend
+    table[value] = (term.id << 1) | code
+  }
+  return table
 }
 
 const RESERVED_PROPS = ["error", "repeated"]
@@ -1557,6 +1560,7 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
       if (!defined[id]) return id
     }
   }
+
   let importName = (name: string, source: string, prefix: string) => {
     let spec = name + " from " + source
     if (imported[spec]) return imported[spec]
@@ -1609,12 +1613,20 @@ ${encodeArray(end.data)}, ${placeholder}]`
       head += `import {${imports[source].join(", ")}} from ${source}\n`
   }
 
-  function specializationString(table: {[name: string]: number}) {
-    return "{" + Object.keys(table).map(key => `${/\W/.test(key) ? JSON.stringify(key) : key}:${table[key]}`).join(", ") + "}"
+  function specializationTableString(table: {[name: string]: number}) {
+    return "{__proto__:null," + Object.keys(table).map(key => `${/\W/.test(key) ? JSON.stringify(key) : key}:${table[key]}`)
+      .join(", ") + "}"
   }
 
   function serializePropValue(value: any) {
     return typeof value != "string" || /^(true|false|\d+(\.\d+)?|\.\d+)$/.test(value) ? value : JSON.stringify(value)
+  }
+
+  let specialized = []
+  for (let name in builder.specialized) {
+    let tableName = getName("spec" + name)
+    head += `const ${tableName} = ${specializationTableString(buildSpecializeTable(builder.specialized[name]))}\n`
+    specialized.push(`{term: ${builder.terms.names[name].id}, get: value => ${tableName}[value] || -1}`)
   }
 
   let parserStr = `Parser.deserialize({
@@ -1630,9 +1642,8 @@ ${encodeArray(end.data)}, ${placeholder}]`
   tokenData: ${encodeArray(tokenData || [])},
   tokenizers: [${tokenizers.join(", ")}],
   topRules: ${JSON.stringify(parser.topRules)},${nested.length ? `
-  nested: [${nested.join(", ")}],` : ""}
-  specializeTable: ${parser.specializeTable},${parser.specializations.length ? `
-  specializations: [${parser.specializations.map(specializationString).join(",\n   ")}],` : ""}
+  nested: [${nested.join(", ")}],` : ""}${specialized.length ? `
+  specialized: [${specialized.join(",")}],` : ""}
   tokenPrec: ${parser.tokenPrecTable}${options.includeNames ? `,
   termNames: ${JSON.stringify(parser.termNames)}` : ''}
 })` // FIXME more compact format for term names (omit named nodes, drop quotes)
