@@ -106,7 +106,7 @@ class Builder {
   externalTokens: ExternalTokenSet[]
   externalSpecializers: ExternalSpecializer[]
   nestedGrammars: NestedGrammarSpec[] = []
-  specialized: {[name: string]: {value: string, term: Term, type: string}[]} = Object.create(null)
+  specialized: {[name: string]: {value: string, term: Term, type: string, dialect: number | null}[]} = Object.create(null)
   tokenOrigins: {[name: string]: {spec?: Term, external?: ExternalTokenSet | ExternalSpecializer}} = Object.create(null)
   rules: Rule[] = []
   built: BuiltRule[] = []
@@ -785,7 +785,7 @@ class Builder {
 
   resolveSpecialization(expr: SpecializeExpression) {
     let type = expr.type
-    let {name, props} = this.nodeInfo(expr.props)
+    let {name, props, dialect} = this.nodeInfoInner(expr.props)
     let terminal = this.normalizeExpr(expr.token)
     if (terminal.length != 1 || terminal[0].terms.length != 1 || !terminal[0].terms[0].terminal)
       this.raise(`The first argument to '${type}' must resolve to a token`, expr.token.start)
@@ -802,12 +802,17 @@ class Builder {
     for (let value of values) {
       let known = table.find(sp => sp.value == value)
       if (known == null) {
-        if (!token) token = this.makeTerminal(term.name + "/" + JSON.stringify(value), name, props)
-        table.push({value, term: token, type})
+        if (!token) {
+          token = this.makeTerminal(term.name + "/" + JSON.stringify(value), name, props)
+          if (dialect != null) (this.tokens.byDialect[dialect] || (this.tokens.byDialect[dialect] = [])).push(token)
+        }
+        table.push({value, term: token, type, dialect})
         this.tokenOrigins[token.name] = {spec: term}
       } else {
         if (known.type != type)
           this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`, expr.start)
+        if (known.dialect != dialect)
+          this.raise(`Conflicting dialects for specialization ${JSON.stringify(value)} of ${term.name}`, expr.start)
         if (token && known.term != token)
           this.raise(`Conflicting specialization tokens for ${JSON.stringify(value)} of ${term.name}`, expr.start)
         token = known.term
@@ -1412,8 +1417,9 @@ function gatherExtTokens(b: Builder, tokens: readonly {id: Identifier, props: re
   let result: {[name: string]: Term} = Object.create(null)
   for (let token of tokens) {
     b.unique(token.id)
-    let {name, props} = b.nodeInfo(token.props, token.id.name)
+    let {name, props, dialect} = b.nodeInfoInner(token.props, token.id.name)
     let term = b.makeTerminal(token.id.name, name, props)
+    if (dialect != null) (b.tokens.byDialect[dialect] || (b.tokens.byDialect[dialect] = [])).push(term)
     b.namedTerms[token.id.name] = result[token.id.name] = term
   }
   return result
@@ -1673,7 +1679,7 @@ ${encodeArray(end.data)}, ${placeholder}]`
   let specialized = []
   for (let ext of builder.externalSpecializers) {
     let name = importName(ext.ast.id.name, ext.ast.source, ext.ast.id.name)
-    specialized.push(`{term: ${ext.term.id}, get: (value, stack) => (${name}(value, stack) << 1)${
+    specialized.push(`{term: ${ext.term!.id}, get: (value, stack) => (${name}(value, stack) << 1)${
       ext.ast.type == "extend" ? ` | ${Specialize.Extend}` : ''}}`)
   }
   for (let name in builder.specialized) {
@@ -1681,6 +1687,7 @@ ${encodeArray(end.data)}, ${placeholder}]`
     head += `const ${tableName} = ${specializationTableString(buildSpecializeTable(builder.specialized[name]))}\n`
     specialized.push(`{term: ${builder.terms.names[name].id}, get: value => ${tableName}[value] || -1}`)
   }
+  let dialects = Object.keys(parser.dialects).map(d => `${d}: ${parser.dialects[d]}`)
 
   let parserStr = `Parser.deserialize({
   states: ${encodeArray(parser.states, 0xffffffff)},
@@ -1694,8 +1701,9 @@ ${encodeArray(end.data)}, ${placeholder}]`
   repeatNodeCount: ${repeatCount},
   tokenData: ${encodeArray(tokenData || [])},
   tokenizers: [${tokenizers.join(", ")}],
-  topRules: ${JSON.stringify(parser.topRules)},${nested.length ? `
-  nested: [${nested.join(", ")}],` : ""}${specialized.length ? `
+  topRules: ${JSON.stringify(parser.topRules)}${nested.length ? `,
+  nested: [${nested.join(", ")}],` : ""}${dialects.length ? `,
+  dialects: {${dialects.join(", ")}},` : ""}${specialized.length ? `
   specialized: [${specialized.join(",")}],` : ""}
   tokenPrec: ${parser.tokenPrecTable}${options.includeNames ? `,
   termNames: ${JSON.stringify(parser.termNames)}` : ''}
