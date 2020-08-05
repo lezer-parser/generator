@@ -8,6 +8,7 @@ export class GrammarDeclaration extends Node {
               readonly topRules: RuleDeclaration[],
               readonly tokens: TokenDeclaration | null,
               readonly externalTokens: readonly ExternalTokenDeclaration[],
+              readonly externalSpecializers: readonly ExternalSpecializeDeclaration[],
               readonly precedences: PrecDeclaration | null,
               readonly mainSkip: Expression | null,
               readonly scopedSkip: readonly {expr: Expression, rules: readonly RuleDeclaration[]}[],
@@ -65,6 +66,17 @@ export class LiteralDeclaration extends Node {
 
 export class ExternalTokenDeclaration extends Node {
   constructor(start: number,
+              readonly id: Identifier,
+              readonly source: string,
+              readonly tokens: readonly {id: Identifier, props: readonly Prop[]}[]) {
+    super(start)
+  }
+}
+
+export class ExternalSpecializeDeclaration extends Node {
+  constructor(start: number,
+              readonly type: "extend" | "specialize",
+              readonly token: Expression,
               readonly id: Identifier,
               readonly source: string,
               readonly tokens: readonly {id: Identifier, props: readonly Prop[]}[]) {

@@ -18,6 +18,11 @@ function externalTokenizer(name: string, terms: {[name: string]: number}) {
   throw new Error("Undefined external tokenizer " + name)
 }
 
+function externalSpecializer(name: string, terms: {[name: string]: number}) {
+  if (name == "spec1") return (value: string) => value == "one" ? terms.one : value == "two" ? terms.two : -1
+  throw new Error("Undefined external specialize " + name)
+}
+
 describe("Cases", () => {
   for (let file of fs.readdirSync(caseDir)) {
     let match = /^(.*)\.txt$/.exec(file)
@@ -28,7 +33,7 @@ describe("Cases", () => {
     content = content.slice(grammar[1].length)
     let parser: Parser | null = null
     let force = () => {
-      if (!parser) parser = buildParser(grammar[1], {fileName, externalTokenizer})
+      if (!parser) parser = buildParser(grammar[1], {fileName, externalTokenizer, externalSpecializer})
       return parser
     }
 

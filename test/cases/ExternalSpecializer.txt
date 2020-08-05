@@ -1,0 +1,21 @@
+@top { (One | Two | Id)+ }
+
+@skip { space }
+
+One { one Id }
+
+Two { two Id }
+
+@external specialize {Id} spec1 from "./something" { one, two }
+
+@tokens {
+  Id { std.asciiLetter+ }
+  space { std.whitespace+ }
+}
+
+
+# Produces specialized tokens
+
+one a two b three
+
+==> One(Id), Two(Id), Id

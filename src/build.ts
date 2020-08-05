@@ -1,4 +1,5 @@
 import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDeclaration,
+        ExternalSpecializeDeclaration,
         Expression, Identifier, LiteralExpression, NameExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
         InlineRuleExpression, SpecializeExpression, Prop, PropPart,
@@ -86,6 +87,9 @@ export type BuildOptions = {
   /// When calling `buildParser`, this can be used to provide
   /// placeholders for external tokenizers.
   externalTokenizer?: (name: string, terms: {[name: string]: number}) => ExternalTokenizer
+  /// Provide placeholders for external specializers when using
+  /// `buildParser`.
+  externalSpecializer?: (name: string, terms: {[name: string]: number}) => (value: string, stack: Stack) => number
   /// Only relevant when using `buildParser`. Provides placeholders
   /// for nested grammars.
   nestedGrammar?: (name: string, terms: {[name: string]: number}) => NestedGrammar
@@ -100,9 +104,10 @@ class Builder {
   terms = new TermSet
   tokens: TokenSet
   externalTokens: ExternalTokenSet[]
+  externalSpecializers: ExternalSpecializer[]
   nestedGrammars: NestedGrammarSpec[] = []
   specialized: {[name: string]: {value: string, term: Term, type: string}[]} = Object.create(null)
-  tokenOrigins: {[name: string]: Term | ExternalTokenSet} = Object.create(null)
+  tokenOrigins: {[name: string]: {spec?: Term, external?: ExternalTokenSet | ExternalSpecializer}} = Object.create(null)
   rules: Rule[] = []
   built: BuiltRule[] = []
   ruleNames: {[name: string]: Identifier | null} = Object.create(null)
@@ -135,6 +140,7 @@ class Builder {
     this.dialects = this.ast.dialects.map(d => d.name)
     this.tokens = new TokenSet(this, this.ast.tokens)
     this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
+    this.externalSpecializers = this.ast.externalSpecializers.map(decl => new ExternalSpecializer(this, decl))
 
     this.defineNamespace("nest", new NestNamespace)
 
@@ -184,6 +190,8 @@ class Builder {
       this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
       this.currentSkip.pop()
     }
+
+    for (let ext of this.externalSpecializers) ext.finish()
 
     for (let rule of this.ast.rules) {
       if (rule.exported && this.ruleNames[rule.id.name] && rule.params.length == 0) {
@@ -260,7 +268,14 @@ class Builder {
     this.addNestedGrammars(table)
 
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
-    let specialized = new Uint16Array(Object.keys(this.specialized).length), specializers = []
+    let specialized = new Uint16Array(this.externalSpecializers.length + Object.keys(this.specialized).length), specializers = []
+    for (let ext of this.externalSpecializers) {
+      specialized[specializers.length] = ext.term!.id
+      specializers.push((value: string, stack: Stack) => {
+        return (this.options.externalSpecializer!(ext.ast.id.name, this.termTable)(value, stack) << 1) |
+          (ext.ast.type == "extend" ? Specialize.Extend : Specialize.Specialize)
+      })
+    }
     for (let name in this.specialized) {
       specialized[specializers.length] = this.terms.names[name]!.id
       let table = buildSpecializeTable(this.specialized[name])
@@ -478,8 +493,8 @@ class Builder {
       let term = i < state.actions.length ? state.actions[i].term : skipTerms[i - state.actions.length]
       for (;;) {
         let orig = this.tokenOrigins[term.name]
-        if (orig instanceof Term) { term = orig; continue }
-        if (orig instanceof ExternalTokenSet) addToSet(external, orig)
+        if (orig && orig.spec) { term = orig.spec; continue }
+        if (orig && (orig.external instanceof ExternalTokenSet)) addToSet(external, orig.external)
         break
       }
     }
@@ -606,6 +621,10 @@ class Builder {
       let found = this.tokens.getToken(expr)
       if (found) return [p(found)]
       for (let ext of this.externalTokens) {
+        let found = ext.getToken(expr)
+        if (found) return [p(found)]
+      }
+      for (let ext of this.externalSpecializers) {
         let found = ext.getToken(expr)
         if (found) return [p(found)]
       }
@@ -785,7 +804,7 @@ class Builder {
       if (known == null) {
         if (!token) token = this.makeTerminal(term.name + "/" + JSON.stringify(value), name, props)
         table.push({value, term: token, type})
-        this.tokenOrigins[token.name] = term
+        this.tokenOrigins[token.name] = {spec: term}
       } else {
         if (known.type != type)
           this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`, expr.start)
@@ -1256,10 +1275,10 @@ class TokenSet {
       for (let i = 0; i < state.actions.length + (skip ? skip.length : 0); i++) {
         let term = i < state.actions.length ? state.actions[i].term : skip[i - state.actions.length]
         let orig = this.b.tokenOrigins[term.name]
-        if (orig instanceof Term) {
-          if (terms.includes(orig)) continue
-          term = orig
-        } else if (orig) {
+        if (orig && orig.spec) {
+          if (terms.includes(orig.spec)) continue
+          term = orig.spec
+        } else if (orig && orig.external) {
           continue
         }
         hasTerms = true
@@ -1389,26 +1408,55 @@ function isEmpty(expr: Expression) {
   return expr instanceof SequenceExpression && expr.exprs.length == 0
 }
 
+function gatherExtTokens(b: Builder, tokens: readonly {id: Identifier, props: readonly Prop[]}[]) {
+  let result: {[name: string]: Term} = Object.create(null)
+  for (let token of tokens) {
+    b.unique(token.id)
+    let {name, props} = b.nodeInfo(token.props, token.id.name)
+    let term = b.makeTerminal(token.id.name, name, props)
+    b.namedTerms[token.id.name] = result[token.id.name] = term
+  }
+  return result
+}
+
+function findExtToken(b: Builder, tokens: {[name: string]: Term}, expr: NameExpression) {
+  let found = tokens[expr.id.name]
+  if (!found) return null
+  if (expr.args.length) b.raise("External tokens cannot take arguments", expr.args[0].start)
+  b.used(expr.id.name)
+  return found
+}
+
 class ExternalTokenSet {
-  tokens: {[name: string]: Term} = Object.create(null)
+  tokens: {[name: string]: Term}
 
   constructor(readonly b: Builder, readonly ast: ExternalTokenDeclaration) {
-    for (let token of ast.tokens) {
-      b.unique(token.id)
-      let {name, props} = b.nodeInfo(token.props, token.id.name)
-      let term = b.makeTerminal(token.id.name, name, props)
-      b.namedTerms[token.id.name] = this.tokens[token.id.name] = term
-      this.b.tokenOrigins[term.name] = this
-    }
+    this.tokens = gatherExtTokens(b, ast.tokens)
+    for (let name in this.tokens)
+      this.b.tokenOrigins[this.tokens[name].name] = {external: this}
   }
 
-  getToken(expr: NameExpression) {
-    let found = this.tokens[expr.id.name]
-    if (!found) return null
-    if (expr.args.length) this.b.raise("External tokens cannot take arguments", expr.args[0].start)
-    this.b.used(expr.id.name)
-    return found
+  getToken(expr: NameExpression) { return findExtToken(this.b, this.tokens, expr) }
+}
+
+class ExternalSpecializer {
+  term: Term | null = null
+  tokens: {[name: string]: Term}
+
+  constructor(readonly b: Builder, readonly ast: ExternalSpecializeDeclaration) {
+    this.tokens = gatherExtTokens(b, ast.tokens)
   }
+
+  finish() {
+    let terms = this.b.normalizeExpr(this.ast.token)
+    if (terms.length != 1 || terms[0].terms.length != 1 || !terms[0].terms[0].terminal)
+      this.b.raise(`The token expression to '@external ${this.ast.type}' must resolve to a token`, this.ast.token.start)
+    this.term = terms[0].terms[0]
+    for (let name in this.tokens)
+      this.b.tokenOrigins[this.tokens[name].name] = {spec: this.term, external: this}
+  }
+
+  getToken(expr: NameExpression) { return findExtToken(this.b, this.tokens, expr) }
 }
 
 class TempExternalTokenizer {
@@ -1623,6 +1671,11 @@ ${encodeArray(end.data)}, ${placeholder}]`
   }
 
   let specialized = []
+  for (let ext of builder.externalSpecializers) {
+    let name = importName(ext.ast.id.name, ext.ast.source, ext.ast.id.name)
+    specialized.push(`{term: ${ext.term.id}, get: (value, stack) => (${name}(value, stack) << 1)${
+      ext.ast.type == "extend" ? ` | ${Specialize.Extend}` : ''}}`)
+  }
   for (let name in builder.specialized) {
     let tableName = getName("spec" + name)
     head += `const ${tableName} = ${specializationTableString(buildSpecializeTable(builder.specialized[name]))}\n`
