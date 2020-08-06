@@ -700,13 +700,13 @@ class Builder {
     } else if (expr instanceof SpecializeExpression) {
       return [p(this.resolveSpecialization(expr))]
     } else if (expr instanceof InlineRuleExpression) {
-      return [p(this.buildRule(expr.rule, none, this.currentSkip[this.currentSkip.length - 1]))]
+      return [p(this.buildRule(expr.rule, none, this.currentSkip[this.currentSkip.length - 1], true))]
     } else {
       return this.raise(`This type of expression ('${expr}') may not occur in non-token rules`, expr.start)
     }
   }
 
-  buildRule(rule: RuleDeclaration, args: readonly Expression[], skip: Term): Term {
+  buildRule(rule: RuleDeclaration, args: readonly Expression[], skip: Term, inline = false): Term {
     let expr = this.substituteArgs(rule.expr, args, rule.params)
     let {name: nodeName, props} = this.nodeInfo(rule.props || none, rule.id.name, args, rule.params, rule.expr)
     if (rule.exported && rule.params.length) this.warn(`Can't export parameterized rules`, rule.start)
@@ -716,7 +716,7 @@ class Builder {
       this.namedTerms[rule.id.name] = name
     }
 
-    this.built.push(new BuiltRule(rule.id.name, args, name))
+    if (!inline) this.built.push(new BuiltRule(rule.id.name, args, name))
     this.currentSkip.push(skip)
     let result = this.defineRule(name, this.normalizeExpr(expr))
     this.currentSkip.pop()
