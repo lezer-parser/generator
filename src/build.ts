@@ -1660,6 +1660,13 @@ ${encodeArray(end.data)}, ${placeholder}]`
     }
   }
 
+  let specialized = []
+  for (let ext of builder.externalSpecializers) {
+    let name = importName(ext.ast.id.name, ext.ast.source, ext.ast.id.name)
+    specialized.push(`{term: ${ext.term!.id}, get: (value, stack) => (${name}(value, stack) << 1)${
+      ext.ast.type == "extend" ? ` | ${Specialize.Extend}` : ''}}`)
+  }
+
   for (let source in imports) {
     if (mod == "cjs")
       head += `const {${imports[source].join(", ")}} = require(${source})\n`
@@ -1676,12 +1683,6 @@ ${encodeArray(end.data)}, ${placeholder}]`
     return typeof value != "string" || /^(true|false|\d+(\.\d+)?|\.\d+)$/.test(value) ? value : JSON.stringify(value)
   }
 
-  let specialized = []
-  for (let ext of builder.externalSpecializers) {
-    let name = importName(ext.ast.id.name, ext.ast.source, ext.ast.id.name)
-    specialized.push(`{term: ${ext.term!.id}, get: (value, stack) => (${name}(value, stack) << 1)${
-      ext.ast.type == "extend" ? ` | ${Specialize.Extend}` : ''}}`)
-  }
   for (let name in builder.specialized) {
     let tableName = getName("spec" + name)
     head += `const ${tableName} = ${specializationTableString(buildSpecializeTable(builder.specialized[name]))}\n`
