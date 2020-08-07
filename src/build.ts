@@ -1703,9 +1703,9 @@ ${encodeArray(end.data)}, ${placeholder}]`
   tokenData: ${encodeArray(tokenData || [])},
   tokenizers: [${tokenizers.join(", ")}],
   topRules: ${JSON.stringify(parser.topRules)}${nested.length ? `,
-  nested: [${nested.join(", ")}],` : ""}${dialects.length ? `,
-  dialects: {${dialects.join(", ")}},` : ""}${specialized.length ? `
-  specialized: [${specialized.join(",")}],` : ""}
+  nested: [${nested.join(", ")}]` : ""}${dialects.length ? `,
+  dialects: {${dialects.join(", ")}}` : ""}${specialized.length ? `,
+  specialized: [${specialized.join(",")}]` : ""},
   tokenPrec: ${parser.tokenPrecTable}${options.includeNames ? `,
   termNames: ${JSON.stringify(parser.termNames)}` : ''}
 })` // FIXME more compact format for term names (omit named nodes, drop quotes)
