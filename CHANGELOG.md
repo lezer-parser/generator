@@ -1,3 +1,23 @@
+## 0.10.0 (2020-08-07)
+
+### Bug fixes
+
+Fix a bug in the reuse of compiled rules (which sometimes got confused by inline rules).
+
+The error message for overlapping tokens is a bit more concrete now, including an example of a string that matches both tokens.
+
+### New features
+
+Add support for grammar dialects.
+
+Add support for external specializers.
+
+Commas in precedence tag, dialect, or external token lists are now optional.
+
+### Breaking changes
+
+Changes the serialized parser format.
+
 ## 0.9.1 (2020-07-08)
 
 ### New features
