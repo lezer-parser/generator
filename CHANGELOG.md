@@ -1,3 +1,9 @@
+## 0.10.1 (2020-08-07)
+
+### Bug fixes
+
+Fix an issue where the output file would in some cases have a superfluous comma.
+
 ## 0.10.0 (2020-08-07)
 
 ### Bug fixes
