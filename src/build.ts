@@ -639,24 +639,21 @@ class Builder {
     }
   }
 
-  // For tree-balancing reasons, repeat expressions X* have to be
+  // For tree-balancing reasons, repeat expressions X+ have to be
   // normalized to something like
   //
-  //     Outer -> ε | Inner
+  //     Outer -> Inner
   //     Inner -> X | Inner Inner
   //
-  // (With the ε part gone for + expressions.)
-  //
-  // Returns the terms that make up the outer rule.
+  // Returns the term for the outer rule.
   normalizeRepeat(expr: RepeatExpression) {
     let known = this.built.find(b => b.matchesRepeat(expr))
     if (known) return p(known.term)
 
-    let name = expr.expr instanceof SequenceExpression || expr.expr instanceof ChoiceExpression ? `(${expr.expr})${expr.kind}` : expr.toString()
-
+    let name = expr.expr.prec < expr.prec ? `(${expr.expr})+` : `${expr.expr}+`
     let {inner, outer} = this.terms.makeRepeat(this.terms.uniqueName(name))
 
-    this.defineRule(outer, expr.kind == "*" ? [Parts.none, p(inner)] : [p(inner)])
+    this.defineRule(outer, [p(inner)])
     this.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
 
     let top = this.normalizeExpr(expr.expr)
@@ -688,7 +685,8 @@ class Builder {
     if (expr instanceof RepeatExpression && expr.kind == "?") {
       return [Parts.none, ...this.normalizeExpr(expr.expr)]
     } else if (expr instanceof RepeatExpression) {
-      return [this.normalizeRepeat(expr)]
+      let repeated = this.normalizeRepeat(expr)
+      return expr.kind == "+" ? [repeated] : [Parts.none, repeated]
     } else if (expr instanceof ChoiceExpression) {
       return expr.exprs.reduce((o, e) => o.concat(this.normalizeExpr(e)), [] as Parts[])
     } else if (expr instanceof SequenceExpression) {
