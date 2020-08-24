@@ -25,10 +25,6 @@ export class Pos {
     return new Pos(this.rule, this.pos + 1, this.ahead, this.ambigAhead, this.skipAhead, this)
   }
 
-  reverse() {
-    return new Pos(this.rule, this.pos - 1, this.ahead, this.ambigAhead, this.skipAhead, this.prev!.prev)
-  }
-
   get skip() {
     return this.pos == this.rule.parts.length ? this.skipAhead : this.rule.skip
   }
@@ -386,20 +382,20 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
         let index = byTerm.indexOf(next)
         if (index < 0) {
           byTerm.push(next)
-          byTermPos.push([pos.advance()])
+          byTermPos.push([pos])
         } else {
-          byTermPos[index].push(pos.advance())
+          byTermPos[index].push(pos)
         }
       }
     }
     for (let i = 0; i < byTerm.length; i++) {
-      let term = byTerm[i]
+      let term = byTerm[i], positions = byTermPos[i].map(p => p.advance())
       if (term.terminal) {
-        let set = applyCut(byTermPos[i])
+        let set = applyCut(positions)
         let next = getState(set)
-        if (next) state.addAction(new Shift(term, next), set.map(p => p.reverse()))
+        if (next) state.addAction(new Shift(term, next), byTermPos[i])
       } else {
-        let goto = getState(byTermPos[i])
+        let goto = getState(positions)
         if (goto) state.goto.push(new Shift(term, goto))
       }
     }
