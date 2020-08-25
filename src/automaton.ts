@@ -54,7 +54,7 @@ export class Pos {
   trail() {
     let result = []
     for (let cur = this.prev; cur; cur = cur.prev) result.push(cur.next)
-    return result.reverse().join(" ")
+    return result.reverse()
   }
 
   conflicts(pos = this.pos) {
@@ -202,19 +202,21 @@ export class State {
     return null
   }
 
-  addAction(value: Shift | Reduce, positions: readonly Pos[]) {
+  addAction(value: Shift | Reduce, positions: readonly Pos[], conflicts: Conflict[]) {
     let conflict = this.addActionInner(value, positions)
     if (conflict) {
+      let trail = positions[0].trail(), prev = trail.length ? trail[trail.length - 1] : null
+      if (conflicts.some(c => c.term == value.term && c.prevTerm == prev)) return
       let conflictPos = this.actionPositions[this.actions.indexOf(conflict)][0]
       let error
       if (conflict instanceof Shift)
         error = `shift/reduce conflict between\n  ${conflictPos}\nand\n  ${positions[0].rule}`
       else
         error = `reduce/reduce conflict between\n  ${positions[0].rule}\nand\n  ${conflictPos.rule}`
-      let trail = positions[0].trail()
-      if (trail.length > 50) trail = trail.slice(trail.length - 50).replace(/.*? /, "… ")
-      error += `\nWith input:\n  ${trail} · ${value.term} …`
-      throw new GenError(error)
+      let trailStr = trail.join(" ")
+      if (trailStr.length > 70) trailStr = trailStr.slice(trailStr.length - 70).replace(/.*? /, "… ")
+      error += `\nWith input:\n  ${trailStr} · ${value.term} …`
+      conflicts.push(new Conflict(error, value.term, prev))
     }
   }
 
@@ -338,6 +340,10 @@ class Core {
   constructor(readonly set: readonly Pos[], readonly state: State) {}
 }
 
+class Conflict {
+  constructor(readonly error: string, readonly term: Term, readonly prevTerm: Term | null) {}
+}
+
 // Builds a full LR(1) automaton
 export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[name: string]: Term[]}) {
   let states: State[] = []
@@ -348,10 +354,10 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
     let skip: Term | undefined
     for (let pos of core) {
       if (!skip) skip = pos.skip
-      else if (skip != pos.skip) throw new GenError("Inconsistent skip sets after " + pos.trail())
+      else if (skip != pos.skip) throw new GenError("Inconsistent skip sets after " + pos.trail().join(" "))
     }
     if (byHash) for (let known of byHash) if (eqSet(core, known.set)) {
-      if (known.state.skip != skip) throw new GenError("Inconsistent skip sets after " + known.set[0].trail())
+      if (known.state.skip != skip) throw new GenError("Inconsistent skip sets after " + known.set[0].trail().join(" "))
       return known.state
     }
 
@@ -370,6 +376,8 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
     const startSkip = startTerm.rules.length ? startTerm.rules[0].skip : terms.names["%noskip"]!
     getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null)), startTerm)
   }
+
+  let conflicts: Conflict[] = []
 
   for (let filled = 0; filled < states.length; filled++) {
     let state = states[filled]
@@ -393,7 +401,7 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
       if (term.terminal) {
         let set = applyCut(positions)
         let next = getState(set)
-        if (next) state.addAction(new Shift(term, next), byTermPos[i])
+        if (next) state.addAction(new Shift(term, next), byTermPos[i], conflicts)
       } else {
         let goto = getState(positions)
         if (goto) state.goto.push(new Shift(term, goto))
@@ -403,9 +411,10 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
     let replaced = false
     for (let pos of atEnd) for (let ahead of pos.ahead) {
       let count = state.actions.length
-      state.addAction(new Reduce(ahead, pos.rule), [pos])
+      state.addAction(new Reduce(ahead, pos.rule), [pos], conflicts)
       if (state.actions.length == count) replaced = true
     }
+
     // If some actions were replaced by others, double-check whether
     // goto entries are now superfluous (for example, in an operator
     // precedence-related state that has a shift for `*` but only a
@@ -417,6 +426,9 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
         state.goto.splice(i--, 1)
     }
   }
+
+  if (conflicts.length) throw new GenError(conflicts.map(c => c.error).join("\n\n"))
+
   // Resolve alwaysReduce and sort actions
   for (let state of states) state.finish()
   return states
