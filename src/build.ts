@@ -1188,17 +1188,17 @@ class TokenSet {
     if (this.ast) for (let group of this.ast.precedences) {
       let terms: Term[] = []
       for (let item of group.items) {
-        let known
+        let startLen = terms.length
         if (item instanceof NameExpression) {
-          known = this.built.find(b => b.matches(item as NameExpression))
+          for (let built of this.built)
+            if (item.args.length ? built.matches(item) : built.id == item.id.name)
+              terms.push(built.term)
         } else {
-          let id = JSON.stringify(item.value)
-          known = this.built.find(b => b.id == id)
+          let id = JSON.stringify(item.value), found = this.built.find(b => b.id == id)
+          if (found) terms.push(found.term)
         }
-        if (!known)
+        if (terms.length == startLen)
           this.b.warn(`Precedence specified for unknown token ${item}`, item.start)
-        else
-          terms.push(known.term)
       }
       for (let i = 0; i < terms.length; i++) {
         let found = rel.find(r => r.term == terms[i])
