@@ -5,7 +5,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDecl
         InlineRuleExpression, SpecializeExpression, Prop, PropPart,
         exprsEq, exprEq} from "./node"
 import {Term, TermSet, PREC_REPEAT, Rule, Conflicts, Props, noProps} from "./grammar"
-import {State, MAX_CHAR} from "./token"
+import {State, MAX_CHAR, Conflict} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce, Pos} from "./automaton"
 import {encodeArray} from "./encode"
@@ -1262,6 +1262,7 @@ class TokenSet {
       addToSet(usedPrec, b)
       return !this.precededBy(a, b) && !this.precededBy(b, a)
     })
+    let errors: {conflict: Conflict, error: string}[] = []
 
     let groups: TokenGroup[] = []
     let checkState = (state: LRState) => {
@@ -1291,10 +1292,13 @@ class TokenSet {
           if (!conflicting) continue
           hasConflict = true
           if (!incompatible.includes(conflicting)) {
-            if (state.actions.some(a => a.term == conflicting))
-              this.b.raise(`Overlapping tokens ${term.name} and ${conflicting.name} used in same context ` +
-                           `(example: ${JSON.stringify(conflict.exampleA)}${
-                              conflict.exampleB ? ` vs ${JSON.stringify(conflict.exampleB)}` : ""})\n\n`)
+            if (state.actions.some(a => a.term == conflicting) && !errors.some(e => e.conflict == conflict))
+              errors.push({
+                error: `Overlapping tokens ${term.name} and ${conflicting.name} used in same context ` +
+                         `(example: ${JSON.stringify(conflict.exampleA)}${
+                           conflict.exampleB ? ` vs ${JSON.stringify(conflict.exampleB)}` : ""})`,
+                conflict
+              })
             incompatible.push(conflicting)
           }
         }
@@ -1318,6 +1322,8 @@ class TokenSet {
     for (let state of states) checkState(state)
     for (let states of skipStates) if (states) for (let state of states) checkState(state)
 
+    if (errors.length)
+      this.b.raise(errors.map(e => e.error).join("\n\n"))
     if (groups.length > 16)
       this.b.raise(`Too many different token groups (${groups.length}) to represent them as a 16-bit bitfield`)
 
