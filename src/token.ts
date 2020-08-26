@@ -4,7 +4,7 @@ import {GenError} from "./error"
 export const MAX_CHAR = 0xfffe
 
 export class Edge {
-  constructor(readonly from: number, readonly to: number = from + 1, readonly target: State) {}
+  constructor(readonly from: number, readonly to: number, readonly target: State) {}
 
   toString() {
     return `-> ${this.target.id}[label=${JSON.stringify(
@@ -24,7 +24,7 @@ export class State {
 
   constructor(readonly accepting: Term[] = [], readonly id = stateID++) {}
 
-  edge(from: number, to: number = from + 1, target: State) {
+  edge(from: number, to: number, target: State) {
     this.edges.push(new Edge(from, to, target))
   }
 
@@ -32,7 +32,8 @@ export class State {
 
   compile() {
     let labeled: {[id: string]: State} = Object.create(null), localID = 0
-    return explore(this.closure().sort((a, b) => a.id - b.id))
+    let out = explore(this.closure().sort((a, b) => a.id - b.id))
+    return out
 
     function explore(states: State[]) {
       let newState = labeled[ids(states)] =
@@ -70,8 +71,9 @@ export class State {
     let conflicts: Conflict[] = [], cycleTerms = this.cycleTerms()
     function add(a: Term, b: Term, aEdges: Edge[], bEdges?: Edge[]) {
       if (a.id < b.id) [a, b] = [b, a]
-      if (!conflicts.some(c => c.a == a && c.b == b))
+      if (!conflicts.some(c => c.a == a && c.b == b)) {
         conflicts.push(new Conflict(a, b, exampleFromEdges(aEdges), bEdges && exampleFromEdges(bEdges)))
+      }
     }
     this.reachable((state, edges) => {
       if (state.accepting.length == 0) return
@@ -91,25 +93,32 @@ export class State {
   }
 
   cycleTerms(): Term[] {
-    let scanned: State[] = []
-    let result: Term[] = []
-    ;(function explore(state: State, seen: State[]) {
-      let found = seen.indexOf(state)
-      if (found > -1) {
-        for (let i = found; i < seen.length; i++) {
-          if (!scanned.includes(seen[i])) {
-            scanned.push(seen[i])
-            seen[i].reachable(s => {
-              for (let term of s.accepting) if (!result.includes(term)) result.push(term)
-            })
-          }
-        }
+    let work: State[] = []
+    this.reachable(state => {
+      for (let {target} of state.edges) work.push(state, target)
+    })
+
+    let table: Map<State, State[]> = new Map
+    let haveCycle: State[] = []
+    for (let i = 0; i < work.length;) {
+      let from = work[i++], to = work[i++]
+      let entry = table.get(from)
+      if (!entry) table.set(from, entry = [])
+      if (entry.includes(to)) continue
+      if (from == to) {
+        if (!haveCycle.includes(from)) haveCycle.push(from)
       } else {
-        seen.push(state)
-        for (let edge of state.edges) explore(edge.target, seen)
-        seen.pop()
+        for (let next of entry) work.push(from, next)
+        entry.push(to)
       }
-    }(this, []))
+    }
+
+    let result: Term[] = []
+    for (let state of haveCycle) {
+      for (let term of state.accepting) {
+        if (!result.includes(term)) result.push(term)
+      }
+    }
     return result
   }
 
