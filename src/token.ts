@@ -32,8 +32,7 @@ export class State {
 
   compile() {
     let labeled: {[id: string]: State} = Object.create(null), localID = 0
-    let out = explore(this.closure().sort((a, b) => a.id - b.id))
-    return out
+    return explore(this.closure().sort((a, b) => a.id - b.id))
 
     function explore(states: State[]) {
       let newState = labeled[ids(states)] =
