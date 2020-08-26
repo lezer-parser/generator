@@ -54,7 +54,7 @@ export class Pos {
   trail() {
     let result = []
     for (let cur = this.prev; cur; cur = cur.prev) result.push(cur.next)
-    return result.reverse()
+    return result.reverse().join(" ")
   }
 
   conflicts(pos = this.pos) {
@@ -205,18 +205,18 @@ export class State {
   addAction(value: Shift | Reduce, positions: readonly Pos[], conflicts: Conflict[]) {
     let conflict = this.addActionInner(value, positions)
     if (conflict) {
-      let trail = positions[0].trail(), prev = trail.length ? trail[trail.length - 1] : null
-      if (conflicts.some(c => c.term == value.term && c.prevTerm == prev)) return
       let conflictPos = this.actionPositions[this.actions.indexOf(conflict)][0]
+      let rules = [positions[0].rule.name, conflictPos.rule.name]
+      if (conflicts.some(c => c.rules.some(r => rules.includes(r)))) return
       let error
       if (conflict instanceof Shift)
         error = `shift/reduce conflict between\n  ${conflictPos}\nand\n  ${positions[0].rule}`
       else
         error = `reduce/reduce conflict between\n  ${positions[0].rule}\nand\n  ${conflictPos.rule}`
-      let trailStr = trail.join(" ")
-      if (trailStr.length > 70) trailStr = trailStr.slice(trailStr.length - 70).replace(/.*? /, "… ")
-      error += `\nWith input:\n  ${trailStr} · ${value.term} …`
-      conflicts.push(new Conflict(error, value.term, prev))
+      let trail = positions[0].trail()
+      if (trail.length > 70) trail = trail.slice(trail.length - 70).replace(/.*? /, "… ")
+      error += `\nWith input:\n  ${trail} · ${value.term} …`
+      conflicts.push(new Conflict(error, rules))
     }
   }
 
@@ -341,7 +341,7 @@ class Core {
 }
 
 class Conflict {
-  constructor(readonly error: string, readonly term: Term, readonly prevTerm: Term | null) {}
+  constructor(readonly error: string, readonly rules: readonly Term[]) {}
 }
 
 // Builds a full LR(1) automaton
@@ -354,10 +354,10 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
     let skip: Term | undefined
     for (let pos of core) {
       if (!skip) skip = pos.skip
-      else if (skip != pos.skip) throw new GenError("Inconsistent skip sets after " + pos.trail().join(" "))
+      else if (skip != pos.skip) throw new GenError("Inconsistent skip sets after " + pos.trail())
     }
     if (byHash) for (let known of byHash) if (eqSet(core, known.set)) {
-      if (known.state.skip != skip) throw new GenError("Inconsistent skip sets after " + known.set[0].trail().join(" "))
+      if (known.state.skip != skip) throw new GenError("Inconsistent skip sets after " + known.set[0].trail())
       return known.state
     }
 
