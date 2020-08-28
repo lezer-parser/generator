@@ -122,7 +122,7 @@ export class Shift {
 
   toString() { return "s" + this.target.id }
 
-  map(mapping: number[], states: State[]) {
+  map(mapping: readonly number[], states: readonly State[]) {
     let mapped = states[mapping[this.target.id]]
     return mapped == this.target ? this : new Shift(this.term, mapped)
   }
@@ -447,30 +447,55 @@ function applyCut(set: readonly Pos[]): readonly Pos[] {
   return found || set
 }
 
-function mergeState(mapping: number[], newStates: State[], state: State, target: State): boolean {
-  if (state.defaultReduce) return true
-  for (let j = 0; j < state.actions.length; j++)
-    if (target.addActionInner(state.actions[j].map(mapping, newStates), state.actionPositions[j]))
-      return false
-  for (let goto of state.goto) {
-    let found = target.goto.find(a => a.term == goto.term)
-    let mapped = goto.map(mapping, newStates)
-    if (!found) target.goto.push(mapped)
-    else if (found.target.id != mapped.target.id) return false
+function canMergeInner(a: State, b: State, mapping: readonly number[]) {
+  actions: for (let action of a.actions) {
+    let conflict = false
+    for (let other of b.actions) if (other.term == action.term) {
+      if (other.constructor != action.constructor ||
+          (action instanceof Shift && mapping[action.target.id] != mapping[(other as Shift).target.id])) {
+        conflict = true
+      } else {
+        break actions
+      }
+    }
+    if (conflict) return false
+  }
+  for (let goto of a.goto) for (let other of b.goto) {
+    if (goto.term == other.term && mapping[goto.target.id] != mapping[other.target.id]) return false
   }
   return true
 }
 
-function markConflicts(mapping: number[], newID: number, oldStates: readonly State[], newStates: State[], conflicts: number[]) {
-  // For all combinations of merged states
-  for (let i = 0; i < mapping.length; i++) if (mapping[i] == newID) {
-    for (let j = 0; j < mapping.length; j++) if (j != i && mapping[j] == newID) {
-      // Create a dummy state to determine whether there's a conflict
-      let state = new State(0, oldStates[i].set, 0, oldStates[i].skip, 0)
-      mergeState(mapping, newStates, oldStates[i], state)
-      if (!mergeState(mapping, newStates, oldStates[j], state)) conflicts.push(i, j)
+function canMerge(a: State, b: State, mapping: readonly number[]) {
+  return canMergeInner(a, b, mapping) && canMergeInner(b, a, mapping)
+}
+
+function mergeStates(states: readonly State[], mapping: readonly number[]) {
+  let newStates = []
+  for (let state of states) {
+    let newID = mapping[state.id]
+    if (!newStates[newID]) {
+      newStates[newID] = new State(newID, state.set, 0, state.skip, state.hash, state.startRule)
+      newStates[newID].tokenGroup = state.tokenGroup
+      newStates[newID].defaultReduce = state.defaultReduce
     }
   }
+  for (let state of states) {
+    let newID = mapping[state.id], target = newStates[newID]
+    target.flags |= state.flags
+    for (let i = 0; i < state.actions.length; i++) {
+      let action = state.actions[i].map(mapping, newStates)
+      if (!target.actions.some(a => a.eq(action))) {
+        target.actions.push(action)
+        target.actionPositions.push(state.actionPositions[i])
+      }
+    }
+    for (let goto of state.goto) {
+      let mapped = goto.map(mapping, newStates)
+      if (!target.goto.some(g => g.eq(mapped))) target.goto.push(mapped)
+    }
+  }
+  return newStates
 }
 
 function hasConflict(id: number, newID: number, mapping: number[], conflicts: number[]) {
@@ -485,37 +510,31 @@ function hasConflict(id: number, newID: number, mapping: number[], conflicts: nu
 function collapseAutomaton(states: readonly State[]): readonly State[] {
   let conflicts: number[] = []
   for (;;) {
-    let newStates: State[] = [], mapping: number[] = []
+    let mapping: number[] = [], mapped: State[] = []
     for (let i = 0; i < states.length; i++) {
-      let state = states[i], {set} = state
-      let newID = newStates.findIndex((s, index) => {
+      let state = states[i]
+      let newID = state.startRule == null ? mapped.findIndex((s, index) => {
         return state.set.length == s.set.length &&
           state.set.every((p, i) => p.eqSimple(s.set[i])) &&
           s.tokenGroup == state.tokenGroup &&
           s.skip == state.skip &&
+          !s.startRule &&
           !hasConflict(i, index, mapping, conflicts)
-      })
-      if (newID < 0) {
-        newID = newStates.length
-        let newState = new State(newID, set, state.flags, state.skip, state.hash, state.startRule)
-        newState.tokenGroup = state.tokenGroup
-        newState.defaultReduce = state.defaultReduce
-        newStates.push(newState)
-      } else {
-        newStates[newID].flags |= state.flags
-      }
-      mapping.push(newID)
+      }) : -1
+      mapping.push(newID < 0 ? mapped.length : newID)
+      if (newID < 0) mapped.push(state)
     }
-    let conflicting: number[] = []
-    for (let i = 0; i < states.length; i++) {
-      let newID = mapping[i]
-      if (conflicting.includes(newID)) continue // Don't do work for states that are known to conflict
-      if (!mergeState(mapping, newStates, states[i], newStates[mapping[i]])) {
-        conflicting.push(newID)
-        markConflicts(mapping, newID, states, newStates, conflicts)
+    let seen: {[newID: number]: number[]} = Object.create(null)
+    let startConflictCount = conflicts.length
+    for (let state of states) {
+      let newID = mapping[state.id]
+      let group = seen[newID] || (seen[newID] = [])
+      for (let id of group) {
+        if (!canMerge(state, states[id], mapping)) conflicts.push(state.id, id)
       }
+      group.push(state.id)
     }
-    if (!conflicting.length) return newStates
+    if (conflicts.length == startConflictCount) return mergeStates(states, mapping)
   }
 }
 
