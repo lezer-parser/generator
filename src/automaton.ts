@@ -123,8 +123,8 @@ export class Shift {
   toString() { return "s" + this.target.id }
 
   map(mapping: number[], states: State[]) {
-    let mapped = mapping[this.target.id]
-    return mapped == this.target.id ? this : new Shift(this.term, states[mapped])
+    let mapped = states[mapping[this.target.id]]
+    return mapped == this.target ? this : new Shift(this.term, mapped)
   }
 }
 
