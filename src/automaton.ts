@@ -157,7 +157,6 @@ export class State {
   goto: Shift[] = []
   tokenGroup: number = -1
   defaultReduce: Rule | null = null
-  partOfSkip: Term | null = null
   nested = -1
 
   constructor(public id: number,
@@ -165,7 +164,7 @@ export class State {
               public flags = 0,
               readonly skip: Term,
               readonly hash = hashPositions(set),
-              readonly topRule: Term | null = null) {}
+              readonly startRule: Term | null = null) {}
 
   toString() {
     let actions = this.actions.map(t => t.term + "=" + t).join(",") +
@@ -310,7 +309,7 @@ function addTo<T>(value: T, array: T[]) {
 }
 
 export function computeFirstSets(terms: TermSet) {
-  let table: {[term: string]: Term[]} = {}
+  let table: {[term: string]: Term[]} = Object.create(null)
   for (let t of terms.terms) if (!t.terminal) table[t.name] = []
   for (;;) {
     let change = false
@@ -498,7 +497,7 @@ function collapseAutomaton(states: readonly State[]): readonly State[] {
       })
       if (newID < 0) {
         newID = newStates.length
-        let newState = new State(newID, set, state.flags, state.skip, state.hash, state.topRule)
+        let newState = new State(newID, set, state.flags, state.skip, state.hash, state.startRule)
         newState.tokenGroup = state.tokenGroup
         newState.defaultReduce = state.defaultReduce
         newStates.push(newState)
