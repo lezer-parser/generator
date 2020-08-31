@@ -1299,8 +1299,9 @@ class TokenSet {
             if (state.actions.some(a => a.term == conflicting) && !errors.some(e => e.conflict == conflict)) {
               errors.push({
                 error: `Overlapping tokens ${term.name} and ${conflicting.name} used in same context ` +
-                         `(example: ${JSON.stringify(conflict.exampleA)}${
-                           conflict.exampleB ? ` vs ${JSON.stringify(conflict.exampleB)}` : ""})`,
+                  `(example: ${JSON.stringify(conflict.exampleA)}${
+                    conflict.exampleB ? ` vs ${JSON.stringify(conflict.exampleB)}` : ""})\n` +
+                  `After: ${state.set[0].trail()}`,
                 conflict
               })
             }

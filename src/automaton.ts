@@ -51,10 +51,12 @@ export class Pos {
       sameSet(this.ambigAhead, other.ambigAhead)
   }
 
-  trail() {
+  trail(maxLen: number = 60) {
     let result = []
     for (let cur = this.prev; cur; cur = cur.prev) result.push(cur.next)
-    return result.reverse().join(" ")
+    let value = result.reverse().join(" ")
+    if (value.length > maxLen) value = value.slice(value.length - maxLen).replace(/.*? /, "… ")
+    return value
   }
 
   conflicts(pos = this.pos) {
@@ -212,9 +214,7 @@ export class State {
         error = `shift/reduce conflict between\n  ${conflictPos}\nand\n  ${positions[0].rule}`
       else
         error = `reduce/reduce conflict between\n  ${positions[0].rule}\nand\n  ${conflictPos.rule}`
-      let trail = positions[0].trail()
-      if (trail.length > 70) trail = trail.slice(trail.length - 70).replace(/.*? /, "… ")
-      error += `\nWith input:\n  ${trail} · ${value.term} …`
+      error += `\nWith input:\n  ${positions[0].trail(70)} · ${value.term} …`
       conflicts.push(new Conflict(error, rules))
     }
   }
