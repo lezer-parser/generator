@@ -1116,14 +1116,16 @@ function findArray(data: number[], value: number[]) {
 function findSkipStates(table: readonly LRState[], startRules: readonly Term[]) {
   let nonSkip: {[id: number]: boolean} = Object.create(null)
   let work: LRState[] = []
-  for (let state of table) if (state.startRule && startRules.includes(state.startRule))
-    work.push(state)
+  let add = (state: LRState) => {
+    if (!nonSkip[state.id]) {
+      nonSkip[state.id] = true
+      work.push(state)
+    }
+  }
+  for (let state of table) if (state.startRule && startRules.includes(state.startRule)) add(state)
   for (let i = 0; i < work.length; i++) {
-    let state = work[i]
-    if (nonSkip[state.id]) continue
-    nonSkip[state.id] = true
-    for (let a of state.actions) if (a instanceof Shift) work.push(a.target)
-    for (let a of state.goto) work.push(a.target)
+    for (let a of work[i].actions) if (a instanceof Shift) add(a.target)
+    for (let a of work[i].goto) add(a.target)
   }
   return (id: number) => !nonSkip[id]
 }
