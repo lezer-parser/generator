@@ -547,10 +547,30 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     }
   }
 
-  // FIXME this is supposed to attach NodeProp.skipped info somehow
-  gatherNodeProps(nodeTypes: Term[]) {
+  gatherNonSkippedNodes() {
+    let seen: {[term: number]: boolean} = Object.create(null)
+    let work: Term[] = []
+    let add = (term: Term) => {
+      if (!seen[term.id]) {
+        seen[term.id] = true
+        work.push(term)
+      }
+    }
+    this.terms.tops.forEach(add)
+    for (let i = 0; i < work.length; i++) {
+      for (let rule of work[i].rules) for (let part of rule.parts) add(part)
+    }
+    return seen
+  }
+
+  gatherNodeProps(nodeTypes: readonly Term[]) {
+    let notSkipped = this.gatherNonSkippedNodes()
     let nodeProps: {prop: string, terms: (number | string)[]}[] = []
     for (let type of nodeTypes) {
+      if (!notSkipped[type.id] && !type.error) {
+        if (type.props == noProps) type.props = {}
+        type.props.skipped = "true"
+      }
       for (let prop in type.props) {
         let known = this.knownProps[prop]
         if (!known) throw new GenError("No known prop type for " + prop)
