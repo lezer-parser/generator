@@ -283,6 +283,10 @@ function parseExprInner(input: Input): Expression {
     let content = parseExprChoice(input)
     input.expect(">")
     return new SpecializeExpression(start, value, props, token, content)
+  } else if (input.type == "[") {
+    let rule = parseRule(input, new Identifier(start, "_anon"))
+    if (rule.params.length) input.raise(`Inline rules can't have parameters`, rule.start)
+    return new InlineRuleExpression(start, rule)
   } else {
     let id = parseIdent(input)
     if (input.type == "[" || input.type == "{") {
