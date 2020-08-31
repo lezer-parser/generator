@@ -10,8 +10,7 @@ import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Pos} from "./automaton"
 import {encodeArray} from "./encode"
 import {GenError} from "./error"
-import {Parser, ExternalTokenizer,
-        NestedGrammar, InputStream, Token, Stack, NodeGroup, NodeProp, NodeType} from "lezer"
+import {Parser, ExternalTokenizer, NestedGrammar, Stack, NodeProp} from "lezer"
 import {Action, Specialize, StateFlag, Term as T, Seq, ParseState} from "lezer/dist/constants"
 
 const none: readonly any[] = []
@@ -247,11 +246,11 @@ class Builder {
     }
   }
 
-  getParser() {
+  prepareParser() {
     let rules = simplifyRules(this.rules, [...this.skipRules,
                                            ...this.nestedGrammars.map(g => g.placeholder),
                                            ...this.terms.tops])
-    let {nodeTypes, names, minRepeatTerm, maxTerm} = this.terms.finish(rules)
+    let {nodeTypes, names: termNames, minRepeatTerm, maxTerm} = this.terms.finish(rules)
     for (let prop in this.namedTerms) this.termTable[prop] = this.namedTerms[prop].id
 
     if (/\bgrammar\b/.test(verbose)) console.log(rules.join("\n"))
@@ -282,29 +281,20 @@ class Builder {
     this.addNestedGrammars(table)
 
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
-    let specialized = new Uint16Array(this.externalSpecializers.length + Object.keys(this.specialized).length), specializers = []
-    for (let ext of this.externalSpecializers) {
-      specialized[specializers.length] = ext.term!.id
-      specializers.push((value: string, stack: Stack) => {
-        return (this.options.externalSpecializer!(ext.ast.id.name, this.termTable)(value, stack) << 1) |
-          (ext.ast.type == "extend" ? Specialize.Extend : Specialize.Specialize)
-      })
-    }
-    for (let name in this.specialized) {
-      specialized[specializers.length] = this.terms.names[name]!.id
-      let table = buildSpecializeTable(this.specialized[name])
-      specializers.push((value: string) => table[value] || -1)
-    }
+
+    let specialized: (ExternalSpecializer | {token: Term, table: {[value: string]: number}})[] = []
+    for (let ext of this.externalSpecializers)
+      specialized.push(ext)
+    for (let name in this.specialized)
+      specialized.push({token: this.terms.names[name], table: buildSpecializeTable(this.specialized[name])})
 
     let tokenData = this.tokens.tokenizer(tokenMasks, tokenPrec)
-    let tokStart = (tokenizer: any) => {
-      if (tokenizer instanceof TempExternalTokenizer) return tokenizer.set.ast.start
+    let tokStart = (tokenizer: TokenGroup | ExternalTokenDeclaration) => {
+      if (tokenizer instanceof ExternalTokenDeclaration) return tokenizer.start
       return this.tokens.ast ? this.tokens.ast.start : -1
     }
-    let tokenizers =
-      (tokenGroups.map(g => new (Parser as any).TokenGroup(tokenData, g.id)) as any[])
-      .concat(this.externalTokens.map(ext => new TempExternalTokenizer(ext, this.termTable)))
-      .sort((a, b) => tokStart(a) - tokStart(b))
+    let tokenizers = (tokenGroups as (TokenGroup | ExternalTokenDeclaration)[])
+      .concat(this.externalTokens.map(e => e.ast)).sort((a, b) => tokStart(a) - tokStart(b))
 
     let data = new DataBuilder
     let skipData = skipInfo.map(info => {
@@ -333,38 +323,244 @@ class Builder {
       for (let {rule, prec} of this.dynamicRulePrecedences) dynamicPrecedences[rule.id] = prec
     }
 
-    let nested = this.nestedGrammars.map(g => ({
-      name: g.name,
-      grammar: tempNestedGrammar(this, g),
-      end: new (Parser as any).TokenGroup(g.end.compile().toArray({}, none), 0),
-      placeholder: g.placeholder.id
-    }))
-
     let topRules: {[rule: string]: [number, number]} = Object.create(null)
     for (let term of this.terms.tops)
       topRules[term.nodeName || "@top"] = [table.find(state => state.startRule == term)!.id, term.id]
 
-    let skipped = this.gatherSkippedTerms()
-    let group = new NodeGroup(nodeTypes.map((term, i) => this.toNodeType(term, skipped, i)))
-
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
-    return new (Parser as any)(states, data.finish(), computeGotoTable(table), group, maxTerm, minRepeatTerm,
-                               tokenizers, topRules, nested, dialects, dynamicPrecedences,
-                               specialized, specializers, precTable, names)
+
+    return {
+      states,
+      stateData: data.finish(),
+      goto: computeGotoTable(table),
+      nodeNames: nodeTypes.filter(t => t.id < minRepeatTerm).map(t => t.nodeName).join(" "),
+      nodeProps: this.gatherNodeProps(nodeTypes),
+      maxTerm,
+      repeatNodeCount: nodeTypes.length - minRepeatTerm,
+      tokenizers,
+      tokenData,
+      topRules,
+      dialects,
+      dynamicPrecedences,
+      specialized,
+      tokenPrec: precTable,
+      termNames
+    }
   }
 
-  toNodeType(term: Term, skipped: readonly Term[], id: number) {
-    let propData: any[] = []
-    let props = {propData} as {[id: number]: any}
-    if (skipped.includes(term)) NodeProp.skipped.set(props, true)
-    for (let prop in term.props) {
-      let propType = this.knownProps[prop]
-      if (!propType) throw new GenError("No known prop type for " + prop)
-      let value = propType.prop.deserialize(term.props[prop])
-      propType.prop.set(props, value)
-      propData.push(propType.source, term.props[prop])
+  getParser() {
+    let {
+      states,
+      stateData,
+      goto,
+      nodeNames,
+      nodeProps: rawNodeProps,
+      maxTerm,
+      repeatNodeCount,
+      tokenizers: rawTokenizers,
+      tokenData,
+      topRules,
+      dialects,
+      dynamicPrecedences,
+      specialized: rawSpecialized,
+      tokenPrec,
+      termNames
+    } = this.prepareParser()
+
+    let specialized = rawSpecialized.map(v => {
+      if (v instanceof ExternalSpecializer) {
+        let ext = this.options.externalSpecializer!(v.ast.id.name, this.termTable)
+        return {term: v.term!.id, get: (value: string, stack: Stack) => (ext(value, stack) << 1) |
+                (v.ast.type == "extend" ? Specialize.Extend : Specialize.Specialize)}
+      } else {
+        return {term: v.token.id, get: (value: string) => v.table[value] || -1}
+      }
+    })
+
+    let tokenizers = rawTokenizers.map(tok => {
+      return tok instanceof ExternalTokenDeclaration
+        ? this.options.externalTokenizer!(tok.id.name, this.termTable)
+        : tok.id
+    })
+
+    return (Parser as any).deserialize({
+      states,
+      stateData,
+      goto,
+      nodeNames,
+      maxTerm,
+      repeatNodeCount,
+      nodeProps: rawNodeProps.map(({prop, terms}) => [this.knownProps[prop].prop, ...terms]),
+      tokenData,
+      tokenizers,
+      topRules,
+      nested: this.nestedGrammars.map(spec => {
+        return [spec.name, spec.source ? this.options.nestedGrammar!(spec.name, this.termTable) : null,
+                spec.end.compile().toArray({}, none), spec.placeholder.id]
+      }),
+      dialects,
+      dynamicPrecedences,
+      specialized,
+      tokenPrec,
+      termNames
+    })
+  }
+
+  getParserFile() {
+    let {
+      states,
+      stateData,
+      goto,
+      nodeNames,
+      nodeProps: rawNodeProps,
+      maxTerm,
+      repeatNodeCount,
+      tokenizers: rawTokenizers,
+      tokenData,
+      topRules,
+      dialects: rawDialects,
+      dynamicPrecedences,
+      specialized: rawSpecialized,
+      tokenPrec,
+      termNames
+    } = this.prepareParser()
+
+    let mod = this.options.moduleStyle || "cjs"
+
+    let gen = "// This file was generated by lezer-generator. You probably shouldn't edit it.\n", head = gen
+    head += mod == "cjs" ? `const {Parser} = require("lezer")\n`
+      : `import {Parser} from "lezer"\n`
+    let imports: {[source: string]: string[]} = {}, imported: {[spec: string]: string} = Object.create(null)
+    let defined = Object.create(null)
+    defined.Parser = true
+    let getName = (prefix: string) => {
+      for (let i = 0;; i++) {
+        let id = prefix + (i ? "_" + i : "")
+        if (!defined[id]) return id
+      }
     }
-    return new (NodeType as any)(term.nodeName || "", props, id)
+
+    let importName = (name: string, source: string, prefix: string) => {
+      let spec = name + " from " + source
+      if (imported[spec]) return imported[spec]
+      let src = JSON.stringify(source), varName = name
+      if (name in defined) {
+        varName = getName(prefix)
+        name += `${mod == "cjs" ? ":" : " as"} ${varName}`
+      }
+      ;(imports[src] || (imports[src] = [])).push(name)
+      return imported[spec] = varName
+    }
+
+    let tokenizers = rawTokenizers.map(tok => {
+      if (tok instanceof ExternalTokenDeclaration) {
+        let {source, id: {name}} = tok
+        return importName(name, source, "tok")
+      } else {
+        return tok.id
+      }
+    })
+
+    let nested = this.nestedGrammars.map(spec => {
+      return `[${JSON.stringify(spec.name)}, ${spec.source ? importName(spec.extName, spec.source, spec.name) : "null"},\
+${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
+    })
+
+    let nodeProps = rawNodeProps.map(({prop, terms}) => {
+      let {source} = this.knownProps[prop]
+      let propID = source.from ? importName(source.name, source.from, "prop") :
+        importName("NodeProp", "lezer", "NodeProp") + "." + source.name
+      return `[${propID}, ${terms.map(serializePropValue).join(",")}]`
+    })
+
+    function specializationTableString(table: {[name: string]: number}) {
+      return "{__proto__:null," + Object.keys(table).map(key => `${/\W/.test(key) ? JSON.stringify(key) : key}:${table[key]}`)
+        .join(", ") + "}"
+    }
+
+    let specHead = ""
+    let specialized = rawSpecialized.map(v => {
+      if (v instanceof ExternalSpecializer) {
+        let name = importName(v.ast.id.name, v.ast.source, v.ast.id.name)
+        return `{term: ${v.term!.id}, get: (value, stack) => (${name}(value, stack) << 1)${
+          v.ast.type == "extend" ? ` | ${Specialize.Extend}` : ''}}`
+      } else {
+        let tableName = getName("spec_" + v.token.name.replace(/\W/, ""))
+        specHead += `const ${tableName} = ${specializationTableString(v.table)}\n`
+        return `{term: ${v.token.id}, get: value => ${tableName}[value] || -1}`
+      }
+    })
+
+    for (let source in imports) {
+      if (mod == "cjs")
+        head += `const {${imports[source].join(", ")}} = require(${source})\n`
+      else
+        head += `import {${imports[source].join(", ")}} from ${source}\n`
+    }
+
+    head += specHead
+
+    function serializePropValue(value: any) {
+      return typeof value != "string" || /^(true|false|\d+(\.\d+)?|\.\d+)$/.test(value) ? value : JSON.stringify(value)
+    }
+
+    let dialects = Object.keys(rawDialects).map(d => `${d}: ${rawDialects[d]}`)
+
+    let parserStr = `Parser.deserialize({
+  states: ${encodeArray(states, 0xffffffff)},
+  stateData: ${encodeArray(stateData)},
+  goto: ${encodeArray(goto)},
+  nodeNames: ${JSON.stringify(nodeNames)},
+  maxTerm: ${maxTerm},${nodeProps.length ? `
+  nodeProps: [
+    ${nodeProps.join(",\n    ")}
+  ],` : ""}
+  repeatNodeCount: ${repeatNodeCount},
+  tokenData: ${encodeArray(tokenData)},
+  tokenizers: [${tokenizers.join(", ")}],
+  topRules: ${JSON.stringify(topRules)}${nested.length ? `,
+  nested: [${nested.join(", ")}]` : ""}${dialects.length ? `,
+  dialects: {${dialects.join(", ")}}` : ""}${dynamicPrecedences ? `,
+  dynamicPrecedences: ${JSON.stringify(dynamicPrecedences)}` : ""}${specialized.length ? `,
+  specialized: [${specialized.join(",")}]` : ""},
+  tokenPrec: ${tokenPrec}${this.options.includeNames ? `,
+  termNames: ${JSON.stringify(termNames)}` : ''}
+})` // FIXME more compact format for term names (omit named nodes, drop quotes)
+
+    let terms: string[] = []
+    for (let name in this.termTable) {
+      let id = name
+      if (KEYWORDS.includes(id)) for (let i = 1;; i++) {
+        id = "_".repeat(i) + name
+        if (!(id in this.termTable)) break
+      }
+      terms.push(`${id}${mod == "cjs" ? ":" : " ="} ${this.termTable[name]}`)
+    }
+    for (let id = 0; id < this.dialects.length; id++)
+      terms.push(`Dialect_${this.dialects[id]}${mod == "cjs" ? ":" : " ="} ${id}`)
+
+    let exportName = this.options.exportName || "parser"
+    return {
+      parser: head + (mod == "cjs" ? `exports.${exportName} = ${parserStr}\n` : `export const ${exportName} = ${parserStr}\n`),
+      terms: mod == "cjs" ? `${gen}module.exports = {\n  ${terms.join(",\n  ")}\n}`
+        : `${gen}export const\n  ${terms.join(",\n  ")}\n`
+    }
+  }
+
+  // FIXME this is supposed to attach NodeProp.skipped info somehow
+  gatherNodeProps(nodeTypes: Term[]) {
+    let nodeProps: {prop: string, terms: (number | string)[]}[] = []
+    for (let type of nodeTypes) {
+      for (let prop in type.props) {
+        let known = this.knownProps[prop]
+        if (!known) throw new GenError("No known prop type for " + prop)
+        if (known.source.from == null && (known.source.name == "repeated" || known.source.name == "error")) continue
+        let rec = nodeProps.find(r => r.prop == prop)
+        if (!rec) nodeProps.push(rec = {prop, terms: []})
+        rec.terms.push(type.id, type.props[prop])
+      }
+    }
+    return nodeProps
   }
 
   addNestedGrammars(table: readonly LRState[]) {
@@ -383,16 +579,6 @@ class Builder {
 
   makeTerminal(name: string, tag: string | null, props: Props) {
     return this.terms.makeTerminal(this.terms.uniqueName(name), tag, props)
-  }
-
-  gatherSkippedTerms() {
-    let terms: Term[] = this.skipRules.slice()
-    for (let i = 0; i < terms.length; i++) {
-      for (let rule of terms[i].rules) {
-        for (let part of rule.parts) if (part.nodeType && !terms.includes(part)) terms.push(part)
-      }
-    }
-    return terms
   }
 
   computeForceReductions(states: readonly LRState[], skipInfo: readonly SkipInfo[]) {
@@ -472,7 +658,7 @@ class Builder {
     return reductions
   }
 
-  finishState(state: LRState, tokenizers: any[], data: DataBuilder,
+  finishState(state: LRState, tokenizers: (TokenGroup | ExternalTokenDeclaration)[], data: DataBuilder,
               skipData: readonly number[], skipInfo: readonly SkipInfo[], isSkip: boolean,
               forcedReduce: number, stateArray: Uint32Array) {
     let skipID = this.skipRules.indexOf(state.skip)
@@ -498,21 +684,21 @@ class Builder {
 
     if (state.set.some(p => p.rule.name.top && p.pos == p.rule.parts.length)) flags |= StateFlag.Accepting
 
-    let external: ExternalTokenSet[] = []
+    let external: ExternalTokenDeclaration[] = []
     for (let i = 0; i < state.actions.length + skipTerms.length; i++) {
       let term = i < state.actions.length ? state.actions[i].term : skipTerms[i - state.actions.length]
       for (;;) {
         let orig = this.tokenOrigins[term.name]
         if (orig && orig.spec) { term = orig.spec; continue }
-        if (orig && (orig.external instanceof ExternalTokenSet)) addToSet(external, orig.external)
+        if (orig && (orig.external instanceof ExternalTokenSet)) addToSet(external, orig.external.ast)
         break
       }
     }
-    external.sort((a, b) => a.ast.start - b.ast.start)
+    external.sort((a, b) => a.start - b.start)
     let tokenizerMask = 0
     for (let i = 0; i < tokenizers.length; i++) {
       let tok = tokenizers[i]
-      if (tok instanceof TempExternalTokenizer ? external.includes(tok.set) : tok.id == state.tokenGroup)
+      if (tok instanceof ExternalTokenDeclaration ? external.includes(tok) : tok.id == state.tokenGroup)
         tokenizerMask |= (1 << i)
     }
 
@@ -1506,39 +1692,6 @@ class ExternalSpecializer {
   getToken(expr: NameExpression) { return findExtToken(this.b, this.tokens, expr) }
 }
 
-class TempExternalTokenizer {
-  _inner: null | any = null
-
-  constructor(readonly set: ExternalTokenSet, readonly terms: {[name: string]: number}) {}
-
-  get inner(): any {
-    if (!this._inner) {
-      let getExt = this.set.b.options.externalTokenizer
-      this._inner = getExt ? getExt(this.set.ast.id.name, this.terms) : null
-      if (!this._inner) return this.set.b.raise(`Using external tokenizer without passing externalTokenizer option`)
-    }
-    return this._inner
-  }
-
-  token(stream: InputStream, token: Token, stack: any) {
-    this.inner.token(stream, token, stack)
-  }
-
-  get contextual() { return this.inner.contextual }
-  get fallback() { return this.inner.fallback }
-}
-
-function tempNestedGrammar(b: Builder, grammar: NestedGrammarSpec): NestedGrammar {
-  let resolved: NestedGrammar | null = null
-  let result = function(input: InputStream, stack: Stack) {
-    if (!resolved && grammar.source)
-      resolved = b.options.nestedGrammar ? b.options.nestedGrammar(grammar.name, b.termTable) : null
-    return resolved instanceof Parser ? {parser: resolved} : resolved ? resolved(input, stack) : {}
-  }
-  ;(result as any).spec = grammar
-  return result
-}
-
 function inlineRules(rules: readonly Rule[], preserve: readonly Term[]): readonly Rule[] {
   for (;;) {
     let inlinable: {[name: string]: Rule} = Object.create(null), found
@@ -1638,138 +1791,7 @@ const KEYWORDS = ["break", "case", "catch", "continue", "debugger", "default", "
 /// bundler when importing this file, since you usually only need a
 /// handful of the many terms in your code.
 export function buildParserFile(text: string, options: BuildOptions = {}): {parser: string, terms: string} {
-  let builder = new Builder(text, options)
-  // Cast to any because most of the props we use are internal
-  let parser = builder.getParser() as any
-  let mod = options.moduleStyle || "cjs"
-
-  let gen = "// This file was generated by lezer-generator. You probably shouldn't edit it.\n", head = gen
-  head += mod == "cjs" ? `const {Parser} = require("lezer")\n`
-    : `import {Parser} from "lezer"\n`
-  let tokenData = null, imports: {[source: string]: string[]} = {}, imported: {[spec: string]: string} = Object.create(null)
-  let defined = Object.create(null)
-  defined.Parser = true
-  let getName = (prefix: string) => {
-    for (let i = 0;; i++) {
-      let id = prefix + (i ? "_" + i : "")
-      if (!defined[id]) return id
-    }
-  }
-
-  let importName = (name: string, source: string, prefix: string) => {
-    let spec = name + " from " + source
-    if (imported[spec]) return imported[spec]
-    let src = JSON.stringify(source), varName = name
-    if (name in defined) {
-      varName = getName(prefix)
-      name += `${mod == "cjs" ? ":" : " as"} ${varName}`
-    }
-    ;(imports[src] || (imports[src] = [])).push(name)
-    return imported[spec] = varName
-  }
-
-  let tokenizers = parser.tokenizers.map((tok: any) => {
-    if (tok instanceof TempExternalTokenizer) {
-      let {source, id: {name}} = tok.set.ast
-      return importName(name, source, "tok")
-    } else {
-      tokenData = tok.data
-      return tok.id
-    }
-  })
-
-  let nested = parser.nested.map(({name, grammar, end, placeholder}: any) => {
-    let spec: NestedGrammarSpec = (grammar as any).spec
-    if (!spec) throw new GenError("Spec-less nested grammar in parser")
-    return `[${JSON.stringify(name)}, ${spec.source ? importName(spec.extName, spec.source, spec.name) : "null"},\
-${encodeArray(end.data)}, ${placeholder}]`
-  })
-
-  let nodeNames = [], nodeProps: {prop: string, terms: (number | string)[]}[] = []
-  let repeatCount = parser.group.types.length - parser.minRepeatTerm
-  for (let type of parser.group.types) {
-    if (type.id < parser.minRepeatTerm) nodeNames.push(type.name)
-    let propData = (type as any).props.propData
-    for (let i = 0; i < propData.length; i += 2) {
-      let source = propData[i], value = propData[i + 1]
-      if (source.from == null && (source.name == "repeated" || source.name == "error")) continue
-      let propID = source.from ? importName(source.name, source.from, "prop") :
-        importName("NodeProp", "lezer", "NodeProp") + "." + source.name
-      let known = nodeProps.find(p => p.prop == propID)
-      if (!known) nodeProps.push(known = {prop: propID, terms: []})
-      known.terms.push(type.id, value)
-    }
-  }
-
-  let specialized = []
-  for (let ext of builder.externalSpecializers) {
-    let name = importName(ext.ast.id.name, ext.ast.source, ext.ast.id.name)
-    specialized.push(`{term: ${ext.term!.id}, get: (value, stack) => (${name}(value, stack) << 1)${
-      ext.ast.type == "extend" ? ` | ${Specialize.Extend}` : ''}}`)
-  }
-
-  for (let source in imports) {
-    if (mod == "cjs")
-      head += `const {${imports[source].join(", ")}} = require(${source})\n`
-    else
-      head += `import {${imports[source].join(", ")}} from ${source}\n`
-  }
-
-  function specializationTableString(table: {[name: string]: number}) {
-    return "{__proto__:null," + Object.keys(table).map(key => `${/\W/.test(key) ? JSON.stringify(key) : key}:${table[key]}`)
-      .join(", ") + "}"
-  }
-
-  function serializePropValue(value: any) {
-    return typeof value != "string" || /^(true|false|\d+(\.\d+)?|\.\d+)$/.test(value) ? value : JSON.stringify(value)
-  }
-
-  for (let name in builder.specialized) {
-    let tableName = getName("spec" + name)
-    head += `const ${tableName} = ${specializationTableString(buildSpecializeTable(builder.specialized[name]))}\n`
-    specialized.push(`{term: ${builder.terms.names[name].id}, get: value => ${tableName}[value] || -1}`)
-  }
-  let dialects = Object.keys(parser.dialects).map(d => `${d}: ${parser.dialects[d]}`)
-
-  let parserStr = `Parser.deserialize({
-  states: ${encodeArray(parser.states, 0xffffffff)},
-  stateData: ${encodeArray(parser.data)},
-  goto: ${encodeArray(parser.goto)},
-  nodeNames: ${JSON.stringify(nodeNames.join(" "))},
-  maxTerm: ${parser.maxTerm},${nodeProps.length ? `
-  nodeProps: [
-    ${nodeProps.map(p => `[${p.prop}, ${p.terms.map(serializePropValue).join(",")}]`).join(",\n    ")}
-  ],` : ""}
-  repeatNodeCount: ${repeatCount},
-  tokenData: ${encodeArray(tokenData || [])},
-  tokenizers: [${tokenizers.join(", ")}],
-  topRules: ${JSON.stringify(parser.topRules)}${nested.length ? `,
-  nested: [${nested.join(", ")}]` : ""}${dialects.length ? `,
-  dialects: {${dialects.join(", ")}}` : ""}${parser.dynamicPrecedences ? `,
-  dynamicPrecedences: ${JSON.stringify(parser.dynamicPrecedences)}` : ""}${specialized.length ? `,
-  specialized: [${specialized.join(",")}]` : ""},
-  tokenPrec: ${parser.tokenPrecTable}${options.includeNames ? `,
-  termNames: ${JSON.stringify(parser.termNames)}` : ''}
-})` // FIXME more compact format for term names (omit named nodes, drop quotes)
-
-  let terms: string[] = []
-  for (let name in builder.termTable) {
-    let id = name
-    if (KEYWORDS.includes(id)) for (let i = 1;; i++) {
-      id = "_".repeat(i) + name
-      if (!(id in builder.termTable)) break
-    }
-    terms.push(`${id}${mod == "cjs" ? ":" : " ="} ${builder.termTable[name]}`)
-  }
-  for (let id = 0; id < builder.dialects.length; id++)
-    terms.push(`Dialect_${builder.dialects[id]}${mod == "cjs" ? ":" : " ="} ${id}`)
-
-  let exportName = options.exportName || "parser"
-  return {
-    parser: head + (mod == "cjs" ? `exports.${exportName} = ${parserStr}\n` : `export const ${exportName} = ${parserStr}\n`),
-    terms: mod == "cjs" ? `${gen}module.exports = {\n  ${terms.join(",\n  ")}\n}`
-      : `${gen}export const\n  ${terms.join(",\n  ")}\n`
-  }
+  return new Builder(text, options).getParserFile()
 }
 
 function ignored(name: string) {
