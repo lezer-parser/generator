@@ -1,4 +1,4 @@
-import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
+import {GrammarDeclaration, RuleDeclaration, PrecDeclaration, DynamicPrecDeclaration,
         TokenPrecDeclaration, TokenDeclaration, LiteralDeclaration, ExternalTokenDeclaration,
         ExternalSpecializeDeclaration, ExternalGrammarDeclaration, ExternalPropDeclaration, Identifier,
         Expression, NameExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
@@ -123,6 +123,7 @@ function parseGrammar(input: Input) {
   let start = input.start
   let rules: RuleDeclaration[] = []
   let prec: PrecDeclaration | null = null
+  let dPrec: DynamicPrecDeclaration | null = null
   let tokens: TokenDeclaration | null = null
   let mainSkip: Expression | null = null
   let scopedSkip: {expr: Expression, rules: readonly RuleDeclaration[]}[] = []
@@ -161,7 +162,10 @@ function parseGrammar(input: Input) {
       }
     } else if (input.type == "at" && input.value == "precedence") {
       if (prec) input.raise(`Multiple precedence declarations`, input.start)
-      else prec = parsePrecedence(input)
+      prec = parsePrecedence(input)
+    } else if (input.type == "at" && input.value == "dynamic") {
+      if (dPrec) input.raise(`Multiple dynamic precedence declarations`, input.start)
+      dPrec = parseDynamicPrecedence(input)
     } else if (input.eat("at", "detectDelim")) {
       autoDelim = true
     } else if (input.eat("at", "skip")) {
@@ -180,7 +184,7 @@ function parseGrammar(input: Input) {
     }
   }
   if (!tops.length) return input.raise(`Missing @top declaration`)
-  return new GrammarDeclaration(start, rules, tops, tokens, external, specialized, prec,
+  return new GrammarDeclaration(start, rules, tops, tokens, external, specialized, prec, dPrec,
                                 mainSkip, scopedSkip, dialects, nested, props, autoDelim)
 }
 
@@ -377,6 +381,22 @@ function parsePrecedence(input: Input) {
     })
   }
   return new PrecDeclaration(start, items)
+}
+
+function parseDynamicPrecedence(input: Input) {
+  let {start} = input
+  input.next()
+  input.expect("id", "precedence")
+  input.expect("{")
+  let items: {id: Identifier, negative: boolean}[] = []
+  while (!input.eat("}")) {
+    if (items.length) input.eat(",")
+    let id = parseIdent(input), negative = input.eat("at", "penalty")
+    if (!negative && items.some(i => i.negative))
+      input.raise("Penalty dynamic precedences can not follow regular ones", id.start)
+    items.push({id, negative})
+  }
+  return new DynamicPrecDeclaration(start, items)
 }
 
 function parseTokens(input: Input) {

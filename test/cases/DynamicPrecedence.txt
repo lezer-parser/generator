@@ -1,0 +1,27 @@
+@dynamic precedence { a, b, penalty @penalty }
+
+@top { (A | B)+ }
+
+A[dynamicPrecedence=a] { "foo" "bar" ~ambig }
+
+B[dynamicPrecedence=b] { "foo" ("bar" | "baz" ~ambig | Inner) ~ambig }
+
+Inner[dynamicPrecedence=penalty] { ("baz" | "quux") ~ambig }
+
+# Prefers As
+
+foobarfoobar
+
+==> A, A
+
+# Can parse Bs
+
+foobazfoobar
+
+==> B, A
+
+# Will use penalized rules when necessary
+
+fooquux
+
+==> B(Inner)

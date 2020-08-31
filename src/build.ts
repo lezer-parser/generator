@@ -118,6 +118,8 @@ class Builder {
   termTable: {[name: string]: number} = Object.create(null)
   knownProps: {[name: string]: {prop: NodeProp<any>, source: {name: string, from: string | null}}} = Object.create(null)
   dialects: readonly string[]
+  dynamicPrecedences: {[name: string]: number} = Object.create(null)
+  dynamicRulePrecedences: {rule: Term, prec: number}[] = []
 
   astRules: {skip: Term, rule: RuleDeclaration}[] = []
   currentSkip: Term[] = []
@@ -139,6 +141,14 @@ class Builder {
     }
 
     this.dialects = this.ast.dialects.map(d => d.name)
+
+    if (this.ast.dynamicPrecedences) {
+      let pos = this.ast.dynamicPrecedences.items.filter(i => !i.negative)
+      for (let i = 0; i < pos.length; i++) this.dynamicPrecedences[pos[i].id.name] = pos.length - i
+      let neg = this.ast.dynamicPrecedences.items.filter(i => i.negative)
+      for (let i = 0; i < neg.length; i++) this.dynamicPrecedences[neg[i].id.name] = -(i + 1)
+    }
+
     this.tokens = new TokenSet(this, this.ast.tokens)
     this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
     this.externalSpecializers = this.ast.externalSpecializers.map(decl => new ExternalSpecializer(this, decl))
@@ -187,7 +197,8 @@ class Builder {
 
     for (const top of this.ast.topRules) {
       this.currentSkip.push(mainSkip)
-      let {name, props} = this.nodeInfo(top.props, top.id.name == "@top" ? null : top.id.name, none, none, top.expr, {top: "true"})
+      let {name, props} = this.nodeInfo(top.props, "", top.id.name == "@top" ? null : top.id.name,
+                                        none, none, top.expr, {top: "true"})
       this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
       this.currentSkip.pop()
     }
@@ -196,8 +207,9 @@ class Builder {
 
     for (let rule of this.ast.rules) {
       if (rule.exported && this.ruleNames[rule.id.name] && rule.params.length == 0) {
-        let {name, props} = this.nodeInfo(rule.props, rule.id.name)
+        let {name, props, dynamicPrec} = this.nodeInfo(rule.props, "p", rule.id.name)
         let term = this.namedTerms[rule.id.name] = this.newName(rule.id.name, name, props)
+        if (dynamicPrec) this.registerDynamicPrec(term, dynamicPrec)
         term.preserve = true
         if (rule.expr instanceof SequenceExpression && rule.expr.exprs.length == 0)
           this.used(rule.id.name)
@@ -315,6 +327,12 @@ class Builder {
     for (let i = 0; i < this.dialects.length; i++)
       dialects[this.dialects[i]] = data.storeArray((this.tokens.byDialect[i] || none).map(t => t.id).concat(Seq.End))
 
+    let dynamicPrecedences = null
+    if (this.dynamicRulePrecedences.length) {
+      dynamicPrecedences = Object.create(null)
+      for (let {rule, prec} of this.dynamicRulePrecedences) dynamicPrecedences[rule.id] = prec
+    }
+
     let nested = this.nestedGrammars.map(g => ({
       name: g.name,
       grammar: tempNestedGrammar(this, g),
@@ -331,7 +349,7 @@ class Builder {
 
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     return new (Parser as any)(states, data.finish(), computeGotoTable(table), group, maxTerm, minRepeatTerm,
-                               tokenizers, topRules, nested, dialects,
+                               tokenizers, topRules, nested, dialects, dynamicPrecedences,
                                specialized, specializers, precTable, names)
   }
 
@@ -698,9 +716,10 @@ class Builder {
 
   buildRule(rule: RuleDeclaration, args: readonly Expression[], skip: Term, inline = false): Term {
     let expr = this.substituteArgs(rule.expr, args, rule.params)
-    let {name: nodeName, props} = this.nodeInfo(rule.props || none, rule.id.name, args, rule.params, rule.expr)
+    let {name: nodeName, props, dynamicPrec} = this.nodeInfo(rule.props || none, "p", rule.id.name, args, rule.params, rule.expr)
     if (rule.exported && rule.params.length) this.warn(`Can't export parameterized rules`, rule.start)
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), nodeName || true, props)
+    if (dynamicPrec) this.registerDynamicPrec(name, dynamicPrec)
     if ((name.nodeType || rule.exported) && rule.params.length == 0) {
       if (!nodeName) name.preserve = true
       this.namedTerms[rule.id.name] = name
@@ -713,29 +732,38 @@ class Builder {
     return result
   }
 
-  nodeInfo(props: readonly Prop[], defaultName: string | null = null,
+  nodeInfo(props: readonly Prop[],
+           // p for dynamic precedence, d for dialect
+           allow: "pd" | "p" | "d" | "",
+           defaultName: string | null = null,
            args: readonly Expression[] = none, params: readonly Identifier[] = none,
-           expr?: Expression, defaultProps?: Props): {name: string | null, props: Props} {
-    let result = this.nodeInfoInner(props, defaultName, args, params, expr, defaultProps)
-    if (result.dialect != null) this.raise("Can't specify a dialect on non-token rules", props[0].start)
-    return result
-  }
-    
-  nodeInfoInner(props: readonly Prop[], defaultName: string | null = null,
-                args: readonly Expression[] = none, params: readonly Identifier[] = none,
-                expr?: Expression, defaultProps?: Props): {name: string | null, props: Props, dialect: number | null} {
+           expr?: Expression, defaultProps?: Props): {
+    name: string | null,
+    props: Props,
+    dialect: number | null,
+    dynamicPrec: number
+  } {
     let result = noProps, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
-    let dialect = null
+    let dialect = null, dynamicPrec = 0
     for (let prop of props) {
       if (prop.name == "name") {
         name = this.finishProp(prop, args, params)
         if (/ /.test(name)) this.raise(`Node names cannot have spaces ('${name}')`, prop.start)
       } else if (prop.name == "dialect") {
+        if (allow.indexOf("d") < 0)
+          this.raise("Can't specify a dialect on non-token rules", props[0].start)
         if (prop.value.length != 1 && !prop.value[0].value)
           this.raise("The 'dialect' rule prop must hold a plain string value")
         let dialectID = this.dialects.indexOf(prop.value[0].value!)
         if (dialectID < 0) this.raise(`Unknown dialect '${prop.value[0].value}'`, prop.value[0].start)
         dialect = dialectID
+      } else if (prop.name == "dynamicPrecedence") {
+        if (allow.indexOf("p") < 0)
+          this.raise("Dynamic precedence can only be specified on nonterminals")
+        if (prop.value.length != 1 && !prop.value[0].value)
+          this.raise("The 'dynamicPrecedence' rule prop must hold a plain string value")
+        dynamicPrec = this.dynamicPrecedences[prop.value[0].value!]
+        if (dynamicPrec == null) this.raise(`Unknown dynamic precedence '${prop.value[0].value}'`, prop.value[0].start)
       } else if (RESERVED_PROPS.includes(prop.name)) {
         this.raise(`Prop name '${prop.name}' is reserved`, prop.start)
       } else if (!this.knownProps[prop.name]) {
@@ -758,7 +786,7 @@ class Builder {
     }
     if (result != noProps && !name && !result.top)
       this.raise(`Node has properties but no name`, props.length ? props[0].start : expr!.start)
-    return {name, props: result, dialect}
+    return {name, props: result, dialect, dynamicPrec}
   }
 
   finishProp(prop: Prop, args: readonly Expression[], params: readonly Identifier[]): string {
@@ -775,7 +803,7 @@ class Builder {
 
   resolveSpecialization(expr: SpecializeExpression) {
     let type = expr.type
-    let {name, props, dialect} = this.nodeInfoInner(expr.props)
+    let {name, props, dialect} = this.nodeInfo(expr.props, "d")
     let terminal = this.normalizeExpr(expr.token)
     if (terminal.length != 1 || terminal[0].terms.length != 1 || !terminal[0].terms[0].terminal)
       this.raise(`The first argument to '${type}' must resolve to a token`, expr.token.start)
@@ -832,6 +860,11 @@ class Builder {
     if (!firstToken || !firstToken.term.nodeName ||
         firstToken.str.indexOf(bracket[0]) < 0 || firstToken.str.indexOf(bracket[1]) > -1) return null
     return [firstToken.term, lastToken.term]
+  }
+
+  registerDynamicPrec(term: Term, prec: number) {
+    this.dynamicRulePrecedences.push({rule: term, prec})
+    term.preserve = true
   }
 }
 
@@ -1066,7 +1099,7 @@ class TokenSet {
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
     let {name: nodeName, props, dialect} =
-      this.b.nodeInfoInner(rule.props, name, expr.args, rule.params.length != expr.args.length ? none : rule.params)
+      this.b.nodeInfo(rule.props, "d", name, expr.args, rule.params.length != expr.args.length ? none : rule.params)
     let term = this.b.makeTerminal(expr.toString(), nodeName, props)
     if (dialect != null) (this.byDialect[dialect] || (this.byDialect[dialect] = [])).push(term)
 
@@ -1084,7 +1117,7 @@ class TokenSet {
     for (let built of this.built) if (built.id == id) return built.term
     let name = null, props = noProps, dialect = null
     let decl = this.ast ? this.ast.literals.find(l => l.literal == expr.value) : null
-    if (decl) ({name, props, dialect} = this.b.nodeInfoInner(decl.props, expr.value))
+    if (decl) ({name, props, dialect} = this.b.nodeInfo(decl.props, "d", expr.value))
 
     let term = this.b.makeTerminal(id, name, props)
     if (dialect != null) (this.byDialect[dialect] || (this.byDialect[dialect] = [])).push(term)
@@ -1425,7 +1458,7 @@ function gatherExtTokens(b: Builder, tokens: readonly {id: Identifier, props: re
   let result: {[name: string]: Term} = Object.create(null)
   for (let token of tokens) {
     b.unique(token.id)
-    let {name, props, dialect} = b.nodeInfoInner(token.props, token.id.name)
+    let {name, props, dialect} = b.nodeInfo(token.props, "d", token.id.name)
     let term = b.makeTerminal(token.id.name, name, props)
     if (dialect != null) (b.tokens.byDialect[dialect] || (b.tokens.byDialect[dialect] = [])).push(term)
     b.namedTerms[token.id.name] = result[token.id.name] = term
@@ -1712,7 +1745,8 @@ ${encodeArray(end.data)}, ${placeholder}]`
   tokenizers: [${tokenizers.join(", ")}],
   topRules: ${JSON.stringify(parser.topRules)}${nested.length ? `,
   nested: [${nested.join(", ")}]` : ""}${dialects.length ? `,
-  dialects: {${dialects.join(", ")}}` : ""}${specialized.length ? `,
+  dialects: {${dialects.join(", ")}}` : ""}${parser.dynamicPrecedences ? `,
+  dynamicPrecedences: ${JSON.stringify(parser.dynamicPrecedences)}` : ""}${specialized.length ? `,
   specialized: [${specialized.join(",")}]` : ""},
   tokenPrec: ${parser.tokenPrecTable}${options.includeNames ? `,
   termNames: ${JSON.stringify(parser.termNames)}` : ''}
