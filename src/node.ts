@@ -10,7 +10,6 @@ export class GrammarDeclaration extends Node {
               readonly externalTokens: readonly ExternalTokenDeclaration[],
               readonly externalSpecializers: readonly ExternalSpecializeDeclaration[],
               readonly precedences: PrecDeclaration | null,
-              readonly dynamicPrecedences: DynamicPrecDeclaration | null,
               readonly mainSkip: Expression | null,
               readonly scopedSkip: readonly {expr: Expression, rules: readonly RuleDeclaration[]}[],
               readonly dialects: readonly Identifier[],
@@ -39,13 +38,6 @@ export class RuleDeclaration extends Node {
 export class PrecDeclaration extends Node {
   constructor(start: number,
               readonly items: readonly {id: Identifier, type: "left" | "right" | "cut" | null}[]) {
-    super(start)
-  }
-}
-
-export class DynamicPrecDeclaration extends Node {
-  constructor(start: number,
-              readonly items: readonly {id: Identifier, negative: boolean}[]) {
     super(start)
   }
 }

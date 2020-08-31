@@ -1,12 +1,10 @@
-@dynamic precedence { a, b, penalty @penalty }
-
 @top { (A | B)+ }
 
-A[dynamicPrecedence=a] { "foo" "bar" ~ambig }
+A[dynamicPrecedence=2] { "foo" "bar" ~ambig }
 
-B[dynamicPrecedence=b] { "foo" ("bar" | "baz" ~ambig | Inner) ~ambig }
+B[dynamicPrecedence=1] { "foo" ("bar" | "baz" ~ambig | Inner) ~ambig }
 
-Inner[dynamicPrecedence=penalty] { ("baz" | "quux") ~ambig }
+Inner[dynamicPrecedence=-1] { ("baz" | "quux") ~ambig }
 
 # Prefers As
 

@@ -117,7 +117,6 @@ class Builder {
   termTable: {[name: string]: number} = Object.create(null)
   knownProps: {[name: string]: {prop: NodeProp<any>, source: {name: string, from: string | null}}} = Object.create(null)
   dialects: readonly string[]
-  dynamicPrecedences: {[name: string]: number} = Object.create(null)
   dynamicRulePrecedences: {rule: Term, prec: number}[] = []
 
   astRules: {skip: Term, rule: RuleDeclaration}[] = []
@@ -140,13 +139,6 @@ class Builder {
     }
 
     this.dialects = this.ast.dialects.map(d => d.name)
-
-    if (this.ast.dynamicPrecedences) {
-      let pos = this.ast.dynamicPrecedences.items.filter(i => !i.negative)
-      for (let i = 0; i < pos.length; i++) this.dynamicPrecedences[pos[i].id.name] = pos.length - i
-      let neg = this.ast.dynamicPrecedences.items.filter(i => i.negative)
-      for (let i = 0; i < neg.length; i++) this.dynamicPrecedences[neg[i].id.name] = -(i + 1)
-    }
 
     this.tokens = new TokenSet(this, this.ast.tokens)
     this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
@@ -966,10 +958,9 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
       } else if (prop.name == "dynamicPrecedence") {
         if (allow.indexOf("p") < 0)
           this.raise("Dynamic precedence can only be specified on nonterminals")
-        if (prop.value.length != 1 && !prop.value[0].value)
-          this.raise("The 'dynamicPrecedence' rule prop must hold a plain string value")
-        dynamicPrec = this.dynamicPrecedences[prop.value[0].value!]
-        if (dynamicPrec == null) this.raise(`Unknown dynamic precedence '${prop.value[0].value}'`, prop.value[0].start)
+        if (prop.value.length != 1 || !/^-?(?:10|\d)$/.test(prop.value[0].value))
+          this.raise("The 'dynamicPrecedence' rule prop must hold an integer between -10 and 10")
+        dynamicPrec = +prop.value[0].value
       } else if (RESERVED_PROPS.includes(prop.name)) {
         this.raise(`Prop name '${prop.name}' is reserved`, prop.start)
       } else if (!this.knownProps[prop.name]) {
