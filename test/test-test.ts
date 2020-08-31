@@ -1,3 +1,4 @@
+// @ts-ignore
 import {fileTests} from "../dist/test.cjs"
 
 describe("test", () => {

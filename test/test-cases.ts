@@ -1,5 +1,6 @@
 import {buildParser} from ".."
 import {Parser, ExternalTokenizer, InputStream, Token} from "lezer"
+// @ts-ignore
 import {fileTests} from "../dist/test.cjs"
 
 const ist = require("ist")

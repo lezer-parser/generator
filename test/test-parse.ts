@@ -1,5 +1,6 @@
 import {buildParser, BuildOptions} from ".."
 import {Parser, InputStream, Stack, Tree} from "lezer"
+// @ts-ignore
 import {testTree} from "../dist/test.cjs"
 const ist = require("ist")
 
