@@ -477,7 +477,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
         return `{term: ${v.term!.id}, get: (value, stack) => (${name}(value, stack) << 1)${
           v.ast.type == "extend" ? ` | ${Specialize.Extend}` : ''}}`
       } else {
-        let tableName = getName("spec_" + v.token.name.replace(/\W/, ""))
+        let tableName = getName("spec_" + v.token.name.replace(/\W/g, ""))
         specHead += `const ${tableName} = ${specializationTableString(v.table)}\n`
         return `{term: ${v.token.id}, get: value => ${tableName}[value] || -1}`
       }

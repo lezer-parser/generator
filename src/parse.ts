@@ -274,9 +274,14 @@ function parseExprInner(input: Input): Expression {
     input.next()
     let props = parseProps(input)
     input.expect("<")
-    let token = parseExprChoice(input)
-    input.expect(",")
-    let content = parseExprChoice(input)
+    let token = parseExprChoice(input), content
+    if (input.eat(",")) {
+      content = parseExprChoice(input)
+    } else if (token instanceof LiteralExpression) {
+      content = token
+    } else {
+      input.raise(`@${value} requires two arguments when its first argument isn't a literal string`)
+    }
     input.expect(">")
     return new SpecializeExpression(start, value, props, token, content)
   } else if (input.type == "[") {
