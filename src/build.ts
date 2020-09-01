@@ -107,7 +107,8 @@ class Builder {
   externalTokens: ExternalTokenSet[]
   externalSpecializers: ExternalSpecializer[]
   nestedGrammars: NestedGrammarSpec[] = []
-  specialized: {[name: string]: {value: string, term: Term, type: string, dialect: number | null}[]} = Object.create(null)
+  specialized: {[name: string]: {value: string, name: string, term: Term, type: string, dialect: number | null}[]}
+    = Object.create(null)
   tokenOrigins: {[name: string]: {spec?: Term, external?: ExternalTokenSet | ExternalSpecializer}} = Object.create(null)
   rules: Rule[] = []
   built: BuiltRule[] = []
@@ -1021,13 +1022,15 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
           token = this.makeTerminal(term.name + "/" + JSON.stringify(value), name, props)
           if (dialect != null) (this.tokens.byDialect[dialect] || (this.tokens.byDialect[dialect] = [])).push(token)
         }
-        table.push({value, term: token, type, dialect})
+        table.push({value, term: token, type, dialect, name})
         this.tokenOrigins[token.name] = {spec: term}
       } else {
         if (known.type != type)
           this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`, expr.start)
         if (known.dialect != dialect)
           this.raise(`Conflicting dialects for specialization ${JSON.stringify(value)} of ${term.name}`, expr.start)
+        if (known.name != name)
+          this.raise(`Conflicting names for specialization ${JSON.stringify(value)} of ${term.name}`, expr.start)
         if (token && known.term != token)
           this.raise(`Conflicting specialization tokens for ${JSON.stringify(value)} of ${term.name}`, expr.start)
         token = known.term
