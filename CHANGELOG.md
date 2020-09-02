@@ -1,3 +1,31 @@
+## 0.10.2 (2020-09-02)
+
+### Bug fixes
+
+Actually reuse parser states when skip rules refer to rules also used in other contexts.
+    
+Fix a bug where the automaton generated for skip rules wasn't being compressed.
+
+Properly raise an error when different specializations for the same token are given different names.
+
+Fix a bug that prevented `NodeProp.skipped` from being properly attached to node types.
+
+Fix a corner-case infinite loop in the state-collapsing algorithm (and speed it up).
+
+Compile `+` and `*` operators in a way that is less likely to lead to conflicts.
+
+Emit all shift/reduce and reduce/reduce conflicts in a single run, rather than stopping on the first one.
+
+Emit all overlapping token errors, rather than only the first one.
+
+### New features
+
+Inline rules can now be anonymous (with syntax `[props..] { body }`).
+
+Dynamic precedences can now be associated with productions, which can help pick the preferred GLR parse when a grammar is ambiguous.
+
+Token `@precedence` declarations can now refer to a parameterized rule by name (without arguments) to indicate that all instances of that rule have a given precedence.
+
 ## 0.10.1 (2020-08-07)
 
 ### Bug fixes
