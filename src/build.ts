@@ -63,7 +63,7 @@ class BuiltRule {
   }
 
   matchesRepeat(expr: RepeatExpression) {
-    return this.id == expr.kind && exprEq(expr.expr, this.args[0])
+    return this.id == "+" && exprEq(expr.expr, this.args[0])
   }
 }
 
@@ -863,7 +863,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     let {inner, outer} = this.terms.makeRepeat(this.terms.uniqueName(name))
 
     this.defineRule(outer, [p(inner)])
-    this.built.push(new BuiltRule(expr.kind, [expr.expr], outer))
+    this.built.push(new BuiltRule("+", [expr.expr], outer))
 
     let top = this.normalizeExpr(expr.expr)
     top.push(new Parts([inner, inner], [Conflicts.none, new Conflicts(PREC_REPEAT - 1, none), new Conflicts(PREC_REPEAT, none)]))
