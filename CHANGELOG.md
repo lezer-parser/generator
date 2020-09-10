@@ -3,7 +3,7 @@
 ### Bug fixes
 
 Actually reuse parser states when skip rules refer to rules also used in other contexts.
-    
+
 Fix a bug where the automaton generated for skip rules wasn't being compressed.
 
 Properly raise an error when different specializations for the same token are given different names.
