@@ -66,25 +66,24 @@ export class State {
     return result
   }
 
-  findConflicts(appearTogether: (a: Term, b: Term) => boolean): Conflict[] {
+  findConflicts(occurTogether: (a: Term, b: Term) => boolean): Conflict[] {
     let conflicts: Conflict[] = [], cycleTerms = this.cycleTerms()
-    function add(a: Term, b: Term, aEdges: Edge[], bEdges?: Edge[]) {
-      if (a.id < b.id) [a, b] = [b, a]
-      if (!conflicts.some(c => c.a == a && c.b == b)) {
-        conflicts.push(new Conflict(a, b, exampleFromEdges(aEdges), bEdges && exampleFromEdges(bEdges)))
-      }
+    function add(a: Term, b: Term, soft: number, aEdges: Edge[], bEdges?: Edge[]) {
+      if (a.id < b.id) { [a, b] = [b, a]; soft = -soft }
+      let found = conflicts.find(c => c.a == a && c.b == b)
+      if (!found) conflicts.push(new Conflict(a, b, soft, exampleFromEdges(aEdges), bEdges && exampleFromEdges(bEdges)))
+      else if (found.soft != soft) found.soft = 0
     }
     this.reachable((state, edges) => {
       if (state.accepting.length == 0) return
       for (let i = 0; i < state.accepting.length; i++)
         for (let j = i + 1; j < state.accepting.length; j++)
-          add(state.accepting[i], state.accepting[j], edges)
+          add(state.accepting[i], state.accepting[j], 0, edges)
       state.reachable((s, es) => {
         if (s != state) for (let term of s.accepting) {
           let hasCycle = cycleTerms.includes(term)
-          for (let orig of state.accepting)
-            if (term != orig && (hasCycle || cycleTerms.includes(orig) || !appearTogether(term, orig)))
-              add(term, orig, edges, edges.concat(es))
+          for (let orig of state.accepting) if (term != orig)
+            add(term, orig, hasCycle || cycleTerms.includes(orig) || !occurTogether(term, orig) ?  0 : 1, edges, edges.concat(es))
         }
       })
     })
@@ -186,7 +185,12 @@ export class State {
 }
 
 export class Conflict {
-  constructor(readonly a: Term, readonly b: Term, readonly exampleA: string, readonly exampleB?: string) {}
+  constructor(readonly a: Term, readonly b: Term,
+              // Conflicts between two non-cyclic tokens are marked as
+              // 'soft', with a negative number if a is shorter than
+              // b, and a positive if b is shorter than a.
+              public soft: number,
+              readonly exampleA: string, readonly exampleB?: string) {}
 }
 
 function exampleFromEdges(edges: readonly Edge[]) {

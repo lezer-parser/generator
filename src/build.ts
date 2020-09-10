@@ -107,7 +107,7 @@ class Builder {
   externalTokens: ExternalTokenSet[]
   externalSpecializers: ExternalSpecializer[]
   nestedGrammars: NestedGrammarSpec[] = []
-  specialized: {[name: string]: {value: string, name: string, term: Term, type: string, dialect: number | null}[]}
+  specialized: {[name: string]: {value: string, name: string | null, term: Term, type: string, dialect: number | null}[]}
     = Object.create(null)
   tokenOrigins: {[name: string]: {spec?: Term, external?: ExternalTokenSet | ExternalSpecializer}} = Object.create(null)
   rules: Rule[] = []
@@ -267,7 +267,7 @@ class Builder {
       return {skip, rule: rules.length ? name : null, startTokens, id}
     })
     let fullTable = buildFullAutomaton(this.terms, startTerms, first)
-    let {tokenMasks, tokenGroups, tokenPrec} = this.tokens.buildTokenGroups(fullTable, skipInfo)
+    let {tokenGroups, tokenPrec, tokenData} = this.tokens.buildTokenGroups(fullTable, skipInfo)
     let table = finishAutomaton(fullTable) as readonly LRState[]
     let skipState = findSkipStates(table, this.terms.tops)
 
@@ -281,7 +281,6 @@ class Builder {
     for (let name in this.specialized)
       specialized.push({token: this.terms.names[name], table: buildSpecializeTable(this.specialized[name])})
 
-    let tokenData = this.tokens.tokenizer(tokenMasks, tokenPrec)
     let tokStart = (tokenizer: TokenGroup | ExternalTokenDeclaration) => {
       if (tokenizer instanceof ExternalTokenDeclaration) return tokenizer.start
       return this.tokens.ast ? this.tokens.ast.start : -1
@@ -959,9 +958,9 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
       } else if (prop.name == "dynamicPrecedence") {
         if (allow.indexOf("p") < 0)
           this.raise("Dynamic precedence can only be specified on nonterminals")
-        if (prop.value.length != 1 || !/^-?(?:10|\d)$/.test(prop.value[0].value))
+        if (prop.value.length != 1 || !/^-?(?:10|\d)$/.test(prop.value[0].value!))
           this.raise("The 'dynamicPrecedence' rule prop must hold an integer between -10 and 10")
-        dynamicPrec = +prop.value[0].value
+        dynamicPrec = +prop.value[0].value!
       } else if (RESERVED_PROPS.includes(prop.name)) {
         this.raise(`Prop name '${prop.name}' is reserved`, prop.start)
       } else if (!this.knownProps[prop.name]) {
@@ -1287,7 +1286,6 @@ class TokenSet {
   building: BuildingRule[] = [] // Used for recursion check
   rules: readonly RuleDeclaration[]
   byDialect: {[dialect: number]: Term[]} = Object.create(null)
-  precedences: Term[] = []
   precedenceRelations: readonly {term: Term, after: readonly Term[]}[] = []
 
   constructor(readonly b: Builder, readonly ast: TokenDeclaration | null) {
@@ -1413,56 +1411,25 @@ class TokenSet {
     for (let [a, b] of STD_RANGES[expr.id.name]) from.edge(a, b, to)
   }
 
-  tokenizer(tokenMasks: {[id: number]: number}, precedence: readonly number[]) {
-    let startState = this.startState.compile()
-    if (startState.accepting.length)
-      this.b.raise(`Grammar contains zero-length tokens (in '${startState.accepting[0].name}')`,
-                   this.rules.find(r => r.id.name == startState.accepting[0].name)!.start)
-    if (/\btokens\b/.test(verbose)) console.log(startState.toString())
-    return startState.toArray(tokenMasks, precedence)
-  }
-
   takePrecedences() {
-    let rel: {term: Term, after: Term[]}[] = []
+    let rel: {term: Term, after: Term[]}[] = this.precedenceRelations = []
     if (this.ast) for (let group of this.ast.precedences) {
-      let terms: Term[] = []
+      let prev: Term[] = []
       for (let item of group.items) {
-        let startLen = terms.length
+        let level = []
         if (item instanceof NameExpression) {
           for (let built of this.built)
             if (item.args.length ? built.matches(item) : built.id == item.id.name)
-              terms.push(built.term)
+              level.push(built.term)
         } else {
           let id = JSON.stringify(item.value), found = this.built.find(b => b.id == id)
-          if (found) terms.push(found.term)
+          if (found) level.push(found.term)
         }
-        if (terms.length == startLen)
-          this.b.warn(`Precedence specified for unknown token ${item}`, item.start)
-      }
-      for (let i = 0; i < terms.length; i++) {
-        let found = rel.find(r => r.term == terms[i])
-        if (!found) rel.push(found = {term: terms[i], after: terms.slice(0, i)})
-        else for (let j = 0; j < i; j++) addToSet(found.after, terms[j])
+        if (!level.length) this.b.warn(`Precedence specified for unknown token ${item}`, item.start)
+        for (let term of level) addRel(rel, term, prev)
+        prev = prev.concat(level)
       }
     }
-    this.precedenceRelations = rel.slice()
-
-    let ordered: Term[] = []
-    add: for (;;) {
-      for (let i = 0; i < rel.length; i++) {
-        let record = rel[i]
-        if (record.after.every(t => ordered.includes(t))) {
-          ordered.push(record.term)
-          let last = rel.pop()!
-          if (i < rel.length) rel[i] = last
-          continue add
-        }
-      }
-      if (rel.length)
-        this.b.raise(`Cyclic token precedence relation between ${rel.map(r => r.term).join(", ")}`)
-      break
-    }
-    this.precedences = ordered
   }
 
   precededBy(a: Term, b: Term) {
@@ -1494,13 +1461,15 @@ class TokenSet {
   // this purpose.
   buildTokenGroups(states: readonly LRState[], skipInfo: readonly SkipInfo[]) {
     let tokens = this.startState.compile()
-    let usedPrec: Term[] = []
-    let conflicts = tokens.findConflicts(checkTogether(states, this.b, skipInfo)).filter(({a, b}) => {
-      // If both tokens have a precedence, the conflict is resolved
-      addToSet(usedPrec, a)
-      addToSet(usedPrec, b)
-      return !this.precededBy(a, b) && !this.precededBy(b, a)
-    })
+    if (tokens.accepting.length)
+      this.b.raise(`Grammar contains zero-length tokens (in '${tokens.accepting[0].name}')`,
+                   this.rules.find(r => r.id.name == tokens.accepting[0].name)!.start)
+    if (/\btokens\b/.test(verbose)) console.log(tokens.toString())
+
+    // If there is a precedence specified for the pair, the conflict is resolved
+    let allConflicts = tokens.findConflicts(checkTogether(states, this.b, skipInfo))
+      .filter(({a, b}) => !this.precededBy(a, b) && !this.precededBy(b, a))
+    let softConflicts = allConflicts.filter(c => c.soft), conflicts = allConflicts.filter(c => !c.soft)
     let errors: {conflict: Conflict, error: string}[] = []
 
     let groups: TokenGroup[] = []
@@ -1509,43 +1478,39 @@ class TokenSet {
       // Find potentially-conflicting terms (in terms) and the things
       // they conflict with (in conflicts), and raise an error if
       // there's a token conflict directly in this state.
-      let terms: Term[] = [], hasTerms = false, incompatible: Term[] = []
+      let terms: Term[] = [], incompatible: Term[] = []
       let skip = skipInfo[this.b.skipRules.indexOf(state.skip)].startTokens
       for (let term of skip)
         if (state.actions.some(a => a.term == term))
           this.b.raise(`Use of token ${term.name} conflicts with skip rule`)
 
+      let stateTerms: Term[] = []
       for (let i = 0; i < state.actions.length + (skip ? skip.length : 0); i++) {
         let term = i < state.actions.length ? state.actions[i].term : skip[i - state.actions.length]
         let orig = this.b.tokenOrigins[term.name]
-        if (orig && orig.spec) {
-          if (terms.includes(orig.spec)) continue
-          term = orig.spec
-        } else if (orig && orig.external) {
-          continue
-        }
-        hasTerms = true
-        let hasConflict = false
+        if (orig && orig.spec) term = orig.spec
+        else if (orig && orig.external) continue
+        addToSet(stateTerms, term)
+      }
+      if (stateTerms.length == 0) continue
+
+      for (let term of stateTerms) {
         for (let conflict of conflicts) {
           let conflicting = conflict.a == term ? conflict.b : conflict.b == term ? conflict.a : null
           if (!conflicting) continue
-          hasConflict = true
-          if (!incompatible.includes(conflicting)) {
-            if (state.actions.some(a => a.term == conflicting) && !errors.some(e => e.conflict == conflict)) {
-              errors.push({
-                error: `Overlapping tokens ${term.name} and ${conflicting.name} used in same context ` +
-                  `(example: ${JSON.stringify(conflict.exampleA)}${
-                    conflict.exampleB ? ` vs ${JSON.stringify(conflict.exampleB)}` : ""})\n` +
-                  `After: ${state.set[0].trail()}`,
-                conflict
-              })
-            }
-            incompatible.push(conflicting)
+          if (stateTerms.includes(conflicting) && !errors.some(e => e.conflict == conflict)) {
+            errors.push({
+              error: `Overlapping tokens ${term.name} and ${conflicting.name} used in same context ` +
+                `(example: ${JSON.stringify(conflict.exampleA)}${
+                   conflict.exampleB ? ` vs ${JSON.stringify(conflict.exampleB)}` : ""})\n` +
+                `After: ${state.set[0].trail()}`,
+              conflict
+            })
           }
+          addToSet(terms, term)
+          addToSet(incompatible, conflicting)
         }
-        if (hasConflict) terms.push(term)
       }
-      if (!hasTerms) continue
 
       let tokenGroup = null
       for (let group of groups) {
@@ -1566,8 +1531,35 @@ class TokenSet {
     if (groups.length > 16)
       this.b.raise(`Too many different token groups (${groups.length}) to represent them as a 16-bit bitfield`)
 
-    let tokenPrec = this.precedences.filter(term => usedPrec.includes(term)).map(t => t.id)
-    return {tokenMasks: buildTokenMasks(groups), tokenGroups: groups, tokenPrec}
+    let precTable: number[] = [], rel = this.precedenceRelations.slice()
+    // Add entries for soft-conflicting tokens that are in the
+    // precedence table, to make sure they'll appear in the right
+    // order and don't mess up the longer-wins default rule.
+    for (let {a, b, soft} of softConflicts) if (soft) {
+      if (!rel.some(r => r.term == a) || !rel.some(r => r.term == b)) continue
+      if (soft < 0) [a, b] = [b, a] // Now a is longer than b (and should thus take precedence)
+      addRel(rel, b, [a])
+      addRel(rel, a, [])
+    }
+    add: while (rel.length) {
+      for (let i = 0; i < rel.length; i++) {
+        let record = rel[i]
+        if (record.after.every(t => precTable.includes(t.id))) {
+          precTable.push(record.term.id)
+          if (rel.length == 1) break add
+          rel[i] = rel.pop()!
+          continue add
+        }
+      }
+      this.b.raise(`Cyclic token precedence relation between ${rel.map(r => r.term).join(", ")}`)
+    }
+    precTable = precTable.filter(id => allConflicts.some(c => !c.soft && (c.a.id == id || c.b.id == id)))
+
+    return {
+      tokenGroups: groups,
+      tokenPrec: precTable,
+      tokenData: tokens.toArray(buildTokenMasks(groups), precTable)
+    }
   }
 }
 
@@ -1577,7 +1569,6 @@ function checkTogether(states: readonly LRState[], b: Builder, skipInfo: readonl
     return state.actions.some(a => a.term == term) ||
       skipInfo[b.skipRules.indexOf(state.skip)].startTokens.includes(term)
   }
-
   return (a: Term, b: Term) => {
     if (a.id < b.id) [a, b] = [b, a]
     let key = a.id | (b.id << 16), cached = cache[key]
@@ -1674,6 +1665,12 @@ function findExtToken(b: Builder, tokens: {[name: string]: Term}, expr: NameExpr
   if (expr.args.length) b.raise("External tokens cannot take arguments", expr.args[0].start)
   b.used(expr.id.name)
   return found
+}
+
+function addRel(rel: {term: Term, after: readonly Term[]}[], term: Term, after: readonly Term[]) {
+  let found = rel.findIndex(r => r.term == term)
+  if (found < 0) rel.push({term, after})
+  else rel[found] = {term, after: rel[found].after.concat(after)}
 }
 
 class ExternalTokenSet {

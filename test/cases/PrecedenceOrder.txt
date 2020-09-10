@@ -1,0 +1,18 @@
+@top { (Tag | "<" | "<<" | "<<<")+ }
+
+@skip { space }
+
+@tokens {
+  space { " "+ }
+  Tag { "<" "<"* std.asciiLetter+ }
+  @precedence { Tag, "<<" }
+  @precedence { Tag, "<" }
+  @precedence { Tag, "<<<" }
+  "<" "<<" "<<<"
+}
+
+# Doesn't create an accidental ordering
+
+<okay <<< << <
+
+==> Tag, "<<<", "<<", "<"

@@ -1,0 +1,11 @@
+@top { (A | B)+ }
+
+A { "<" "x" A? ">" }
+
+B { "<<" ">>" }
+
+# Token from unrelated state can't shadow
+
+<x<x>>
+
+==> A(A)
