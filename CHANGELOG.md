@@ -1,3 +1,9 @@
+## 0.10.3 (2020-09-11)
+
+### Bug fixes
+
+Make sure unrelated precedence declarations for non-cyclic overlapping tokens don't end up also defining a relation between those tokens.
+
 ## 0.10.2 (2020-09-02)
 
 ### Bug fixes
