@@ -1,3 +1,9 @@
+## 0.10.4 (2020-09-14)
+
+### Bug fixes
+
+Fix a bug that broke `@external prop` declarations in grammars.
+
 ## 0.10.3 (2020-09-11)
 
 ### Bug fixes
