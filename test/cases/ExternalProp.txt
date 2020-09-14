@@ -1,0 +1,11 @@
+@top { A+ }
+
+@external prop tag from "./script"
+
+A[tag=55] { "A" }
+
+# Attaches the prop
+
+A
+
+==> A

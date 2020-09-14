@@ -149,7 +149,7 @@ function parseGrammar(input: Input) {
     } else if (input.eat("at", "external")) {
       if (input.eat("id", "tokens")) external.push(parseExternalTokens(input, start))
       else if (input.eat("id", "grammar")) nested.push(parseExternalGrammar(input, start))
-      else if (input.eat("id", "prop")) nested.push(parseExternalProp(input, start))
+      else if (input.eat("id", "prop")) props.push(parseExternalProp(input, start))
       else if (input.eat("id", "extend")) specialized.push(parseExternalSpecialize(input, "extend", start))
       else if (input.eat("id", "specialize")) specialized.push(parseExternalSpecialize(input, "specialize", start))
       else input.unexpected()

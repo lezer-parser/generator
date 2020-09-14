@@ -1,5 +1,5 @@
 import {buildParser} from ".."
-import {Parser, ExternalTokenizer, InputStream, Token} from "lezer"
+import {Parser, ExternalTokenizer, InputStream, Token, NodeProp} from "lezer"
 // @ts-ignore
 import {fileTests} from "../dist/test.cjs"
 
@@ -24,6 +24,10 @@ function externalSpecializer(name: string, terms: {[name: string]: number}) {
   throw new Error("Undefined external specialize " + name)
 }
 
+function externalProps() {
+  return NodeProp.string()
+}
+
 describe("Cases", () => {
   for (let file of fs.readdirSync(caseDir)) {
     let match = /^(.*)\.txt$/.exec(file)
@@ -34,7 +38,7 @@ describe("Cases", () => {
     content = content.slice(grammar[1].length)
     let parser: Parser | null = null
     let force = () => {
-      if (!parser) parser = buildParser(grammar[1], {fileName, externalTokenizer, externalSpecializer})
+      if (!parser) parser = buildParser(grammar[1], {fileName, externalTokenizer, externalSpecializer, externalProps})
       return parser
     }
 
