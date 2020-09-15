@@ -1,3 +1,13 @@
+## 0.10.5 (2020-09-15)
+
+### Bug fixes
+
+Fix a bug where `moduleStyle` defaulted to `"cjs"` when using the node API (rather than to `"es"` as documented).
+
+### New features
+
+You can now import `"lezer-generator/rollup"` to get a rollup plugin that will transform grammars during the build.
+
 ## 0.10.4 (2020-09-14)
 
 ### Bug fixes
