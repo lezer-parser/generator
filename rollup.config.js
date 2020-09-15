@@ -2,7 +2,7 @@ import typescript from "rollup-plugin-typescript2"
 import nodeResolve from "rollup-plugin-node-resolve"
 import commonjs from "rollup-plugin-commonjs"
 
-export default {
+export default [{
   input: "./src/index.ts",
   output: [{
     format: "cjs",
@@ -33,4 +33,14 @@ export default {
     }),
     commonjs()
   ]
-}
+}, {
+  input: "./src/rollup-plugin-lezer.js",
+  output: [{
+    format: "cjs",
+    file: "./dist/rollup-plugin-lezer.cjs"
+  }, {
+    format: "es",
+    file: "./dist/rollup-plugin-lezer.es.js"
+  }],
+  external(id) { return true }
+}]

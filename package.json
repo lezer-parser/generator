@@ -12,6 +12,10 @@
     "./dist/test": {
       "import": "./dist/test.js",
       "require": "./dist/test.cjs"
+    },
+    "./rollup": {
+      "import": "./dist/rollup-plugin-lezer.es.js",
+      "require": "./dist/rollup-plugin-lezer.cjs"
     }
   },
   "module": "dist/index.es.js",
