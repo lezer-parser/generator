@@ -4,7 +4,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDecl
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
         InlineRuleExpression, SpecializeExpression, Prop, PropPart,
         exprsEq, exprEq} from "./node"
-import {Term, TermSet, PREC_REPEAT, Rule, Conflicts, Props, noProps} from "./grammar"
+import {Term, TermSet, Rule, Conflicts, Props, noProps} from "./grammar"
 import {State, MAX_CHAR, Conflict} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Pos} from "./automaton"
@@ -850,25 +850,19 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
   // For tree-balancing reasons, repeat expressions X+ have to be
   // normalized to something like
   //
-  //     Outer -> Inner
-  //     Inner -> X | Inner Inner
+  //     R -> X | R R
   //
-  // Returns the term for the outer rule.
+  // Returns the `R` term.
   normalizeRepeat(expr: RepeatExpression) {
     let known = this.built.find(b => b.matchesRepeat(expr))
     if (known) return p(known.term)
 
     let name = expr.expr.prec < expr.prec ? `(${expr.expr})+` : `${expr.expr}+`
-    let {inner, outer} = this.terms.makeRepeat(this.terms.uniqueName(name))
+    let term = this.terms.makeRepeat(this.terms.uniqueName(name))
+    this.built.push(new BuiltRule("+", [expr.expr], term))
 
-    this.defineRule(outer, [p(inner)])
-    this.built.push(new BuiltRule("+", [expr.expr], outer))
-
-    let top = this.normalizeExpr(expr.expr)
-    top.push(new Parts([inner, inner], [Conflicts.none, new Conflicts(PREC_REPEAT - 1, none), new Conflicts(PREC_REPEAT, none)]))
-    this.defineRule(inner, top)
-
-    return p(outer)
+    this.defineRule(term, this.normalizeExpr(expr.expr).concat(p(term, term)))
+    return p(term)
   }
 
   normalizeSequence(expr: SequenceExpression) {
@@ -1086,7 +1080,7 @@ const RESERVED_PROPS = ["error", "repeated"]
 
 function reduceAction(rule: Rule, skipInfo: readonly SkipInfo[], depth = rule.parts.length) {
   return rule.name.id | Action.ReduceFlag |
-    (rule.isRepeatLeaf && depth == rule.parts.length ? Action.RepeatFlag : 0) |
+    (rule.isRepeatWrap && depth == rule.parts.length ? Action.RepeatFlag : 0) |
     (skipInfo.some(i => i.rule == rule.name) ? Action.StayFlag : 0) |
     (depth << Action.ReduceDepthShift)
 }

@@ -24,7 +24,7 @@ function externalSpecializer(name: string, terms: {[name: string]: number}) {
   throw new Error("Undefined external specialize " + name)
 }
 
-function externalProps() {
+function externalProp() {
   return NodeProp.string()
 }
 
@@ -38,7 +38,7 @@ describe("Cases", () => {
     content = content.slice(grammar[1].length)
     let parser: Parser | null = null
     let force = () => {
-      if (!parser) parser = buildParser(grammar[1], {fileName, externalTokenizer, externalSpecializer, externalProps})
+      if (!parser) parser = buildParser(grammar[1], {fileName, externalTokenizer, externalSpecializer, externalProp})
       return parser
     }
 

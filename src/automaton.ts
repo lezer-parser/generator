@@ -65,22 +65,35 @@ export class Pos {
     return result
   }
 
-  static conflictsAt(group: readonly Pos[], context: readonly Pos[]) {
-    let result = Conflicts.none
-    let scan: Term[] = []
-    for (let pos of group) {
-      result = result.join(pos.conflicts())
-      if (pos.pos == 0) addTo(pos.rule.name, scan)
-    }
-    for (let i = 0; i < scan.length; i++) {
-      let name = scan[i]
-      for (let pos of context) if (pos.next == name) {
-        result = result.join(pos.conflicts())
-        if (pos.pos == 0) addTo(pos.rule.name, scan)
+  static addOrigins(group: readonly Pos[], context: readonly Pos[]) {
+    let result = group.slice()
+    for (let i = 0; i < result.length; i++) {
+      let next = result[i]
+      if (next.pos == 0) for (let pos of context) {
+        if (pos.next == next.rule.name && !result.includes(pos)) result.push(pos)
       }
     }
     return result
   }
+}
+
+function conflictsAt(group: readonly Pos[]) {
+  let result = Conflicts.none
+  for (let pos of group) result = result.join(pos.conflicts())
+  return result
+}
+
+// Applies automatic action precedence based on repeat productions.
+// These are left-associative, so reducing the `R -> R R` rule has
+// higher precedence.
+function compareRepeatPrec(a: readonly Pos[], b: readonly Pos[]) {
+  for (let pos of a) if (pos.rule.name.repeated) {
+    for (let posB of b) if (posB.rule.name == pos.rule.name) {
+      if (pos.rule.isRepeatWrap && pos.pos == 2) return 1
+      if (posB.rule.isRepeatWrap && posB.pos == 2) return -1
+    }
+  }
+  return 0
 }
 
 function cmpStr(a: string, b: string) {
@@ -181,9 +194,9 @@ export class State {
       let action = this.actions[i]
       if (action.term == value.term) {
         if (action.eq(value)) return null
-        let conflicts = Pos.conflictsAt(positions, this.set)
-        let actionConflicts = Pos.conflictsAt(this.actionPositions[i], this.set)
-        let diff = conflicts.precedence - actionConflicts.precedence
+        let fullPos = Pos.addOrigins(positions, this.set), actionFullPos = Pos.addOrigins(this.actionPositions[i], this.set)
+        let conflicts = conflictsAt(fullPos), actionConflicts = conflictsAt(actionFullPos)
+        let diff = compareRepeatPrec(fullPos, actionFullPos) || conflicts.precedence - actionConflicts.precedence
         if (diff > 0) { // Drop the existing action
           this.actions.splice(i, 1)
           this.actionPositions.splice(i, 1)

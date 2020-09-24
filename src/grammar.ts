@@ -11,9 +11,7 @@ const enum TermFlag {
   // This should be preserved, even if it doesn't occur in any rule
   Preserve = 8,
   // Rules used for * and + constructs
-  Repeated = 16,
-  // Rules wrapping * or + constructs
-  RepeatWrap = 32
+  Repeated = 16
 }
 
 export type Props = {[name: string]: string}
@@ -39,15 +37,13 @@ export class Term {
   }
 
   toString() { return this.name }
-  get nodeType() { return this.top || this.nodeName != null || this.props != noProps || this.repeatRelated }
+  get nodeType() { return this.top || this.nodeName != null || this.props != noProps || this.repeated }
   get terminal() { return (this.flags & TermFlag.Terminal) > 0 }
   get eof() { return (this.flags & TermFlag.Eof) > 0 }
   get error() { return "error" in this.props }
   get top() { return (this.flags & TermFlag.Top) > 0 }
   get interesting() { return this.flags > 0 || this.nodeName != null }
   get repeated() { return (this.flags & TermFlag.Repeated) > 0 }
-  get repeatWrap() { return (this.flags & TermFlag.RepeatWrap) > 0 }
-  get repeatRelated() { return (this.flags & (TermFlag.RepeatWrap | TermFlag.Repeated)) > 0 }
   set preserve(value: boolean) { this.flags = value ? this.flags | TermFlag.Preserve : this.flags & ~TermFlag.Preserve }
   get preserve() { return (this.flags & TermFlag.Preserve) > 0 }
   cmp(other: Term) { return this.hash - other.hash }
@@ -57,9 +53,6 @@ export class TermSet {
   terms: Term[] = []
   // Map from term names to Term instances
   names: {[name: string]: Term} = Object.create(null)
-  // Points from the name of the inner term to the name of the outer
-  // term for repeat term pairs
-  repeatMap: {[name: string]: Term} = Object.create(null)
   eof: Term
   error: Term
   tops: Term[] = []
@@ -91,10 +84,7 @@ export class TermSet {
   }
 
   makeRepeat(name: string) {
-    let inner = this.term(name, null, TermFlag.Repeated)
-    let outer = this.term(name + "-wrap", null, TermFlag.RepeatWrap)
-    this.repeatMap[inner.name] = outer
-    return {inner, outer}
+    return this.term(name, null, TermFlag.Repeated)
   }
 
   uniqueName(name: string) {
@@ -116,7 +106,7 @@ export class TermSet {
     let nextID = T.Err + 1
 
     // Assign ids to terms that represent node types
-    for (let term of this.terms) if (term.id < 0 && term.nodeType && !term.repeatRelated) {
+    for (let term of this.terms) if (term.id < 0 && term.nodeType && !term.repeated) {
       term.id = nextID++
       nodeTypes.push(term)
     }
@@ -125,13 +115,6 @@ export class TermSet {
     for (let term of this.terms) if (term.repeated) {
       term.id = nextID++
       nodeTypes.push(term)
-    }
-    // After that, there's a block for repeat-wrap terms, which don't
-    // have node types associated with them. Each wrap term is a
-    // constant factor (nodeTypes.length - minRepeatTerm) ahead of its
-    // inner term.
-    for (let term of this.terms) if (term.repeated) {
-      this.repeatMap[term.name].id = nextID++
     }
     // Then comes the EOF term
     this.eof.id = nextID++
@@ -154,8 +137,6 @@ export function cmpSet<T>(a: readonly T[], b: readonly T[], cmp: (a: T, b: T) =>
   }
   return 0
 }
-
-export const PREC_REPEAT = 2e8
 
 const none: readonly any[] = []
 
@@ -210,12 +191,11 @@ export class Rule {
     return this.name + " -> " + this.parts.join(" ")
   }
 
-  get isRepeatLeaf() {
-    return this.name.repeated && !(this.parts.length == 2 && this.parts[0] == this.name)
+  get isRepeatWrap() {
+    return this.name.repeated && this.parts.length == 2 && this.parts[0] == this.name
   }
 
   sameReduce(other: Rule) {
-    return this.name == other.name && this.parts.length == other.parts.length &&
-      this.isRepeatLeaf == other.isRepeatLeaf
+    return this.name == other.name && this.parts.length == other.parts.length && this.isRepeatWrap == other.isRepeatWrap
   }
 }
