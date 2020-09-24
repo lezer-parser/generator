@@ -451,12 +451,10 @@ function canMergeInner(a: State, b: State, mapping: readonly number[]) {
   actions: for (let action of a.actions) {
     let conflict = false
     for (let other of b.actions) if (other.term == action.term) {
-      if (other.constructor != action.constructor ||
-          (action instanceof Shift && mapping[action.target.id] != mapping[(other as Shift).target.id])) {
-        conflict = true
-      } else {
-        break actions
-      }
+      if (action instanceof Shift
+          ? other instanceof Shift && mapping[action.target.id] == mapping[other.target.id]
+          : other.eq(action)) continue actions
+      conflict = true
     }
     if (conflict) return false
   }
