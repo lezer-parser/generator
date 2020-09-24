@@ -303,8 +303,8 @@ class Builder {
     })
     let states = new Uint32Array(table.length * ParseState.Size)
     let forceReductions = this.computeForceReductions(table, skipInfo)
-    for (let s of table)
-      this.finishState(s, tokenizers, data, skipData, skipInfo, skipState(s.id), forceReductions[s.id], states)
+    let finishCx = new FinishStateContext(tokenizers, data, states, skipData, skipInfo, table, this)
+    for (let s of table) finishCx.finish(s, skipState(s.id), forceReductions[s.id])
     let dialects: {[name: string]: number} = Object.create(null)
     for (let i = 0; i < this.dialects.length; i++)
       dialects[this.dialects[i]] = data.storeArray((this.tokens.byDialect[i] || none).map(t => t.id).concat(Seq.End))
@@ -670,59 +670,6 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     return reductions
   }
 
-  finishState(state: LRState, tokenizers: (TokenGroup | ExternalTokenDeclaration)[], data: DataBuilder,
-              skipData: readonly number[], skipInfo: readonly SkipInfo[], isSkip: boolean,
-              forcedReduce: number, stateArray: Uint32Array) {
-    let skipID = this.skipRules.indexOf(state.skip)
-    let skipTable = skipData[skipID], skipTerms = skipInfo[skipID].startTokens
-
-    let actions = []
-    let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, skipInfo) : 0
-    let flags = (isSkip ? StateFlag.Skipped : 0) |
-      (state.nested > -1 ? StateFlag.StartNest | (state.nested << StateFlag.NestShift) : 0)
-
-    let other = -1
-    if (defaultReduce == 0) for (const action of state.actions) {
-      if (action instanceof Shift) {
-        actions.push(action.term.id, action.target.id, 0)
-      } else {
-        let code = reduceAction(action.rule, skipInfo)
-        if (action.term.eof && skipInfo.some(i => i.rule == action.rule.name)) other = code
-        else actions.push(action.term.id, code & Action.ValueMask, code >> 16)
-      }
-    }
-    if (other > -1) actions.push(T.Err, other & Action.ValueMask, other >> 16)
-    actions.push(Seq.End)
-
-    if (state.set.some(p => p.rule.name.top && p.pos == p.rule.parts.length)) flags |= StateFlag.Accepting
-
-    let external: ExternalTokenDeclaration[] = []
-    for (let i = 0; i < state.actions.length + skipTerms.length; i++) {
-      let term = i < state.actions.length ? state.actions[i].term : skipTerms[i - state.actions.length]
-      for (;;) {
-        let orig = this.tokenOrigins[term.name]
-        if (orig && orig.spec) { term = orig.spec; continue }
-        if (orig && (orig.external instanceof ExternalTokenSet)) addToSet(external, orig.external.ast)
-        break
-      }
-    }
-    external.sort((a, b) => a.start - b.start)
-    let tokenizerMask = 0
-    for (let i = 0; i < tokenizers.length; i++) {
-      let tok = tokenizers[i]
-      if (tok instanceof ExternalTokenDeclaration ? external.includes(tok) : tok.id == state.tokenGroup)
-        tokenizerMask |= (1 << i)
-    }
-
-    let base = state.id * ParseState.Size
-    stateArray[base + ParseState.Flags] = flags
-    stateArray[base + ParseState.Actions] = data.storeArray(actions)
-    stateArray[base + ParseState.Skip] = skipTable
-    stateArray[base + ParseState.TokenizerMask] = tokenizerMask
-    stateArray[base + ParseState.DefaultReduce] = defaultReduce
-    stateArray[base + ParseState.ForcedReduce] = forcedReduce
-  }
-
   substituteArgs(expr: Expression, args: readonly Expression[], params: readonly Identifier[]) {
     if (args.length == 0) return expr
     return expr.walk(expr => {
@@ -1058,6 +1005,70 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
   registerDynamicPrec(term: Term, prec: number) {
     this.dynamicRulePrecedences.push({rule: term, prec})
     term.preserve = true
+  }
+}
+
+class FinishStateContext {
+  constructor(
+    readonly tokenizers: (TokenGroup | ExternalTokenDeclaration)[],
+    readonly data: DataBuilder,
+    readonly stateArray: Uint32Array,
+    readonly skipData: readonly number[],
+    readonly skipInfo: readonly SkipInfo[],
+    readonly states: readonly LRState[],
+    readonly builder: Builder
+  ) {}
+
+  finish(state: LRState, isSkip: boolean, forcedReduce: number) {
+    let b = this.builder
+    let skipID = b.skipRules.indexOf(state.skip)
+    let skipTable = this.skipData[skipID], skipTerms = this.skipInfo[skipID].startTokens
+
+    let actions = []
+    let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, this.skipInfo) : 0
+    let flags = (isSkip ? StateFlag.Skipped : 0) |
+      (state.nested > -1 ? StateFlag.StartNest | (state.nested << StateFlag.NestShift) : 0)
+
+    let other = -1
+    if (defaultReduce == 0) for (const action of state.actions) {
+      if (action instanceof Shift) {
+        actions.push(action.term.id, action.target.id, 0)
+      } else {
+        let code = reduceAction(action.rule, this.skipInfo)
+        if (action.term.eof && this.skipInfo.some(i => i.rule == action.rule.name)) other = code
+        else actions.push(action.term.id, code & Action.ValueMask, code >> 16)
+      }
+    }
+    if (other > -1) actions.push(T.Err, other & Action.ValueMask, other >> 16)
+    actions.push(Seq.End)
+
+    if (state.set.some(p => p.rule.name.top && p.pos == p.rule.parts.length)) flags |= StateFlag.Accepting
+
+    let external: ExternalTokenDeclaration[] = []
+    for (let i = 0; i < state.actions.length + skipTerms.length; i++) {
+      let term = i < state.actions.length ? state.actions[i].term : skipTerms[i - state.actions.length]
+      for (;;) {
+        let orig = b.tokenOrigins[term.name]
+        if (orig && orig.spec) { term = orig.spec; continue }
+        if (orig && (orig.external instanceof ExternalTokenSet)) addToSet(external, orig.external.ast)
+        break
+      }
+    }
+    external.sort((a, b) => a.start - b.start)
+    let tokenizerMask = 0
+    for (let i = 0; i < this.tokenizers.length; i++) {
+      let tok = this.tokenizers[i]
+      if (tok instanceof ExternalTokenDeclaration ? external.includes(tok) : tok.id == state.tokenGroup)
+        tokenizerMask |= (1 << i)
+    }
+
+    let base = state.id * ParseState.Size
+    this.stateArray[base + ParseState.Flags] = flags
+    this.stateArray[base + ParseState.Actions] = this.data.storeArray(actions)
+    this.stateArray[base + ParseState.Skip] = skipTable
+    this.stateArray[base + ParseState.TokenizerMask] = tokenizerMask
+    this.stateArray[base + ParseState.DefaultReduce] = defaultReduce
+    this.stateArray[base + ParseState.ForcedReduce] = forcedReduce
   }
 }
 
