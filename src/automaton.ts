@@ -545,10 +545,10 @@ function collapseAutomaton(states: readonly State[]): readonly State[] {
     let pop = group.members.pop()!
     if (index != group.members.length) group.members[index] = pop
     for (let i = groupIndex + 1; i < groups.length; i++) {
+      mapping[state.id] = i
       if (groups[i].origin == group.origin &&
           groups[i].members.every(id => canMerge(state, states[id], mapping))) {
         groups[i].members.push(state.id)
-        mapping[state.id] = i
         return
       }
     }
@@ -570,7 +570,7 @@ function collapseAutomaton(states: readonly State[]): readonly State[] {
         }
       }
     }
-    if (!conflicts) { console.log("collapsed", states.length, "to", groups.length); return mergeStates(states, mapping) }
+    if (!conflicts) return mergeStates(states, mapping)
   }
 }
 
