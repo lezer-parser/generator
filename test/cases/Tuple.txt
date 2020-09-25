@@ -1,0 +1,15 @@
+@top { "(" (Expr ",")* Expr? ")" }
+
+@tokens { Expr { "E" } }
+
+# Can parse with trailing comma
+
+(E,E,)
+
+==> Expr,Expr
+
+# Can parse without trailing comma
+
+(E,E,E)
+
+==> Expr,Expr,Expr

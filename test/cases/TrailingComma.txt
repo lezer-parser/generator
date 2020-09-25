@@ -1,0 +1,15 @@
+@top { ("," Expr)* ","? }
+
+@tokens { Expr { "E" } }
+
+# With trailing comma
+
+,E,E,
+
+==> Expr,Expr
+
+# Without trailing comma
+
+,E,E,E
+
+==> Expr,Expr,Expr

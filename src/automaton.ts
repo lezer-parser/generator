@@ -570,11 +570,7 @@ function collapseAutomaton(states: readonly State[]): readonly State[] {
         }
       }
     }
-    if (!conflicts) {
-      let s = mergeStates(states, mapping)
-      if (!s.every(x => x)) console.log("MISSING")
-      return s
-    }
+    if (!conflicts) { console.log("collapsed", states.length, "to", groups.length); return mergeStates(states, mapping) }
   }
 }
 
