@@ -509,43 +509,72 @@ function mergeStates(states: readonly State[], mapping: readonly number[]) {
   return newStates
 }
 
-function hasConflict(id: number, newID: number, mapping: number[], conflicts: number[]) {
-  for (let i = 0; i < conflicts.length; i++) if (conflicts[i] == id) {
-    let other = conflicts[i + (i % 2 ? -1 : 1)] // Pick other side of the pair
-    if (mapping[other] == newID) return true
-  }
-  return false
+class Group {
+  members: number[]
+  constructor(readonly origin: number, member: number) { this.members = [member] }
+}
+
+function samePosSet(a: readonly Pos[], b: readonly Pos[]) {
+  if (a.length != b.length) return false
+  for (let i = 0; i < a.length; i++) if (!a[i].eqSimple(b[i])) return false
+  return true
 }
 
 // Collapse an LR(1) automaton to an LALR-like automaton
 function collapseAutomaton(states: readonly State[]): readonly State[] {
-  let conflicts: number[] = []
-  for (;;) {
-    let mapping: number[] = [], mapped: State[] = []
-    for (let i = 0; i < states.length; i++) {
-      let state = states[i]
-      let newID = state.startRule == null ? mapped.findIndex((s, index) => {
-        return state.set.length == s.set.length &&
-          state.set.every((p, i) => p.eqSimple(s.set[i])) &&
-          s.tokenGroup == state.tokenGroup &&
-          s.skip == state.skip &&
-          !s.startRule &&
-          !hasConflict(i, index, mapping, conflicts)
-      }) : -1
-      mapping.push(newID < 0 ? mapped.length : newID)
-      if (newID < 0) mapped.push(state)
-    }
-    let seen: {[newID: number]: number[]} = Object.create(null)
-    let startConflictCount = conflicts.length
-    for (let state of states) {
-      let newID = mapping[state.id]
-      let group = seen[newID] || (seen[newID] = [])
-      for (let id of group) {
-        if (!canMerge(state, states[id], mapping)) conflicts.push(state.id, id)
+  let mapping: number[] = [], groups: Group[] = []
+  assignGroups: for (let i = 0; i < states.length; i++) {
+    let state = states[i]
+    if (!state.startRule) for (let j = 0; j < groups.length; j++) {
+      let group = groups[j], other = states[group.members[0]]
+      if (state.tokenGroup == other.tokenGroup &&
+          state.skip == other.skip &&
+          !other.startRule &&
+          samePosSet(state.set, other.set)) {
+        group.members.push(i)
+        mapping.push(j)
+        continue assignGroups
       }
-      group.push(state.id)
     }
-    if (conflicts.length == startConflictCount) return mergeStates(states, mapping)
+    mapping.push(groups.length)
+    groups.push(new Group(groups.length, i))
+  }
+
+  function spill(groupIndex: number, index: number) {
+    let group = groups[groupIndex], state = states[group.members[index]]
+    let pop = group.members.pop()!
+    if (index != group.members.length) group.members[index] = pop
+    for (let i = groupIndex + 1; i < groups.length; i++) {
+      if (groups[i].origin == group.origin &&
+          groups[i].members.every(id => canMerge(state, states[id], mapping))) {
+        groups[i].members.push(state.id)
+        mapping[state.id] = i
+        return
+      }
+    }
+    mapping[state.id] = groups.length
+    groups.push(new Group(group.origin, state.id))
+  }
+
+  for (;;) {
+    let conflicts = false
+    for (let g = 0, startLen = groups.length; g < startLen; g++) {
+      let group = groups[g]
+      for (let i = 0; i < group.members.length - 1; i++) {
+        for (let j = i + 1; j < group.members.length; j++) {
+          let idA = group.members[i], idB = group.members[j]
+          if (!canMerge(states[idA], states[idB], mapping)) {
+            conflicts = true
+            spill(g, j--)
+          }
+        }
+      }
+    }
+    if (!conflicts) {
+      let s = mergeStates(states, mapping)
+      if (!s.every(x => x)) console.log("MISSING")
+      return s
+    }
   }
 }
 
