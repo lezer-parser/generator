@@ -7,11 +7,11 @@ import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDecl
 import {Term, TermSet, Rule, Conflicts, Props, noProps} from "./grammar"
 import {State, MAX_CHAR, Conflict} from "./token"
 import {Input} from "./parse"
-import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Pos} from "./automaton"
+import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce, Pos} from "./automaton"
 import {encodeArray} from "./encode"
 import {GenError} from "./error"
 import {Parser, ExternalTokenizer, NestedGrammar, Stack, NodeProp} from "lezer"
-import {Action, Specialize, StateFlag, Term as T, Seq, ParseState} from "lezer/dist/constants"
+import {Action, Specialize, StateFlag, Seq, ParseState} from "lezer/dist/constants"
 
 const none: readonly any[] = []
 
@@ -298,7 +298,7 @@ class Builder {
         for (let action of state.actions as Shift[])
           actions.push(action.term.id, state.id, Action.GotoFlag >> 16)
       }
-      actions.push(Seq.End)
+      actions.push(Seq.End, Seq.Done)
       return data.storeArray(actions)
     })
     let states = new Uint32Array(table.length * ParseState.Size)
@@ -1008,7 +1008,13 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
   }
 }
 
+const MinSharedActions = 5
+
+type SharedActions = {actions: readonly (Shift | Reduce)[], addr: number}
+
 class FinishStateContext {
+  sharedActions: SharedActions[] = []
+
   constructor(
     readonly tokenizers: (TokenGroup | ExternalTokenDeclaration)[],
     readonly data: DataBuilder,
@@ -1019,28 +1025,65 @@ class FinishStateContext {
     readonly builder: Builder
   ) {}
 
+  findSharedActions(state: LRState): SharedActions | null {
+    if (state.actions.length < MinSharedActions) return null
+    let found = null
+    for (let shared of this.sharedActions) {
+      if ((!found || shared.actions.length > found.actions.length) &&
+          shared.actions.every(a => state.actions.some(b => b.eq(a))))
+        found = shared
+    }
+    if (found) return found
+    let max: (Shift | Reduce)[] | null = null, scratch = []
+    for (let i = state.id + 1; i < this.states.length; i++) {
+      let other = this.states[i], fill = 0
+      if (other.defaultReduce || other.actions.length < MinSharedActions) continue
+      for (let a of state.actions) for (let b of other.actions) if (a.eq(b)) scratch[fill++] = a
+      if (fill >= MinSharedActions && (!max || max.length < fill)) {
+        max = scratch
+        scratch = []
+      }
+    }
+    if (!max) return null
+    let result = {actions: max, addr: this.storeActions(max, -1, null)}
+    this.sharedActions.push(result)
+    return result
+  }
+
+  storeActions(actions: readonly (Shift | Reduce)[], skipReduce: number, shared: SharedActions | null) {
+    let data = []
+    for (let action of actions) {
+      if (shared && shared.actions.some(a => a.eq(action))) continue
+      if (action instanceof Shift) {
+        data.push(action.term.id, action.target.id, 0)
+      } else {
+        let code = reduceAction(action.rule, this.skipInfo)
+        if (code != skipReduce) data.push(action.term.id, code & Action.ValueMask, code >> 16)
+      }
+    }
+    data.push(Seq.End)
+    if (skipReduce > -1) data.push(Seq.Other, skipReduce & Action.ValueMask, skipReduce >> 16)
+    else if (shared) data.push(Seq.Next, shared.addr & 0xffff, shared.addr >> 16)
+    else data.push(Seq.Done)
+    return this.data.storeArray(data)
+  }
+
   finish(state: LRState, isSkip: boolean, forcedReduce: number) {
     let b = this.builder
     let skipID = b.skipRules.indexOf(state.skip)
     let skipTable = this.skipData[skipID], skipTerms = this.skipInfo[skipID].startTokens
 
-    let actions = []
     let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, this.skipInfo) : 0
     let flags = (isSkip ? StateFlag.Skipped : 0) |
       (state.nested > -1 ? StateFlag.StartNest | (state.nested << StateFlag.NestShift) : 0)
 
-    let other = -1
-    if (defaultReduce == 0) for (const action of state.actions) {
-      if (action instanceof Shift) {
-        actions.push(action.term.id, action.target.id, 0)
-      } else {
-        let code = reduceAction(action.rule, this.skipInfo)
-        if (action.term.eof && this.skipInfo.some(i => i.rule == action.rule.name)) other = code
-        else actions.push(action.term.id, code & Action.ValueMask, code >> 16)
-      }
+    let skipReduce = -1, shared = null
+    if (defaultReduce == 0) {
+      for (const action of state.actions)
+        if (action instanceof Reduce && action.term.eof && this.skipInfo.some(i => i.rule == action.rule.name))
+          skipReduce = reduceAction(action.rule, this.skipInfo)
+      if (skipReduce < 0) shared = this.findSharedActions(state)
     }
-    if (other > -1) actions.push(T.Err, other & Action.ValueMask, other >> 16)
-    actions.push(Seq.End)
 
     if (state.set.some(p => p.rule.name.top && p.pos == p.rule.parts.length)) flags |= StateFlag.Accepting
 
@@ -1064,7 +1107,7 @@ class FinishStateContext {
 
     let base = state.id * ParseState.Size
     this.stateArray[base + ParseState.Flags] = flags
-    this.stateArray[base + ParseState.Actions] = this.data.storeArray(actions)
+    this.stateArray[base + ParseState.Actions] = this.storeActions(defaultReduce ? none : state.actions, skipReduce, shared)
     this.stateArray[base + ParseState.Skip] = skipTable
     this.stateArray[base + ParseState.TokenizerMask] = tokenizerMask
     this.stateArray[base + ParseState.DefaultReduce] = defaultReduce

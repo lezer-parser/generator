@@ -461,6 +461,9 @@ function applyCut(set: readonly Pos[]): readonly Pos[] {
 }
 
 function canMergeInner(a: State, b: State, mapping: readonly number[]) {
+  for (let goto of a.goto) for (let other of b.goto) {
+    if (goto.term == other.term && mapping[goto.target.id] != mapping[other.target.id]) return false
+  }
   actions: for (let action of a.actions) {
     let conflict = false
     for (let other of b.actions) if (other.term == action.term) {
@@ -470,9 +473,6 @@ function canMergeInner(a: State, b: State, mapping: readonly number[]) {
       conflict = true
     }
     if (conflict) return false
-  }
-  for (let goto of a.goto) for (let other of b.goto) {
-    if (goto.term == other.term && mapping[goto.target.id] != mapping[other.target.id]) return false
   }
   return true
 }
