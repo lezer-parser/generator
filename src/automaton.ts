@@ -3,18 +3,22 @@ import {hash, hashString} from "./hash"
 import {GenError} from "./error"
 
 export class Pos {
-  hash: number
+  hash: number = 0
 
   constructor(readonly rule: Rule,
               readonly pos: number,
-              readonly ahead: readonly Term[],
-              readonly ambigAhead: readonly string[],
+              // NOTE `ahead` and `ambigAhead` aren't mutated anymore after `finish()` has been called
+              readonly ahead: Term[],
+              public ambigAhead: readonly string[],
               readonly skipAhead: Term,
-              readonly prev: Pos | null) {
-    let h = hash(hash(rule.id, pos), skipAhead.hash)
+              readonly via: Pos | null) {}
+
+  finish() {
+    let h = hash(hash(this.rule.id, this.pos), this.skipAhead.hash)
     for (let a of this.ahead) h = hash(h, a.hash)
-    for (let group of ambigAhead) h = hashString(h, group)
+    for (let group of this.ambigAhead) h = hashString(h, group)
     this.hash = h
+    return this
   }
 
   get next() {
@@ -22,7 +26,7 @@ export class Pos {
   }
 
   advance() {
-    return new Pos(this.rule, this.pos + 1, this.ahead, this.ambigAhead, this.skipAhead, this)
+    return new Pos(this.rule, this.pos + 1, this.ahead, this.ambigAhead, this.skipAhead, this.via).finish()
   }
 
   get skip() {
@@ -53,7 +57,9 @@ export class Pos {
 
   trail(maxLen: number = 60) {
     let result = []
-    for (let cur = this.prev; cur; cur = cur.prev) result.push(cur.next)
+    for (let pos: Pos | null = this; pos; pos = pos.via) {
+      for (let i = pos.pos - 1; i >= 0; i--) result.push(pos.rule.parts[i])
+    }
     let value = result.reverse().join(" ")
     if (value.length > maxLen) value = value.slice(value.length - maxLen).replace(/.*? /, "… ")
     return value
@@ -226,8 +232,9 @@ export class State {
       if (conflict instanceof Shift)
         error = `shift/reduce conflict between\n  ${conflictPos}\nand\n  ${positions[0].rule}`
       else
-        error = `reduce/reduce conflict between\n  ${positions[0].rule}\nand\n  ${conflictPos.rule}`
+        error = `reduce/reduce conflict between\n  ${conflictPos.rule}\nand\n  ${positions[0].rule}`
       error += `\nWith input:\n  ${positions[0].trail(70)} · ${value.term} …`
+      error += findConflictOrigin(conflictPos, positions[0])
       conflicts.push(new Conflict(error, rules))
     }
   }
@@ -264,29 +271,20 @@ export class State {
   }
 }
 
-class AddedPos {
-  constructor(readonly rule: Rule,
-              readonly ahead: Term[],
-              readonly origIndex: number,
-              public ambigAhead: readonly string[],
-              readonly skipAhead: Term,
-              readonly prev: Pos | null) {}
-}
-
 function closure(set: readonly Pos[], first: {[name: string]: Term[]}) {
-  let added: AddedPos[] = [], redo: AddedPos[] = []
-  function addFor(name: Term, ahead: readonly Term[], ambigAhead: readonly string[], skipAhead: Term, prev: Pos | null) {
+  let added: Pos[] = [], redo: Pos[] = []
+  function addFor(name: Term, ahead: readonly Term[], ambigAhead: readonly string[], skipAhead: Term, via: Pos) {
     for (let rule of name.rules) {
       let add = added.find(a => a.rule == rule)
       if (!add) {
-        let existing = set.findIndex(p => p.pos == 0 && p.rule == rule)
-        add = new AddedPos(rule, existing < 0 ? [] : set[existing].ahead.slice(), existing, ambigAhead, skipAhead, prev)
+        let existing = set.find(p => p.pos == 0 && p.rule == rule)
+        add = existing ? new Pos(rule, 0, existing.ahead.slice(), existing.ambigAhead, existing.skipAhead, existing.via)
+          : new Pos(rule, 0, [], none, skipAhead, via)
         added.push(add)
-      } else {
-        if (add.skipAhead != skipAhead)
-          throw new GenError("Inconsistent skip sets after " + add.prev!.trail())
-        add.ambigAhead = union(add.ambigAhead, ambigAhead)
       }
+      if (add.skipAhead != skipAhead)
+        throw new GenError("Inconsistent skip sets after " + via.trail())
+      add.ambigAhead = union(add.ambigAhead, ambigAhead)
       for (let term of ahead) if (!add.ahead.includes(term)) {
         add.ahead.push(term)
         if (add.rule.parts.length && !add.rule.parts[0].terminal) addTo(add, redo)
@@ -299,20 +297,22 @@ function closure(set: readonly Pos[], first: {[name: string]: Term[]}) {
     if (next && !next.terminal)
       addFor(next, termsAhead(pos.rule, pos.pos, pos.ahead, first),
              pos.conflicts(pos.pos + 1).ambigGroups, pos.pos == pos.rule.parts.length - 1 ? pos.skipAhead : pos.rule.skip,
-             pos.prev)
+             pos)
   }
   while (redo.length) {
     let add = redo.pop()!
     addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first),
            union(add.rule.conflicts[1].ambigGroups, add.rule.parts.length == 1 ? add.ambigAhead : none),
-           add.skipAhead, add.prev)
+           add.skipAhead, add)
   }
 
   let result = set.slice()
   for (let add of added) {
-    let pos = new Pos(add.rule, 0, add.ahead.sort((a, b) => a.hash - b.hash), add.ambigAhead, add.skipAhead, add.prev)
-    if (add.origIndex > -1) result[add.origIndex] = pos
-    else result.push(pos)
+    add.ahead.sort((a, b) => a.hash - b.hash)
+    add.finish()
+    let origIndex = set.findIndex(p => p.pos == 0 && p.rule == add.rule)
+    if (origIndex > -1) result[origIndex] = add
+    else result.push(add)
   }
   return result.sort((a, b) => a.cmp(b))
 }
@@ -356,6 +356,22 @@ class Conflict {
   constructor(readonly error: string, readonly rules: readonly Term[]) {}
 }
 
+function findConflictOrigin(a: Pos, b: Pos) {
+  if (a.eq(b)) return ""
+  function via(root: Pos, start: Pos) {
+    let hist = []
+    for (let p = start.via; p != root; p = p!.via) hist.push(p)
+    if (!hist.length) return ""
+    hist.unshift(start)
+    return hist.reverse().map((p, i) => "\n" + "  ".repeat(i + 1) + (p == start ? "" : "via ") + p).join("")
+  }
+
+  for (let p: Pos | null = a; p; p = p.via) for (let p2: Pos | null = b; p2; p2 = p2.via) {
+    if (p.eqSimple(p2)) return "\nShared origin: " + p + via(p, a) + via(p, b)
+  }
+  return ""
+}
+
 // Builds a full LR(1) automaton
 export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[name: string]: Term[]}) {
   let states: State[] = []
@@ -386,7 +402,7 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
 
   for (const startTerm of startTerms) {
     const startSkip = startTerm.rules.length ? startTerm.rules[0].skip : terms.names["%noskip"]!
-    getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null)), startTerm)
+    getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null).finish()), startTerm)
   }
 
   let conflicts: Conflict[] = []
