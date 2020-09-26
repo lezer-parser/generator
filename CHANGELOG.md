@@ -1,3 +1,9 @@
+## 0.11.1 (2020-09-26)
+
+### Bug fixes
+
+Fix lezer depencency versions
+
 ## 0.11.0 (2020-09-26)
 
 ### Breaking changes

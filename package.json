@@ -1,6 +1,6 @@
 {
   "name": "lezer-generator",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Parser generator for the incremental lezer parser",
   "main": "dist/index.cjs",
   "type": "module",
@@ -34,7 +34,7 @@
     "typescript": "^3.7.2"
   },
   "dependencies": {
-    "lezer": "^0.10.1"
+    "lezer": "^0.11.1"
   },
   "files": [
     "dist"
