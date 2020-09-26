@@ -1,3 +1,15 @@
+## 0.11.0 (2020-09-26)
+
+### Breaking changes
+
+Simplify the representation of repeat expressions in the grammar in a way that avoids some spurious conflicts.
+
+The output format has been modified to allow states to share part of their action table for better compression.
+
+### Bug fixes
+
+Fix a bug where the state collapsing could introduce GLR parsing in grammars that otherwise didn't require it.
+
 ## 0.10.5 (2020-09-15)
 
 ### Bug fixes
