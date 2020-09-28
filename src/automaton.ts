@@ -357,10 +357,10 @@ class Conflict {
 }
 
 function findConflictOrigin(a: Pos, b: Pos) {
-  if (a.eq(b)) return ""
+  if (a.eqSimple(b)) return ""
   function via(root: Pos, start: Pos) {
     let hist = []
-    for (let p = start.via; p != root; p = p!.via) hist.push(p)
+    for (let p = start.via!; !p.eqSimple(root); p = p.via!) hist.push(p)
     if (!hist.length) return ""
     hist.unshift(start)
     return hist.reverse().map((p, i) => "\n" + "  ".repeat(i + 1) + (p == start ? "" : "via ") + p).join("")
