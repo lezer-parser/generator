@@ -856,9 +856,11 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
 
   buildRule(rule: RuleDeclaration, args: readonly Expression[], skip: Term, inline = false): Term {
     let expr = this.substituteArgs(rule.expr, args, rule.params)
-    let {name: nodeName, props, dynamicPrec} = this.nodeInfo(rule.props || none, "p", rule.id.name, args, rule.params, rule.expr)
+    let {name: nodeName, props, dynamicPrec, inline: explicitInline} =
+      this.nodeInfo(rule.props || none, inline ? "p" : "pi", rule.id.name, args, rule.params, rule.expr)
     if (rule.exported && rule.params.length) this.warn(`Can't export parameterized rules`, rule.start)
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), nodeName || true, props)
+    if (explicitInline) name.inline = true
     if (dynamicPrec) this.registerDynamicPrec(name, dynamicPrec)
     if ((name.nodeType || rule.exported) && rule.params.length == 0) {
       if (!nodeName) name.preserve = true
@@ -873,18 +875,19 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
   }
 
   nodeInfo(props: readonly Prop[],
-           // p for dynamic precedence, d for dialect
-           allow: "pd" | "p" | "d" | "",
+           // p for dynamic precedence, d for dialect, i for inline
+           allow: string,
            defaultName: string | null = null,
            args: readonly Expression[] = none, params: readonly Identifier[] = none,
            expr?: Expression, defaultProps?: Props): {
     name: string | null,
     props: Props,
     dialect: number | null,
-    dynamicPrec: number
+    dynamicPrec: number,
+    inline: boolean
   } {
     let result = noProps, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
-    let dialect = null, dynamicPrec = 0
+    let dialect = null, dynamicPrec = 0, inline = false
     for (let prop of props) {
       if (prop.name == "name") {
         name = this.finishProp(prop, args, params)
@@ -903,6 +906,10 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
         if (prop.value.length != 1 || !/^-?(?:10|\d)$/.test(prop.value[0].value!))
           this.raise("The 'dynamicPrecedence' rule prop must hold an integer between -10 and 10")
         dynamicPrec = +prop.value[0].value!
+      } else if (prop.name == "inline") {
+        if (prop.value.length) this.raise("'inline' doesn't take a value", prop.value[0].start)
+        if (allow.indexOf("i") < 0) this.raise("Inline can only be specified on nonterminals")
+        inline = true
       } else if (RESERVED_PROPS.includes(prop.name)) {
         this.raise(`Prop name '${prop.name}' is reserved`, prop.start)
       } else if (!this.knownProps[prop.name]) {
@@ -925,7 +932,10 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     }
     if (result != noProps && !name && !result.top)
       this.raise(`Node has properties but no name`, props.length ? props[0].start : expr!.start)
-    return {name, props: result, dialect, dynamicPrec}
+    if (inline && (result != noProps || dialect || dynamicPrec))
+      this.raise(`Inline nodes can't have props, dynamic precedence, or a dialect`, props[0].start)
+    if (inline && name) name = null
+    return {name, props: result, dialect, dynamicPrec, inline}
   }
 
   finishProp(prop: Prop, args: readonly Expression[], params: readonly Identifier[]): string {
@@ -1780,8 +1790,15 @@ class ExternalSpecializer {
 }
 
 function inlineRules(rules: readonly Rule[], preserve: readonly Term[]): readonly Rule[] {
-  for (;;) {
-    let inlinable: {[name: string]: Rule} = Object.create(null), found
+  for (let pass = 0;; pass++) {
+    let inlinable: {[name: string]: readonly Rule[]} = Object.create(null), found
+    if (pass == 0) for (let rule of rules) {
+      if (rule.name.inline && !inlinable[rule.name.name]) {
+        let group = rules.filter(r => r.name == rule.name)
+        if (group.some(r => r.parts.includes(rule.name))) continue
+        found = inlinable[rule.name.name] = group
+      }
+    }
     for (let i = 0; i < rules.length; i++) {
       let rule = rules[i]
       if (!rule.name.interesting && !rule.parts.includes(rule.name) && rule.parts.length < 3 &&
@@ -1789,7 +1806,7 @@ function inlineRules(rules: readonly Rule[], preserve: readonly Term[]): readonl
           (rule.parts.length == 1 || rules.every(other => other.skip == rule.skip || !other.parts.includes(rule.name))) &&
           !rule.parts.some(p => !!inlinable[p.name]) &&
           !rules.some((r, j) => j != i && r.name == rule.name))
-        found = inlinable[rule.name.name] = rule
+        found = inlinable[rule.name.name] = [rule]
     }
     if (!found) return rules
     let newRules = []
@@ -1799,22 +1816,25 @@ function inlineRules(rules: readonly Rule[], preserve: readonly Term[]): readonl
         newRules.push(rule)
         continue
       }
-      let conflicts = [rule.conflicts[0]], parts = []
-      for (let i = 0; i < rule.parts.length; i++) {
-        let replace = inlinable[rule.parts[i].name]
-        if (replace) {
-          conflicts[conflicts.length - 1] = conflicts[conflicts.length - 1].join(replace.conflicts[0])
-          for (let j = 0; j < replace.parts.length; j++) {
-            parts.push(replace.parts[j])
-            conflicts.push(replace.conflicts[j + 1])
-          }
-          conflicts[conflicts.length - 1] = conflicts[conflicts.length - 1].join(rule.conflicts[i + 1])
-        } else {
-          parts.push(rule.parts[i])
-          conflicts.push(rule.conflicts[i + 1])
+      function expand(at: number, conflicts: readonly Conflicts[], parts: readonly Term[]) {
+        if (at == rule.parts.length) {
+          newRules.push(new Rule(rule.name, parts, conflicts, rule.skip))
+          return
         }
+        let next = rule.parts[at], replace = inlinable[next.name]
+        if (!replace) {
+          expand(at + 1, conflicts.concat(rule.conflicts[at + 1]), parts.concat(next))
+          return
+        }
+        for (let r of replace)
+          expand(at + 1,
+                 conflicts.slice(0, conflicts.length - 1)
+                 .concat(conflicts[at].join(r.conflicts[0]))
+                 .concat(r.conflicts.slice(1, r.conflicts.length - 1))
+                 .concat(rule.conflicts[at + 1].join(r.conflicts[r.conflicts.length - 1])),
+                 parts.concat(r.parts))
       }
-      newRules.push(new Rule(rule.name, parts, conflicts, rule.skip))
+      expand(0, [rule.conflicts[0]], [])
     }
     rules = newRules
   }

@@ -11,7 +11,9 @@ const enum TermFlag {
   // This should be preserved, even if it doesn't occur in any rule
   Preserve = 8,
   // Rules used for * and + constructs
-  Repeated = 16
+  Repeated = 16,
+  // Rules explicitly marked as [inline]
+  Inline = 32
 }
 
 export type Props = {[name: string]: string}
@@ -46,6 +48,8 @@ export class Term {
   get repeated() { return (this.flags & TermFlag.Repeated) > 0 }
   set preserve(value: boolean) { this.flags = value ? this.flags | TermFlag.Preserve : this.flags & ~TermFlag.Preserve }
   get preserve() { return (this.flags & TermFlag.Preserve) > 0 }
+  set inline(value: boolean) { this.flags = value ? this.flags | TermFlag.Inline : this.flags & ~TermFlag.Inline }
+  get inline() { return (this.flags & TermFlag.Inline) > 0 }
   cmp(other: Term) { return this.hash - other.hash }
 }
 
