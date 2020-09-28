@@ -49,9 +49,18 @@ export class TokenPrecDeclaration extends Node {
   }
 }
 
+export class TokenConflictDeclaration extends Node {
+  constructor(start: number,
+              readonly a: NameExpression | LiteralExpression,
+              readonly b: NameExpression | LiteralExpression) {
+    super(start)
+  }
+}
+
 export class TokenDeclaration extends Node {
   constructor(start: number,
               readonly precedences: readonly TokenPrecDeclaration[],
+              readonly conflicts: readonly TokenConflictDeclaration[],
               readonly rules: readonly RuleDeclaration[],
               readonly literals: readonly LiteralDeclaration[]) {
     super(start)

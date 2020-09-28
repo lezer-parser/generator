@@ -214,6 +214,7 @@ class Builder {
     }
 
     this.tokens.takePrecedences()
+    this.tokens.takeConflicts()
   }
 
   unique(id: Identifier) {
@@ -1335,6 +1336,7 @@ class TokenSet {
   rules: readonly RuleDeclaration[]
   byDialect: {[dialect: number]: Term[]} = Object.create(null)
   precedenceRelations: readonly {term: Term, after: readonly Term[]}[] = []
+  explicitConflicts: {a: Term, b: Term}[] = []
 
   constructor(readonly b: Builder, readonly ast: TokenDeclaration | null) {
     this.rules = ast ? ast.rules : none
@@ -1480,6 +1482,26 @@ class TokenSet {
     }
   }
 
+  takeConflicts() {
+    let resolve = (expr: NameExpression | LiteralExpression) => {
+      if (expr instanceof NameExpression) {
+        for (let built of this.built) if (built.matches(expr)) return built.term
+      } else {
+        let id = JSON.stringify(expr.value), found = this.built.find(b => b.id == id)
+        if (found) return found.term
+      }
+      this.b.warn(`Precedence specified for unknown token ${expr}`, expr.start)
+      return null
+    }
+    for (let c of this.ast?.conflicts || []) {
+      let a = resolve(c.a), b = resolve(c.b)
+      if (a && b) {
+        if (a.id < b.id) [a, b] = [b, a]
+        this.explicitConflicts.push({a, b})
+      }
+    }
+  }
+
   precededBy(a: Term, b: Term) {
     let found = this.precedenceRelations.find(r => r.term == a)
     return found && found.after.includes(b)
@@ -1517,6 +1539,10 @@ class TokenSet {
     // If there is a precedence specified for the pair, the conflict is resolved
     let allConflicts = tokens.findConflicts(checkTogether(states, this.b, skipInfo))
       .filter(({a, b}) => !this.precededBy(a, b) && !this.precededBy(b, a))
+    for (let {a, b} of this.explicitConflicts) {
+      if (!allConflicts.some(c => c.a == a && c.b == b))
+        allConflicts.push(new Conflict(a, b, 0, "", ""))
+    }
     let softConflicts = allConflicts.filter(c => c.soft), conflicts = allConflicts.filter(c => !c.soft)
     let errors: {conflict: Conflict, error: string}[] = []
 
@@ -1547,10 +1573,10 @@ class TokenSet {
           let conflicting = conflict.a == term ? conflict.b : conflict.b == term ? conflict.a : null
           if (!conflicting) continue
           if (stateTerms.includes(conflicting) && !errors.some(e => e.conflict == conflict)) {
+            let example = conflict.exampleA ? ` (example: ${JSON.stringify(conflict.exampleA)}${
+              conflict.exampleB ? ` vs ${JSON.stringify(conflict.exampleB)}` : ""})` : ""
             errors.push({
-              error: `Overlapping tokens ${term.name} and ${conflicting.name} used in same context ` +
-                `(example: ${JSON.stringify(conflict.exampleA)}${
-                   conflict.exampleB ? ` vs ${JSON.stringify(conflict.exampleB)}` : ""})\n` +
+              error: `Overlapping tokens ${term.name} and ${conflicting.name} used in same context${example}\n` +
                 `After: ${state.set[0].trail()}`,
               conflict
             })

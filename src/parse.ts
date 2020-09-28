@@ -1,5 +1,6 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
-        TokenPrecDeclaration, TokenDeclaration, LiteralDeclaration, ExternalTokenDeclaration,
+        TokenPrecDeclaration, TokenConflictDeclaration, TokenDeclaration, LiteralDeclaration,
+        ExternalTokenDeclaration,
         ExternalSpecializeDeclaration, ExternalGrammarDeclaration, ExternalPropDeclaration, Identifier,
         Expression, NameExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, InlineRuleExpression, Prop, PropPart,
@@ -395,16 +396,19 @@ function parseTokens(input: Input) {
   let tokenRules: RuleDeclaration[] = []
   let literals: LiteralDeclaration[] = []
   let precedences: TokenPrecDeclaration[] = []
+  let conflicts: TokenConflictDeclaration[] = []
   while (!input.eat("}")) {
     if (input.type == "at" && input.value == "precedence") {
       precedences.push(parseTokenPrecedence(input))
+    } else if (input.type == "at" && input.value == "conflict") {
+      conflicts.push(parseTokenConflict(input))
     } else if (input.type == "string") {
       literals.push(new LiteralDeclaration(input.start, input.expect("string"), parseProps(input)))
     } else {
       tokenRules.push(parseRule(input))
     }
   }
-  return new TokenDeclaration(start, precedences, tokenRules, literals)
+  return new TokenDeclaration(start, precedences, conflicts, tokenRules, literals)
 }
 
 function parseTokenPrecedence(input: Input) {
@@ -421,6 +425,21 @@ function parseTokenPrecedence(input: Input) {
       input.raise(`Invalid expression in token precedences`, expr.start)
   }
   return new TokenPrecDeclaration(start, tokens)
+}
+
+function parseTokenConflict(input: Input) {
+  let start = input.start
+  input.next()
+  input.expect("{")
+  let a = parseExprInner(input)
+  if (!(a instanceof LiteralExpression || a instanceof NameExpression))
+    input.raise(`Invalid expression in token conflict`, a.start)
+  input.eat(",")
+  let b = parseExprInner(input)
+  if (!(b instanceof LiteralExpression || b instanceof NameExpression))
+    input.raise(`Invalid expression in token conflict`, b.start)
+  input.expect("}")
+  return new TokenConflictDeclaration(start, a, b)
 }
 
 function parseExternalTokenSet(input: Input) {
