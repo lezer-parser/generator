@@ -1,3 +1,15 @@
+## 0.11.2 (2020-09-29)
+
+### Bug fixes
+
+Fix a crash that could happen when reporting a conflict error.
+
+### New features
+
+A `@conflict` block inside `@tokens` can now be used to explicitly indicate a conflict between two tokens.
+
+Allow rules to be explicitly inlineable with an `[inline]` pseudo-prop.
+
 ## 0.11.1 (2020-09-26)
 
 ### Bug fixes
