@@ -1062,6 +1062,8 @@ class FinishStateContext {
   }
 
   storeActions(actions: readonly (Shift | Reduce)[], skipReduce: number, shared: SharedActions | null) {
+    if (skipReduce < 0 && shared && shared.actions.length == actions.length) return shared.addr
+
     let data = []
     for (let action of actions) {
       if (shared && shared.actions.some(a => a.eq(action))) continue
