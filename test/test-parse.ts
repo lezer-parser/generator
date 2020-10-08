@@ -48,10 +48,10 @@ describe("parsing", () => {
 
   function qq(ast: Tree) {
     return function(query: string, offset = 1): {start: number, end: number} {
-      let result = null
-      ast.iterate({enter(type, start, end) {
-        if (type.name == query && --offset == 0) result = {start, end}
-      }})
+      let result = null, cursor = ast.cursor()
+      do {
+        if (cursor.name == query && --offset == 0) result = {start: cursor.from, end: cursor.to}
+      } while (cursor.next())
       if (result) return result
       throw new Error("Couldn't find " + query)
     }
@@ -94,54 +94,49 @@ describe("parsing", () => {
   function testResolve(bufferLength: number) {
     let ast = p1().parse(resolveDoc, {strict: true, bufferLength})
 
-    let cx111 = ast.resolve(7)
+    let cx111 = ast.cursor(7)
     ist(cx111.depth, 2)
     ist(cx111.name, "Num")
-    ist(cx111.start, 6)
-    ist(cx111.end, 9)
-    ist(cx111.parent!.name, "Loop")
-    ist(cx111.parent!.start, 0)
-    ist(cx111.parent!.end, 33)
+    ist(cx111.from, 6)
+    ist(cx111.to, 9)
+    cx111.parent()
+    ist(cx111.name, "Loop")
+    ist(cx111.from, 0)
+    ist(cx111.to, 33)
 
-    let cxThree = ast.resolve(22)
+    let cxThree = ast.cursor(22)
     ist(cxThree.depth, 4)
     ist(cxThree.name, "Var")
-    ist(cxThree.start, 21)
-    ist(cxThree.end, 26)
+    ist(cxThree.from, 21)
+    ist(cxThree.to, 26)
+    cxThree.parent()
+    ist(cxThree.name, "Call")
+    ist(cxThree.from, 17)
+    ist(cxThree.to, 30)
 
-    let cxCall = cxThree.parent!
-    ist(cxCall.name, "Call")
-    ist(cxCall.start, 17)
-    ist(cxCall.end, 30)
-
-    let branch = cxThree.resolve(18)
+    let branch = cxThree.moveTo(18)
     ist(branch.depth, 4)
     ist(branch.name, "Var")
-    ist(branch.start, 17)
-    ist(branch.end, 20)
+    ist(branch.from, 17)
+    ist(branch.to, 20)
 
     // Always resolve to the uppermost context for a position
-    ist(ast.resolve(6).depth, 1)
-    ist(ast.resolve(9).depth, 1)
+    ist(ast.cursor(6).depth, 1)
+    ist(ast.cursor(9).depth, 1)
 
-    ist(cxCall.childBefore(cxCall.start), null)
-    ist(cxCall.childAfter(cxCall.end), null)
-    ist(cxCall.childBefore(27)!.name, "Var")
-    ist(cxCall.childAfter(26)!.name, "Num")
-    ist(cxCall.childBefore(28)!.name, "Num")
-    ist(cxCall.childAfter(28)!.name, "Num")
+    let c = ast.cursor(20)
+    ist(c.firstChild())
+    ist(c.name, "Var")
+    ist(c.nextSibling())
+    ist(c.name, "Var")
+    ist(c.nextSibling())
+    ist(c.name, "Num")
+    ist(!c.nextSibling())
   }
 
   it("can resolve positions in buffers", () => testResolve(1024))
 
   it("can resolve positions in trees", () => testResolve(2))
-
-  it("caches resolved trees", () => {
-    let tree = p1().parse(resolveDoc, {strict: true, bufferLength: 2})
-    let one = tree.resolve(13)
-    ist(tree.resolve(13), one)
-    ist(tree.resolve(11), one.parent)
-  })
 
   let iterDoc = "while 1 { a; b; c(d e); } while 2 { f; }"
   let iterSeq = ["Loop", 0, "Num", 6, "/Num", 7, "Block", 8, "Var", 10, "/Var", 11,
@@ -172,26 +167,6 @@ describe("parsing", () => {
   it("supports partial forward iteration in buffers", () => testIter(1024, true))
 
   it("supports partial forward iteration in trees", () => testIter(2, true))
-
-  function testIterRev(bufferLength: number, partial: boolean) {
-    let parser = p1(), output: any[] = []
-    let ast = parser.parse(iterDoc, {strict: true, bufferLength})
-    ast.iterate({
-      from: partial ? 19 : ast.length,
-      to: partial ? 13 : 0,
-      enter(close, _, end) { output.push(end, "/" + close.name) },
-      leave(open, start) { output.push(start, open.name) }
-    })
-    ist(output.reverse().join(), (partial ? partialSeq : iterSeq).join())
-  }
-
-  it("supports reverse iteration in buffers", () => testIterRev(1024, false))
-
-  it("supports reverse iteration in trees", () => testIterRev(2, false))
-
-  it("supports partial reverse iteration in buffers", () => testIterRev(1024, true))
-
-  it("supports partial reverse iteration in trees", () => testIterRev(2, true))
 
   it("can skip individual nodes during iteration", () => {
     let ast = p1().parse("foo(baz(baz), bug(quux)")
