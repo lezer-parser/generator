@@ -95,7 +95,6 @@ describe("parsing", () => {
     let ast = p1().parse(resolveDoc, {strict: true, bufferLength})
 
     let cx111 = ast.cursor(7)
-    ist(cx111.depth, 2)
     ist(cx111.name, "Num")
     ist(cx111.from, 6)
     ist(cx111.to, 9)
@@ -105,7 +104,6 @@ describe("parsing", () => {
     ist(cx111.to, 33)
 
     let cxThree = ast.cursor(22)
-    ist(cxThree.depth, 4)
     ist(cxThree.name, "Var")
     ist(cxThree.from, 21)
     ist(cxThree.to, 26)
@@ -115,14 +113,13 @@ describe("parsing", () => {
     ist(cxThree.to, 30)
 
     let branch = cxThree.moveTo(18)
-    ist(branch.depth, 4)
     ist(branch.name, "Var")
     ist(branch.from, 17)
     ist(branch.to, 20)
 
     // Always resolve to the uppermost context for a position
-    ist(ast.cursor(6).depth, 1)
-    ist(ast.cursor(9).depth, 1)
+    ist(ast.cursor(6).name, "Loop")
+    ist(ast.cursor(9).name, "Loop")
 
     let c = ast.cursor(20)
     ist(c.firstChild())
