@@ -11,7 +11,7 @@ import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState,
 import {encodeArray} from "./encode"
 import {GenError} from "./error"
 import {Parser, ExternalTokenizer, NestedGrammar, Stack, NodeProp} from "lezer"
-import {Action, Specialize, StateFlag, Seq, ParseState} from "lezer/dist/constants"
+import {Action, Specialize, StateFlag, Seq, ParseState, File} from "lezer/dist/constants"
 
 const none: readonly any[] = []
 
@@ -380,6 +380,7 @@ class Builder {
     })
 
     return (Parser as any).deserialize({
+      version: File.Version,
       states,
       stateData,
       goto,
@@ -505,6 +506,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     let dialects = Object.keys(rawDialects).map(d => `${d}: ${rawDialects[d]}`)
 
     let parserStr = `Parser.deserialize({
+  version: ${File.Version},
   states: ${encodeArray(states, 0xffffffff)},
   stateData: ${encodeArray(stateData)},
   goto: ${encodeArray(goto)},
