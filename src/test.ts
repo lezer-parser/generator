@@ -91,15 +91,14 @@ class TestSpec {
   }
 }
 
-function defaultIgnore(type: NodeType) {
-  return /\W/.test(type.name) || type.name == "@top"
-}
+function defaultIgnore(type: NodeType) { return /\W/.test(type.name) }
 
 export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) {
   let specs = TestSpec.parse(expect)
   let stack = [specs], pos = [0]
   tree.iterate({
     enter(type, start) {
+      if (!type.name) return
       let last = stack.length - 1, index = pos[last], seq = stack[last]
       let next = index < seq.length ? seq[index] : null
       if (next && next.matches(type)) {
@@ -119,6 +118,7 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
       }
     },
     leave(type, start) {
+      if (!type.name) return
       let last = stack.length - 1, index = pos[last], seq = stack[last]
       if (index < seq.length) throw new Error(`Unexpected end of ${type.name}. Expected ${seq.slice(index).map(s => s.name).join(", ")} at ${start}\n${tree}`)
       pos.pop()

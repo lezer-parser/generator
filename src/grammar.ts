@@ -63,7 +63,7 @@ export class TermSet {
 
   constructor() {
     this.eof = this.term("␄", null, TermFlag.Terminal | TermFlag.Eof)
-    this.error = this.term("⚠", "⚠", TermFlag.Preserve, {error: ""})
+    this.error = this.term("⚠", "⚠", TermFlag.Preserve)
   }
 
   term(name: string, nodeName: string | null, flags: number = 0, props: Props = noProps) {

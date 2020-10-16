@@ -30,7 +30,7 @@ describe("parsing", () => {
   let p1 = p(`
     @precedence { call }
 
-    @top { statement* }
+    @top T { statement* }
     statement { Cond | Loop | Block | expression ";" }
     Cond { kw<"if"> expression statement }
     Block { "{" statement* "}" }
@@ -60,7 +60,7 @@ describe("parsing", () => {
   it("can parse incrementally", () => {
     let doc = "if true { print(1); hello; } while false { if 1 do(something 1 2 3); }"
     let ast = p1().parse(doc, {bufferLength: 2})
-    let expected = "Cond(Var,Block(Call(Var,Num),Var)),Loop(Var,Block(Cond(Num,Call(Var,Var,Num,Num,Num))))"
+    let expected = "T(Cond(Var,Block(Call(Var,Num),Var)),Loop(Var,Block(Cond(Num,Call(Var,Var,Num,Num,Num)))))"
     testTree(ast, expected)
     ist(ast.length, 70)
     let pos = doc.indexOf("false"), doc2 = doc.slice(0, pos) + "x" + doc.slice(pos + 5)
@@ -136,14 +136,14 @@ describe("parsing", () => {
   it("can resolve positions in trees", () => testResolve(2))
 
   let iterDoc = "while 1 { a; b; c(d e); } while 2 { f; }"
-  let iterSeq = ["Loop", 0, "Num", 6, "/Num", 7, "Block", 8, "Var", 10, "/Var", 11,
+  let iterSeq = ["T", 0, "Loop", 0, "Num", 6, "/Num", 7, "Block", 8, "Var", 10, "/Var", 11,
                  "Var", 13, "/Var", 14, "Call", 16, "Var", 16, "/Var", 17,
                  "Var", 18, "/Var", 19, "Var", 20, "/Var", 21, "/Call", 22,
                  "/Block", 25, "/Loop", 25, "Loop", 26, "Num", 32, "/Num", 33, "Block", 34, "Var", 36,
-                 "/Var", 37, "/Block", 40, "/Loop", 40]
+                 "/Var", 37, "/Block", 40, "/Loop", 40, "/T", 40]
   // Node boundaries seen when iterating range 13-19 ("b; c(d")
-  let partialSeq = ["Loop", 0, "Block", 8, "Var", 13, "/Var", 14, "Call", 16, "Var", 16,
-                    "/Var", 17, "Var", 18, "/Var", 19, "/Call", 22, "/Block", 25, "/Loop", 25]
+  let partialSeq = ["T", 0, "Loop", 0, "Block", 8, "Var", 13, "/Var", 14, "Call", 16, "Var", 16,
+                    "/Var", 17, "Var", 18, "/Var", 19, "/Call", 22, "/Block", 25, "/Loop", 25, "/T", 40]
 
   function testIter(bufferLength: number, partial: boolean) {
     let parser = p1(), output: any[] = []
@@ -219,7 +219,7 @@ Bin { expr !plus "+" expr | expr !times "*" expr }
     // ~60ms on my machine. In case of exponentiality it should become
     // _extremely_ slow.
     ist(Date.now() - t0 < 500)
-    ist(ast.toString(), "⚠")
+    ist(ast.toString(), "T(⚠)")
   })
 })
 
@@ -278,14 +278,16 @@ describe("sequences", () => {
     let ast = parser.parse(doc, {bufferLength: 10})
     let i = 0
     ast.iterate({enter(type, start, end) {
-      if (i == 100) {
+      if (i == 0) {
+        ist(type.name, "")
+      } else if (i == 101) {
         ist(type.name, "Y")
         ist(start, 100)
         ist(end, 110)
       } else {
         ist(type.name, "X")
         ist(end, start + 1)
-        ist(start, i < 100 ? i : i + 9)
+        ist(start, i <= 100 ? i - 1 : i + 8)
       }
       i++
     }})

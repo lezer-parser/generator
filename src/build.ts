@@ -190,7 +190,7 @@ class Builder {
     for (const top of this.ast.topRules) {
       this.currentSkip.push(mainSkip)
       let {name, props} = this.nodeInfo(top.props, "", top.id.name == "@top" ? null : top.id.name,
-                                        none, none, top.expr, {top: "true"})
+                                        none, none, top.expr)
       this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
       this.currentSkip.pop()
     }
@@ -321,13 +321,15 @@ class Builder {
       topRules[term.nodeName || "@top"] = [table.find(state => state.startRule == term)!.id, term.id]
 
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
+    let {nodeProps, skippedTypes} = this.gatherNodeProps(nodeTypes)
 
     return {
       states,
       stateData: data.finish(),
       goto: computeGotoTable(table),
       nodeNames: nodeTypes.filter(t => t.id < minRepeatTerm).map(t => t.nodeName).join(" "),
-      nodeProps: this.gatherNodeProps(nodeTypes),
+      nodeProps,
+      skippedTypes,
       maxTerm,
       repeatNodeCount: nodeTypes.length - minRepeatTerm,
       tokenizers,
@@ -348,6 +350,7 @@ class Builder {
       goto,
       nodeNames,
       nodeProps: rawNodeProps,
+      skippedTypes,
       maxTerm,
       repeatNodeCount,
       tokenizers: rawTokenizers,
@@ -384,6 +387,7 @@ class Builder {
       maxTerm,
       repeatNodeCount,
       nodeProps: rawNodeProps.map(({prop, terms}) => [this.knownProps[prop].prop, ...terms]),
+      skippedNodes: skippedTypes,
       tokenData,
       tokenizers,
       topRules,
@@ -406,6 +410,7 @@ class Builder {
       goto,
       nodeNames,
       nodeProps: rawNodeProps,
+      skippedTypes,
       maxTerm,
       repeatNodeCount,
       tokenizers: rawTokenizers,
@@ -504,10 +509,11 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
   stateData: ${encodeArray(stateData)},
   goto: ${encodeArray(goto)},
   nodeNames: ${JSON.stringify(nodeNames)},
-  maxTerm: ${maxTerm},${nodeProps.length ? `
+  maxTerm: ${maxTerm}${nodeProps.length ? `,
   nodeProps: [
     ${nodeProps.join(",\n    ")}
-  ],` : ""}
+  ]` : ""}${skippedTypes.length ? `,
+  skippedNodes: ${JSON.stringify(skippedTypes)}` : ""},
   repeatNodeCount: ${repeatNodeCount},
   tokenData: ${encodeArray(tokenData)},
   tokenizers: [${tokenizers.join(", ")}],
@@ -557,13 +563,10 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
   }
 
   gatherNodeProps(nodeTypes: readonly Term[]) {
-    let notSkipped = this.gatherNonSkippedNodes()
+    let notSkipped = this.gatherNonSkippedNodes(), skippedTypes = []
     let nodeProps: {prop: string, terms: (number | string)[]}[] = []
     for (let type of nodeTypes) {
-      if (!notSkipped[type.id] && !type.error) {
-        if (type.props == noProps) type.props = {}
-        type.props.skipped = "true"
-      }
+      if (!notSkipped[type.id] && !type.error) skippedTypes.push(type.id)
       for (let prop in type.props) {
         let known = this.knownProps[prop]
         if (!known) throw new GenError("No known prop type for " + prop)
@@ -573,7 +576,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
         rec.terms.push(type.id, type.props[prop])
       }
     }
-    return nodeProps
+    return {nodeProps, skippedTypes}
   }
 
   addNestedGrammars(table: readonly LRState[]) {
@@ -910,8 +913,6 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
         if (prop.value.length) this.raise("'inline' doesn't take a value", prop.value[0].start)
         if (allow.indexOf("i") < 0) this.raise("Inline can only be specified on nonterminals")
         inline = true
-      } else if (RESERVED_PROPS.includes(prop.name)) {
-        this.raise(`Prop name '${prop.name}' is reserved`, prop.start)
       } else if (!this.knownProps[prop.name]) {
         this.raise(`Unknown prop name '${prop.name}'`, prop.start)
       } else {
@@ -1142,8 +1143,6 @@ function buildSpecializeTable(spec: {value: string, term: Term, type: string}[])
   }
   return table
 }
-
-const RESERVED_PROPS = ["error", "repeated"]
 
 function reduceAction(rule: Rule, skipInfo: readonly SkipInfo[], depth = rule.parts.length) {
   return rule.name.id | Action.ReduceFlag |
