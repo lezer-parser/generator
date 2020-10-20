@@ -1,6 +1,6 @@
 @top { Foo }
 
-prefix[inline] { "::" (A "::")* | (A "::")+ }
+prefix[@inline] { "::" (A "::")* | (A "::")+ }
 
 Foo { prefix A }
 

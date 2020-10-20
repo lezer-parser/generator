@@ -211,7 +211,8 @@ function parseProps(input: Input) {
 }
 
 function parseProp(input: Input) {
-  let start = input.start, name = input.expect("id"), value = []
+  let start = input.start, value = [], name = input.value, at = input.type == "at"
+  if (!input.eat("at") && !input.eat("id")) input.unexpected()
   if (input.eat("=")) for (;;) {
     if (input.type == "string" || input.type == "id") {
       value.push(new PropPart(input.start, input.value, null))
@@ -225,7 +226,7 @@ function parseProp(input: Input) {
       break
     }
   }
-  return new Prop(start, name, value)
+  return new Prop(start, at, name, value)
 }
 
 function parseBracedExpr(input: Input): Expression {

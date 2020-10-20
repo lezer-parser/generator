@@ -2,7 +2,7 @@
 
 @precedence { call }
 
-@top[name=Script] { A+ }
+@top[@name=Script] { A+ }
 
 A { B | "{" "x" "}" }
 

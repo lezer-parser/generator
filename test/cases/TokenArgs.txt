@@ -4,7 +4,7 @@
 
 @tokens {
   whitespace { std.whitespace+ }
-  kw[name={word}]<word> { word }
+  kw[@name={word}]<word> { word }
   Foo { bar<"foo"> }
   bar<x> { baz<x> }
   baz<z> { "!" z }

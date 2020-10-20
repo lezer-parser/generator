@@ -24,8 +24,8 @@ DualExpr {
   Number { std.digit+ }
   BracketLeft { "[|" }
   BracketRight { "|]" }
-  "[["[name=DoubleLeft]
-  "]]"[name=DoubleRight]
+  "[["[@name=DoubleLeft]
+  "]]"[@name=DoubleRight]
   "(" ")" "{{" "}}" "{" "}" "((" "()"
 }
 

@@ -285,7 +285,7 @@ export function exprsEq(a: readonly Expression[], b: readonly Expression[]) {
 }
 
 export class Prop extends Node {
-  constructor(start: number, readonly name: string, readonly value: readonly PropPart[]) { super(start) }
+  constructor(start: number, readonly at: boolean, readonly name: string, readonly value: readonly PropPart[]) { super(start) }
 
   eq(other: Prop) {
     return this.name == other.name && this.value.length == other.value.length &&
@@ -293,7 +293,7 @@ export class Prop extends Node {
   }
 
   toString() {
-    let result = this.name
+    let result = (this.at ? "@" : "") + this.name
     if (this.value.length) {
       result += "="
       for (let {name, value} of this.value)

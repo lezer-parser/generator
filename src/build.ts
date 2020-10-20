@@ -726,7 +726,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
       let prop = props[i], value = substituteInValue(prop.value)
       if (value != prop.value) {
         if (result == props) result = props.slice()
-        result[i] = new Prop(prop.start, prop.name, value)
+        result[i] = new Prop(prop.start, prop.at, prop.name, value)
       }
     }
     return result
@@ -894,7 +894,11 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     let result: Props = {}, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
     let dialect = null, dynamicPrec = 0, inline = false
     for (let prop of props) {
-      if (prop.name == "name") {
+      if (!prop.at) {
+        if (!this.knownProps[prop.name])
+          this.raise(`Unknown prop name '${prop.name}'`, prop.start)
+        result[prop.name] = this.finishProp(prop, args, params)
+      } else if (prop.name == "name") {
         name = this.finishProp(prop, args, params)
         if (/ /.test(name)) this.raise(`Node names cannot have spaces ('${name}')`, prop.start)
       } else if (prop.name == "dialect") {
@@ -915,10 +919,8 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
         if (prop.value.length) this.raise("'inline' doesn't take a value", prop.value[0].start)
         if (allow.indexOf("i") < 0) this.raise("Inline can only be specified on nonterminals")
         inline = true
-      } else if (!this.knownProps[prop.name]) {
-        this.raise(`Unknown prop name '${prop.name}'`, prop.start)
       } else {
-        result[prop.name] = this.finishProp(prop, args, params)
+        this.raise(`Unknown built-in prop name '@${prop.name}'`, prop.start)
       }
     }
     if (expr && this.ast.autoDelim && (name || hasProps(result))) {

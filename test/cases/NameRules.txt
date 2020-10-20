@@ -1,9 +1,9 @@
-@top { (A | b | @specialize[name=I]<i, "ii">)+ }
+@top { (A | b | @specialize[@name=I]<i, "ii">)+ }
 
 A { "a" }
 
 @tokens {
-  b[name=B] { "b" }
+  b[@name=B] { "b" }
   i { "i"+ }
 }
 

@@ -184,7 +184,7 @@ describe("parsing", () => {
 expr { Bin | Var }
 Bin { expr !plus "+" expr | expr !times "*" expr }
 @skip { space }
-@tokens { space { " "+ } Var { "x" } "*"[name=Times] "+"[name=Plus] }
+@tokens { space { " "+ } Var { "x" } "*"[@name=Times] "+"[@name=Plus] }
 `)
     let ast = parser.parse("x + x + x", {strict: true, bufferLength: 2})
     testTree(ast, "Bin(Bin(Var,Plus,Var),Plus,Var)")
@@ -348,7 +348,7 @@ expr { B { Open{"("} expr+ Close{")"} } | Dot{"."} }`)
 @external grammar inner from "."
 @top { expr+ }
 expr { "[[" nest.inner "]]" | Bang{"!"} }
-@tokens { "[["[name=Start] "]]"[name=End] }
+@tokens { "[["[@name=Start] "]]"[@name=End] }
 `, {nestedGrammar() { return inner }})
 
     testTree(outer.parse("![[((.).)]][[.]]"), 'Bang,Start,B(Open,B(Open,Dot,Close),Dot,Close),End,Start,Dot,End')
@@ -384,7 +384,7 @@ Close { "</" name ">" }
   it("allows updating the nested grammars for a parser", () => {
     let inner1 = buildParser(`@top { A { "x" }+ }`)
     let inner2 = buildParser(`@top { B { "x" }+ }`)
-    let outer = buildParser(`@external grammar inner from "." @top { "[" nest.inner "]" } @tokens { "["[name=O] "]"[name=C] }`,
+    let outer = buildParser(`@external grammar inner from "." @top { "[" nest.inner "]" } @tokens { "["[@name=O] "]"[@name=C] }`,
                             {nestedGrammar() { return inner1 }})
     testTree(outer.parse("[x]"), "O,A,C")
     testTree(outer.withNested({inner: inner2}).parse("[x]"), "O,B,C")
@@ -392,12 +392,12 @@ Close { "</" name ">" }
 
   it("supports tag-less nesting", () => {
     let inner = buildParser(`@top { X{"x"} }`)
-    let outer = buildParser(`@external grammar x from "." @top { "&" nest.x "&" } @tokens { "&"[name=And] }`, {nestedGrammar() { return inner }})
+    let outer = buildParser(`@external grammar x from "." @top { "&" nest.x "&" } @tokens { "&"[@name=And] }`, {nestedGrammar() { return inner }})
     testTree(outer.parse("&x&"), 'And,X,And')
   })
 
   it("skips ranges with missing nested parsers", () => {
-    let outer = buildParser(`@external grammar inner empty @top { "[" nest.inner "]" } @tokens { "["[name=O] "]"[name=C] }`)
+    let outer = buildParser(`@external grammar inner empty @top { "[" nest.inner "]" } @tokens { "["[@name=O] "]"[@name=C] }`)
     testTree(outer.parse("[lfkdsajfa]"), 'O,C')
   })
 })

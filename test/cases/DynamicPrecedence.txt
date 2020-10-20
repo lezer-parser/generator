@@ -1,10 +1,10 @@
 @top { (A | B)+ }
 
-A[dynamicPrecedence=2] { "foo" "bar" ~ambig }
+A[@dynamicPrecedence=2] { "foo" "bar" ~ambig }
 
-B[dynamicPrecedence=1] { "foo" ("bar" | "baz" ~ambig | Inner) ~ambig }
+B[@dynamicPrecedence=1] { "foo" ("bar" | "baz" ~ambig | Inner) ~ambig }
 
-Inner[dynamicPrecedence=-1] { ("baz" | "quux") ~ambig }
+Inner[@dynamicPrecedence=-1] { ("baz" | "quux") ~ambig }
 
 # Prefers As
 

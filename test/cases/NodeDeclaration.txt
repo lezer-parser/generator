@@ -1,11 +1,11 @@
-@top[name=Doc] { ("a" | "(" B ")")+ }
+@top[@name=Doc] { ("a" | "(" B ")")+ }
 
 B { "b" }
 
 @tokens {
-  "a"[name=A]
-  "("[name=ParenOpen]
-  ")"[name=ParenClose]
+  "a"[@name=A]
+  "("[@name=ParenOpen]
+  ")"[@name=ParenClose]
 }
 
 # Adds a document node
