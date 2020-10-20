@@ -566,7 +566,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
 
   gatherNodeProps(nodeTypes: readonly Term[]) {
     let notSkipped = this.gatherNonSkippedNodes(), skippedTypes = []
-    let nodeProps: {prop: string, terms: (number | string)[]}[] = []
+    let nodeProps: {prop: string, values: {[val: string]: number[]}}[] = []
     for (let type of nodeTypes) {
       if (!notSkipped[type.id] && !type.error) skippedTypes.push(type.id)
       for (let prop in type.props) {
@@ -574,11 +574,27 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
         if (!known) throw new GenError("No known prop type for " + prop)
         if (known.source.from == null && (known.source.name == "repeated" || known.source.name == "error")) continue
         let rec = nodeProps.find(r => r.prop == prop)
-        if (!rec) nodeProps.push(rec = {prop, terms: []})
-        rec.terms.push(type.id, type.props[prop])
+        if (!rec) nodeProps.push(rec = {prop, values: {}})
+        ;(rec.values[type.props[prop]] || (rec.values[type.props[prop]] = [])).push(type.id)
       }
     }
-    return {nodeProps, skippedTypes}
+    return {
+      nodeProps: nodeProps.map(({prop, values}) => {
+        let terms: (string | number)[] = []
+        for (let val in values) {
+          let ids = values[val]
+          if (ids.length == 1) {
+            terms.push(ids[0], val)
+          } else {
+            terms.push(-ids.length)
+            for (let id of ids) terms.push(id)
+            terms.push(val)
+          }
+        }
+        return {prop, terms}
+      }),
+      skippedTypes
+    }
   }
 
   addNestedGrammars(table: readonly LRState[]) {
