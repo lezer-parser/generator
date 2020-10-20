@@ -18,7 +18,10 @@ const enum TermFlag {
 
 export type Props = {[name: string]: string}
 
-export const noProps: Props = Object.create(null)
+export function hasProps(props: Props) {
+  for (let _p in props) return true
+  return false
+}
 
 let termHash = 0
 
@@ -31,15 +34,10 @@ export class Term {
   constructor(readonly name: string,
               private flags: number,
               readonly nodeName: string | null,
-              public props: Props = noProps) {
-    nope: { // Make sure props == noProps when the object is empty
-      for (let _ in props) break nope
-      this.props = noProps
-    }
-  }
+              readonly props: Props = {}) {}
 
   toString() { return this.name }
-  get nodeType() { return this.top || this.nodeName != null || this.props != noProps || this.repeated }
+  get nodeType() { return this.top || this.nodeName != null || hasProps(this.props) || this.repeated }
   get terminal() { return (this.flags & TermFlag.Terminal) > 0 }
   get eof() { return (this.flags & TermFlag.Eof) > 0 }
   get error() { return "error" in this.props }
@@ -66,7 +64,7 @@ export class TermSet {
     this.error = this.term("⚠", "⚠", TermFlag.Preserve)
   }
 
-  term(name: string, nodeName: string | null, flags: number = 0, props: Props = noProps) {
+  term(name: string, nodeName: string | null, flags: number = 0, props: Props = {}) {
     let term = new Term(name, flags, nodeName, props)
     this.terms.push(term)
     this.names[name] = term
@@ -79,11 +77,11 @@ export class TermSet {
     return term
   }
 
-  makeTerminal(name: string, nodeName: string | null, props = noProps) {
+  makeTerminal(name: string, nodeName: string | null, props = {}) {
     return this.term(name, nodeName, TermFlag.Terminal, props)
   }
 
-  makeNonTerminal(name: string, nodeName: string | null, props = noProps) {
+  makeNonTerminal(name: string, nodeName: string | null, props = {}) {
     return this.term(name, nodeName, 0, props)
   }
 

@@ -4,7 +4,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDecl
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
         InlineRuleExpression, SpecializeExpression, Prop, PropPart,
         exprsEq, exprEq} from "./node"
-import {Term, TermSet, Rule, Conflicts, Props, noProps} from "./grammar"
+import {Term, TermSet, Rule, Conflicts, Props, hasProps} from "./grammar"
 import {State, MAX_CHAR, Conflict} from "./token"
 import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce, Pos} from "./automaton"
@@ -232,7 +232,7 @@ class Builder {
     this.namespaces[name] = value
   }
 
-  newName(base: string, nodeName: string | null | true = null, props: Props = noProps): Term {
+  newName(base: string, nodeName: string | null | true = null, props: Props = {}): Term {
     for (let i = nodeName ? 0 : 1;; i++) {
       let name = i ? `${base}-${i}` : base
       if (!this.terms.names[name])
@@ -891,7 +891,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     dynamicPrec: number,
     inline: boolean
   } {
-    let result = noProps, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
+    let result: Props = {}, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
     let dialect = null, dynamicPrec = 0, inline = false
     for (let prop of props) {
       if (prop.name == "name") {
@@ -918,24 +918,22 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
       } else if (!this.knownProps[prop.name]) {
         this.raise(`Unknown prop name '${prop.name}'`, prop.start)
       } else {
-        if (result == noProps) result = Object.create(null)
         result[prop.name] = this.finishProp(prop, args, params)
       }
     }
-    if (expr && this.ast.autoDelim && (name || result != noProps)) {
+    if (expr && this.ast.autoDelim && (name || hasProps(result))) {
       let delim = this.findDelimiters(expr)
       if (delim) {
         addToProp(delim[0], "closedBy", delim[1].nodeName!)
         addToProp(delim[1], "openedBy", delim[0].nodeName!)
       }
     }
-    if (defaultProps && defaultProps != noProps) {
-      if (result == noProps) result = Object.create(null)
+    if (defaultProps && hasProps(defaultProps)) {
       for (let prop in defaultProps) if (!(prop in result)) result[prop] = defaultProps[prop]
     }
-    if (result != noProps && !name && !result.top)
+    if (hasProps(result) && !name && !result.top)
       this.raise(`Node has properties but no name`, props.length ? props[0].start : expr!.start)
-    if (inline && (result != noProps || dialect || dynamicPrec))
+    if (inline && (hasProps(result) || dialect || dynamicPrec))
       this.raise(`Inline nodes can't have props, dynamic precedence, or a dialect`, props[0].start)
     if (inline && name) name = null
     return {name, props: result, dialect, dynamicPrec, inline}
@@ -1132,7 +1130,6 @@ class FinishStateContext {
 }
 
 function addToProp(term: Term, prop: string, value: string) {
-  if (term.props == noProps) term.props = Object.create(null)
   let cur = term.props[prop]
   if (!cur || cur.split(" ").indexOf(value) < 0) term.props[prop] = cur ? cur + " " + value : value
 }
@@ -1378,7 +1375,7 @@ class TokenSet {
   getLiteral(expr: LiteralExpression) {
     let id = JSON.stringify(expr.value)
     for (let built of this.built) if (built.id == id) return built.term
-    let name = null, props = noProps, dialect = null
+    let name = null, props = {}, dialect = null
     let decl = this.ast ? this.ast.literals.find(l => l.literal == expr.value) : null
     if (decl) ({name, props, dialect} = this.b.nodeInfo(decl.props, "d", expr.value))
 
