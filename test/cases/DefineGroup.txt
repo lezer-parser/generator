@@ -1,10 +1,11 @@
 @top { expr* }
 
 expr[@isGroup=Expression] {
-  Id |
-  Number |
+  atom |
   ParenExpr { "(" expr ")" }
 }
+
+atom { Id | Number }
 
 @tokens {
   Id { "a"+ }

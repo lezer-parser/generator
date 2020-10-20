@@ -119,6 +119,7 @@ class Builder {
   knownProps: {[name: string]: {prop: NodeProp<any>, source: {name: string, from: string | null}}} = Object.create(null)
   dialects: readonly string[]
   dynamicRulePrecedences: {rule: Term, prec: number}[] = []
+  definedGroups: {name: Term, group: string, rule: RuleDeclaration}[] = []
 
   astRules: {skip: Term, rule: RuleDeclaration}[] = []
   currentSkip: Term[] = []
@@ -212,6 +213,8 @@ class Builder {
 
     this.tokens.takePrecedences()
     this.tokens.takeConflicts()
+
+    for (let {name, group, rule} of this.definedGroups) this.defineGroup(name, group, rule)
   }
 
   unique(id: Identifier) {
@@ -872,7 +875,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     this.currentSkip.push(skip)
     this.defineRule(name, this.normalizeExpr(expr))
     this.currentSkip.pop()
-    if (group) this.defineGroup(name, group, rule)
+    if (group) this.definedGroups.push({name, group, rule})
     return name
   }
 
@@ -1027,16 +1030,29 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
   }
 
   defineGroup(rule: Term, group: string, ast: RuleDeclaration) {
-    for (let r of this.rules) if (r.name == rule) {
-      let namedParts = r.parts.filter(p => !!p.nodeName)
-      if (namedParts.length > 1)
-        this.raise(`Rule '${ast.id.name}' cannot define a group because option '${r}' produces multiple named nodes`, ast.start)
-      if (namedParts.length == 1) {
-        let part = namedParts[0]
-        if (part.props["group"] && part.props["group"] != group)
-          this.raise(`Conflicting node groups defined for '${part.nodeName}'`, ast.start)
-        part.props["group"] = group
+    let recur: Term[] = []
+    let getNamed = (rule: Term): Term[] => {
+      if (rule.nodeName) return [rule]
+      if (recur.includes(rule))
+        this.raise(`Rule '${ast.id.name}' cannot define a group because it contains a non-named recursive rule ('${rule.name}')`,
+                   ast.start)
+      let result: Term[] = []
+      recur.push(rule)
+      for (let r of this.rules) if (r.name == rule) {
+        let names = r.parts.map(getNamed).filter(x => x.length)
+        if (names.length > 1)
+          this.raise(`Rule '${ast.id.name}' cannot define a group because some choices produce multiple named nodes`, ast.start)
+        if (names.length == 1) for (let n of names[0]) result.push(n)
       }
+      recur.pop()
+      return result
+    }
+
+    for (let name of getNamed(rule)) {
+      let old = name.props["group"]
+      if (old && old != group)
+        this.raise(`Conflicting node groups defined for '${name.nodeName}' ('${group}' vs '${old}')`, ast.start)
+      name.props["group"] = group
     }
   }
 }
