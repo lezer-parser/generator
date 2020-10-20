@@ -767,7 +767,6 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     let skip = this.currentSkip[this.currentSkip.length - 1]
     for (let choice of choices)
       this.rules.push(new Rule(name, choice.terms, choice.ensureConflicts(), skip))
-    return name
   }
 
   resolve(expr: NameExpression): Parts[] {
@@ -861,8 +860,8 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
 
   buildRule(rule: RuleDeclaration, args: readonly Expression[], skip: Term, inline = false): Term {
     let expr = this.substituteArgs(rule.expr, args, rule.params)
-    let {name: nodeName, props, dynamicPrec, inline: explicitInline} =
-      this.nodeInfo(rule.props || none, inline ? "p" : "pi", rule.id.name, args, rule.params, rule.expr)
+    let {name: nodeName, props, dynamicPrec, inline: explicitInline, group} =
+      this.nodeInfo(rule.props || none, inline ? "pg" : "pgi", rule.id.name, args, rule.params, rule.expr)
     if (rule.exported && rule.params.length) this.warn(`Can't export parameterized rules`, rule.start)
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), nodeName || true, props)
     if (explicitInline) name.inline = true
@@ -874,13 +873,14 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
 
     if (!inline) this.built.push(new BuiltRule(rule.id.name, args, name))
     this.currentSkip.push(skip)
-    let result = this.defineRule(name, this.normalizeExpr(expr))
+    this.defineRule(name, this.normalizeExpr(expr))
     this.currentSkip.pop()
-    return result
+    if (group) this.defineGroup(name, group, rule)
+    return name
   }
 
   nodeInfo(props: readonly Prop[],
-           // p for dynamic precedence, d for dialect, i for inline
+           // p for dynamic precedence, d for dialect, i for inline, g for group
            allow: string,
            defaultName: string | null = null,
            args: readonly Expression[] = none, params: readonly Identifier[] = none,
@@ -889,10 +889,11 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     props: Props,
     dialect: number | null,
     dynamicPrec: number,
-    inline: boolean
+    inline: boolean,
+    group: string | null
   } {
     let result: Props = {}, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
-    let dialect = null, dynamicPrec = 0, inline = false
+    let dialect = null, dynamicPrec = 0, inline = false, group: string | null = null
     for (let prop of props) {
       if (!prop.at) {
         if (!this.knownProps[prop.name])
@@ -905,7 +906,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
         if (allow.indexOf("d") < 0)
           this.raise("Can't specify a dialect on non-token rules", props[0].start)
         if (prop.value.length != 1 && !prop.value[0].value)
-          this.raise("The 'dialect' rule prop must hold a plain string value")
+          this.raise("The '@dialect' rule prop must hold a plain string value")
         let dialectID = this.dialects.indexOf(prop.value[0].value!)
         if (dialectID < 0) this.raise(`Unknown dialect '${prop.value[0].value}'`, prop.value[0].start)
         dialect = dialectID
@@ -913,12 +914,15 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
         if (allow.indexOf("p") < 0)
           this.raise("Dynamic precedence can only be specified on nonterminals")
         if (prop.value.length != 1 || !/^-?(?:10|\d)$/.test(prop.value[0].value!))
-          this.raise("The 'dynamicPrecedence' rule prop must hold an integer between -10 and 10")
+          this.raise("The '@dynamicPrecedence' rule prop must hold an integer between -10 and 10")
         dynamicPrec = +prop.value[0].value!
       } else if (prop.name == "inline") {
-        if (prop.value.length) this.raise("'inline' doesn't take a value", prop.value[0].start)
+        if (prop.value.length) this.raise("'@inline' doesn't take a value", prop.value[0].start)
         if (allow.indexOf("i") < 0) this.raise("Inline can only be specified on nonterminals")
         inline = true
+      } else if (prop.name == "isGroup") {
+        if (allow.indexOf("g") < 0) this.raise("'@isGroup' can only be specified on nonterminals")
+        group = prop.value.length ? this.finishProp(prop, args, params) : defaultName
       } else {
         this.raise(`Unknown built-in prop name '@${prop.name}'`, prop.start)
       }
@@ -938,7 +942,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     if (inline && (hasProps(result) || dialect || dynamicPrec))
       this.raise(`Inline nodes can't have props, dynamic precedence, or a dialect`, props[0].start)
     if (inline && name) name = null
-    return {name, props: result, dialect, dynamicPrec, inline}
+    return {name, props: result, dialect, dynamicPrec, inline, group}
   }
 
   finishProp(prop: Prop, args: readonly Expression[], params: readonly Identifier[]): string {
@@ -1019,6 +1023,20 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
   registerDynamicPrec(term: Term, prec: number) {
     this.dynamicRulePrecedences.push({rule: term, prec})
     term.preserve = true
+  }
+
+  defineGroup(rule: Term, group: string, ast: RuleDeclaration) {
+    for (let r of this.rules) if (r.name == rule) {
+      let namedParts = r.parts.filter(p => !!p.nodeName)
+      if (namedParts.length > 1)
+        this.raise(`Rule '${ast.id.name}' cannot define a group because option '${r}' produces multiple named nodes`, ast.start)
+      if (namedParts.length == 1) {
+        let part = namedParts[0]
+        if (part.props["group"] && part.props["group"] != group)
+          this.raise(`Conflicting node groups defined for '${part.nodeName}'`, ast.start)
+        part.props["group"] = group
+      }
+    }
   }
 }
 

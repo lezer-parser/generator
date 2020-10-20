@@ -1,0 +1,5 @@
+@top { expr+ }
+
+expr[@isGroup] { "foo" | A { "bar" } B { "baz" } }
+
+//! cannot define a group

@@ -1,0 +1,19 @@
+@top { expr* }
+
+expr[@isGroup=Expression] {
+  Id |
+  Number |
+  ParenExpr { "(" expr ")" }
+}
+
+@tokens {
+  Id { "a"+ }
+  Number { "1"+ }
+  "(" ")"
+}
+
+# Adds the group prop
+
+a(1)
+
+==> Id[group=Expression],ParenExpr[group=Expression]("(", Number[group=Expression], ")")
