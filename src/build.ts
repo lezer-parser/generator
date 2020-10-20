@@ -197,12 +197,9 @@ class Builder {
 
     for (let ext of this.externalSpecializers) ext.finish()
 
-    for (let rule of this.ast.rules) {
-      if (rule.exported && this.ruleNames[rule.id.name] && rule.params.length == 0) {
-        let {name, props, dynamicPrec} = this.nodeInfo(rule.props, "p", rule.id.name)
-        let term = this.namedTerms[rule.id.name] = this.newName(rule.id.name, name, props)
-        if (dynamicPrec) this.registerDynamicPrec(term, dynamicPrec)
-        term.preserve = true
+    for (let {skip, rule} of this.astRules) {
+      if (this.ruleNames[rule.id.name] && isExported(rule) && !rule.params.length) {
+        this.buildRule(rule, [], skip, false)
         if (rule.expr instanceof SequenceExpression && rule.expr.exprs.length == 0)
           this.used(rule.id.name)
       }
@@ -692,7 +689,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
       } else if (expr instanceof InlineRuleExpression) {
         let r = expr.rule, props = this.substituteArgsInProps(r.props, args, params)
         return props == r.props ? expr :
-          new InlineRuleExpression(expr.start, new RuleDeclaration(r.start, r.id, r.exported, props, r.params, r.expr))
+          new InlineRuleExpression(expr.start, new RuleDeclaration(r.start, r.id, props, r.params, r.expr))
       } else if (expr instanceof SpecializeExpression) {
         let props = this.substituteArgsInProps(expr.props, args, params)
         return props == expr.props ? expr :
@@ -860,13 +857,13 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
 
   buildRule(rule: RuleDeclaration, args: readonly Expression[], skip: Term, inline = false): Term {
     let expr = this.substituteArgs(rule.expr, args, rule.params)
-    let {name: nodeName, props, dynamicPrec, inline: explicitInline, group} =
+    let {name: nodeName, props, dynamicPrec, inline: explicitInline, group, exported} =
       this.nodeInfo(rule.props || none, inline ? "pg" : "pgi", rule.id.name, args, rule.params, rule.expr)
-    if (rule.exported && rule.params.length) this.warn(`Can't export parameterized rules`, rule.start)
+    if (exported && rule.params.length) this.warn(`Can't export parameterized rules`, rule.start)
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), nodeName || true, props)
     if (explicitInline) name.inline = true
     if (dynamicPrec) this.registerDynamicPrec(name, dynamicPrec)
-    if ((name.nodeType || rule.exported) && rule.params.length == 0) {
+    if ((name.nodeType || exported) && rule.params.length == 0) {
       if (!nodeName) name.preserve = true
       this.namedTerms[rule.id.name] = name
     }
@@ -890,10 +887,11 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     dialect: number | null,
     dynamicPrec: number,
     inline: boolean,
-    group: string | null
+    group: string | null,
+    exported: boolean
   } {
     let result: Props = {}, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
-    let dialect = null, dynamicPrec = 0, inline = false, group: string | null = null
+    let dialect = null, dynamicPrec = 0, inline = false, group: string | null = null, exported = false
     for (let prop of props) {
       if (!prop.at) {
         if (!this.knownProps[prop.name])
@@ -923,6 +921,9 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
       } else if (prop.name == "isGroup") {
         if (allow.indexOf("g") < 0) this.raise("'@isGroup' can only be specified on nonterminals")
         group = prop.value.length ? this.finishProp(prop, args, params) : defaultName
+      } else if (prop.name == "export") {
+        if (prop.value.length) this.raise("'@export' doesn't take a value", prop.value[0].start)
+        exported = true
       } else {
         this.raise(`Unknown built-in prop name '@${prop.name}'`, prop.start)
       }
@@ -942,7 +943,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     if (inline && (hasProps(result) || dialect || dynamicPrec))
       this.raise(`Inline nodes can't have props, dynamic precedence, or a dialect`, props[0].start)
     if (inline && name) name = null
-    return {name, props: result, dialect, dynamicPrec, inline, group}
+    return {name, props: result, dialect, dynamicPrec, inline, group, exported}
   }
 
   finishProp(prop: Prop, args: readonly Expression[], params: readonly Identifier[]): string {
@@ -1378,12 +1379,12 @@ class TokenSet {
     let name = expr.id.name
     let rule = this.rules.find(r => r.id.name == name)
     if (!rule) return null
-    let {name: nodeName, props, dialect} =
+    let {name: nodeName, props, dialect, exported} =
       this.b.nodeInfo(rule.props, "d", name, expr.args, rule.params.length != expr.args.length ? none : rule.params)
     let term = this.b.makeTerminal(expr.toString(), nodeName, props)
     if (dialect != null) (this.byDialect[dialect] || (this.byDialect[dialect] = [])).push(term)
 
-    if ((term.nodeType || rule.exported) && rule.params.length == 0) {
+    if ((term.nodeType || exported) && rule.params.length == 0) {
       if (!term.nodeType) term.preserve = true
       this.b.namedTerms[name] = term
     }
@@ -1924,4 +1925,8 @@ export function buildParserFile(text: string, options: BuildOptions = {}): {pars
 function ignored(name: string) {
   let first = name[0]
   return first == "_" || first.toUpperCase() != first
+}
+
+function isExported(rule: RuleDeclaration) {
+  return rule.props.some(p => p.at && p.name == "export")
 }

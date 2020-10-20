@@ -24,7 +24,6 @@ export class GrammarDeclaration extends Node {
 export class RuleDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
-              readonly exported: boolean,
               readonly props: readonly Prop[],
               readonly params: readonly Identifier[],
               readonly expr: Expression) {
@@ -169,7 +168,7 @@ export class InlineRuleExpression extends Expression {
   walk(f: (expr: Expression) => Expression): Expression {
     let rule = this.rule, expr = rule.expr.walk(f)
     return f(expr == rule.expr ? this :
-             new InlineRuleExpression(this.start, new RuleDeclaration(rule.start, rule.id, false, rule.props, [], expr)))
+             new InlineRuleExpression(this.start, new RuleDeclaration(rule.start, rule.id, rule.props, [], expr)))
   }
 }
 

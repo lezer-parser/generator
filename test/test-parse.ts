@@ -363,7 +363,7 @@ Tag { Open nest.inner<"</" name ">", Tag*> Close }
 Open { "<" name ">" }
 Close { "</" name ">" }
 @tokens { name { std.asciiLetter+ } }
-@export Text {}`, {
+Text[@export] {}`, {
     nestedGrammar(_, terms) {
       return function nest(stream: InputStream, stack: Stack) {
         let tag = /<(\w+)>$/.exec(stream.read(stack.ruleStart, stack.pos))

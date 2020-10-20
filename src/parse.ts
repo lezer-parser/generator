@@ -187,7 +187,6 @@ function parseGrammar(input: Input) {
 
 function parseRule(input: Input, named?: Identifier) {
   let start = named ? named.start : input.start
-  let exported = input.eat("at", "export")
   let id = named || parseIdent(input)
   let props = parseProps(input)
   let params: Identifier[] = []
@@ -196,7 +195,7 @@ function parseRule(input: Input, named?: Identifier) {
     params.push(parseIdent(input))
   }
   let expr = parseBracedExpr(input)
-  return new RuleDeclaration(start, id, exported, props, params, expr)
+  return new RuleDeclaration(start, id, props, params, expr)
 }
 
 function parseProps(input: Input) {
