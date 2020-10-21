@@ -215,6 +215,7 @@ class Builder {
     this.tokens.takeConflicts()
 
     for (let {name, group, rule} of this.definedGroups) this.defineGroup(name, group, rule)
+    this.checkGroups()
   }
 
   unique(id: Identifier) {
@@ -1004,7 +1005,8 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
         this.tokenOrigins[token.name] = {spec: term}
       } else {
         if (known.type != type)
-          this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`, expr.start)
+          this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`,
+                     expr.start)
         if (known.dialect != dialect)
           this.raise(`Conflicting dialects for specialization ${JSON.stringify(value)} of ${term.name}`, expr.start)
         if (known.name != name)
@@ -1064,11 +1066,28 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
       return result
     }
 
-    for (let name of getNamed(rule)) {
-      let old = name.props["group"]
-      if (old && old != group)
-        this.raise(`Conflicting node groups defined for '${name.nodeName}' ('${group}' vs '${old}')`, ast.start)
-      name.props["group"] = group
+    for (let name of getNamed(rule))
+      name.props["group"] = (name.props["group"]?.split(" ") || []).concat(group).sort().join(" ")
+  }
+
+  checkGroups() {
+    let groups: {[name: string]: Term[]} = Object.create(null), nodeNames: {[name: string]: boolean} = Object.create(null)
+    for (let term of this.terms.terms) if (term.nodeName) {
+      nodeNames[term.nodeName] = true
+      if (term.props["group"]) for (let group of term.props["group"].split(" ")) {
+        ;(groups[group] || (groups[group] = [])).push(term)
+      }
+    }
+    let names = Object.keys(groups)
+    for (let i = 0; i < names.length; i++) {
+      let name = names[i], terms = groups[name]
+      if (nodeNames[name]) this.warn(`Group name '${name}' conflicts with a node of the same name`)
+      for (let j = i + 1; j < names.length; j++) {
+        let other = groups[names[j]]
+        if (terms.some(t => other.includes(t)) &&
+            (terms.length > other.length ? other.some(t => !terms.includes(t)) : terms.some(t => !other.includes(t))))
+          this.warn(`Groups '${name}' and '${names[j]}' overlap without one being a superset of the other`)
+      }
     }
   }
 }

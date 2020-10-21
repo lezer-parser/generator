@@ -38,7 +38,13 @@ describe("Cases", () => {
     content = content.slice(grammar[1].length)
     let parser: Parser | null = null
     let force = () => {
-      if (!parser) parser = buildParser(grammar[1], {fileName, externalTokenizer, externalSpecializer, externalProp})
+      if (!parser) parser = buildParser(grammar[1], {
+        fileName,
+        externalTokenizer,
+        externalSpecializer,
+        externalProp,
+        warn(msg) { throw new Error(msg) }
+      })
       return parser
     }
 

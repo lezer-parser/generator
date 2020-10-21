@@ -2,11 +2,11 @@ import {buildParser, BuildOptions} from ".."
 import {Parser, InputStream, Stack, Tree} from "lezer"
 // @ts-ignore
 import {testTree} from "../dist/test.cjs"
-const ist = require("ist")
+import ist from "ist"
 
 function p(text: string, options?: BuildOptions): () => Parser {
   let value: Parser | null = null
-  return () => value || (value = buildParser(text, options))
+  return () => value || (value = buildParser(text, Object.assign({}, {warn(e: string) { throw new Error(e) }}, options)))
 }
 
 function shared(a: Tree, b: Tree) {

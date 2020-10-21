@@ -1,0 +1,17 @@
+@top { statement* }
+
+expr[@isGroup=Expression] {
+  Id |
+  ParenExpr { "(" expr ")" }
+}
+
+statement[@isGroup=Statement] {
+  Id |
+  ExprStatement { ":" expr }
+}
+
+@tokens {
+  Id { "a"+ }
+}
+
+//! overlap
