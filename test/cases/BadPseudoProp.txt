@@ -1,0 +1,5 @@
+@top T { a }
+
+a[name=Aha] { "x" }
+
+//! (did you mean '@name'?)

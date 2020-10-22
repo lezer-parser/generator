@@ -914,8 +914,11 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     let dialect = null, dynamicPrec = 0, inline = false, group: string | null = null, exported = false
     for (let prop of props) {
       if (!prop.at) {
-        if (!this.knownProps[prop.name])
-          this.raise(`Unknown prop name '${prop.name}'`, prop.start)
+        if (!this.knownProps[prop.name]) {
+          let builtin = ["name", "dialect", "dynamicPrecedence", "export", "isGroup"].includes(prop.name)
+            ? ` (did you mean '@${prop.name}'?)` : ""
+          this.raise(`Unknown prop name '${prop.name}'${builtin}`, prop.start)
+        }
         result[prop.name] = this.finishProp(prop, args, params)
       } else if (prop.name == "name") {
         name = this.finishProp(prop, args, params)
