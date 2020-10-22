@@ -1,4 +1,4 @@
-@top { Foo }
+@top T { Foo }
 
 @tokens {
   Foo { bar+ }

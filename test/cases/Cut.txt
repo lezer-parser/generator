@@ -2,7 +2,7 @@
   statement @cut
 }
 
-@top { statement* }
+@top T { statement* }
 
 statement {
   Block { !statement "{" statement* "}" } |
@@ -15,4 +15,4 @@ expression { "x" | "(" expression ")" | "{" "}" }
 
 {}
 
-==> Block
+==> T(Block)

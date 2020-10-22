@@ -1,4 +1,4 @@
-@top { Foo { "foo" }+ }
+@top T { Foo { "foo" }+ }
 
 @skip { " " | "<" skipContent* ">" }
 
@@ -8,10 +8,10 @@ skipContent { A { "a" } | B { "b" } }
 
 foo foo
 
-==> Foo,Foo
+==> T(Foo,Foo)
 
 # Outputs tags from skipped content
 
 foo <aba> foo
 
-==> Foo,A,B,A,Foo
+==> T(Foo,A,B,A,Foo)

@@ -180,21 +180,21 @@ describe("parsing", () => {
   it("doesn't incorrectly reuse nodes", () => {
     let parser = buildParser(`
 @precedence { times @left, plus @left }
-@top { expr+ }
+@top T { expr+ }
 expr { Bin | Var }
 Bin { expr !plus "+" expr | expr !times "*" expr }
 @skip { space }
 @tokens { space { " "+ } Var { "x" } "*"[@name=Times] "+"[@name=Plus] }
 `)
     let ast = parser.parse("x + x + x", {strict: true, bufferLength: 2})
-    testTree(ast, "Bin(Bin(Var,Plus,Var),Plus,Var)")
+    testTree(ast, "T(Bin(Bin(Var,Plus,Var),Plus,Var))")
     let ast2 = parser.parse("x * x + x + x", {strict: true, bufferLength: 2, cache: change(ast, [0, 0, 0, 4])})
-    testTree(ast2, "Bin(Bin(Bin(Var,Times,Var),Plus,Var),Plus,Var)")
+    testTree(ast2, "T(Bin(Bin(Bin(Var,Times,Var),Plus,Var),Plus,Var))")
   })
 
   it("can cache skipped content", () => {
     let comments = buildParser(`
-@top { "x"+ }
+@top T { "x"+ }
 @skip { space | Comment }
 @skip {} {
   Comment { commentStart (Comment | commentContent)* commentEnd }
@@ -225,7 +225,7 @@ Bin { expr !plus "+" expr | expr !times "*" expr }
 
 describe("sequences", () => {
   let p1 = p(`
-    @top { (X | Y)+ }
+    @top T { (X | Y)+ }
     @skip { C }
     C { "c" }
     X { "x" }
@@ -279,7 +279,7 @@ describe("sequences", () => {
     let i = 0
     ast.iterate({enter(type, start, end) {
       if (i == 0) {
-        ist(type.name, "")
+        ist(type.name, "T")
       } else if (i == 101) {
         ist(type.name, "Y")
         ist(start, 100)
@@ -302,63 +302,47 @@ describe("multiple tops", () => {
 FOO { B }
 B { "b" }
 C { "c" }
-`);
+`)
 
     testTree(parser.parse("bc"), "X(FOO(B), C)")
     testTree(parser.parse("bc", { top: "X" }), "X(FOO(B), C)")
-    testTree(parser.parse("bc", { top: "Y" }), "Y(B, C)");
-  });
+    testTree(parser.parse("bc", { top: "Y" }), "Y(B, C)")
+  })
 
-  it("parses unnamed top as default", () => {
+  it("parses first top as default", () => {
     let parser = buildParser(`
-@top { FOO C }
+@top X { FOO C }
 @top Y { B C }
 FOO { B }
 B { "b" }
 C { "c" }
-`);
+`)
 
-    testTree(parser.parse("bc"), "FOO(B), C")
-    testTree(parser.parse("bc", { top: "Y" }), "Y(B, C)");
-  });
-
-  it("fails on secondary unnamed to", () => {
-    let errorMessage;
-    try {
-      buildParser(`
-@top Y { "Y" }
-@top { X }
-X { "X" }
-`);
-    } catch (error) {
-      errorMessage = error.message;
-    }
-    if (errorMessage !== "Unnamed secondary @top declaration (3:5)") {
-      throw new Error("Expected parse error: Unnamed secondary @top declaration");
-    }
-  });
-});
+    testTree(parser.parse("bc"), "X(FOO(B), C)")
+    testTree(parser.parse("bc", { top: "Y" }), "Y(B, C)")
+  })
+})
 
 describe("nesting", () => {
   it("can nest grammars", () => {
     let inner = buildParser(`
-@top { expr+ }
+@top I { expr+ }
 expr { B { Open{"("} expr+ Close{")"} } | Dot{"."} }`)
     let outer = buildParser(`
 @external grammar inner from "."
-@top { expr+ }
+@top O { expr+ }
 expr { "[[" nest.inner "]]" | Bang{"!"} }
 @tokens { "[["[@name=Start] "]]"[@name=End] }
 `, {nestedGrammar() { return inner }})
 
-    testTree(outer.parse("![[((.).)]][[.]]"), 'Bang,Start,B(Open,B(Open,Dot,Close),Dot,Close),End,Start,Dot,End')
-    testTree(outer.parse("[[/\]]"), 'Start,⚠,End')
+    testTree(outer.parse("![[((.).)]][[.]]"), 'O(Bang,Start,I(B(Open,B(Open,Dot,Close),Dot,Close)),End,Start,I(Dot),End)')
+    testTree(outer.parse("[[/\]]"), 'O(Start,I(⚠),End)')
   })
 
   it("supports conditional nesting and end token predicates", () => {
     let outer = buildParser(`
 @external grammar inner from "."
-@top { Tag }
+@top T { Tag }
 Tag { Open nest.inner<"</" name ">", Tag*> Close }
 Open { "<" name ">" }
 Close { "</" name ">" }
@@ -376,28 +360,28 @@ Text[@export] {}`, {
     }})
 
     testTree(outer.parse("<foo><bar></baz></foo>"),
-             "Tag(Open,Tag(Open,Close),Close)")
+             "T(Tag(Open,Tag(Open,Close),Close))")
     testTree(outer.parse("<textarea><bar></baz></textarea>"),
-             "Tag(Open,Text,Close)")
+             "T(Tag(Open,Text,Close))")
   })
 
   it("allows updating the nested grammars for a parser", () => {
-    let inner1 = buildParser(`@top { A { "x" }+ }`)
-    let inner2 = buildParser(`@top { B { "x" }+ }`)
-    let outer = buildParser(`@external grammar inner from "." @top { "[" nest.inner "]" } @tokens { "["[@name=O] "]"[@name=C] }`,
+    let inner1 = buildParser(`@top T { A { "x" }+ }`)
+    let inner2 = buildParser(`@top U { B { "x" }+ }`)
+    let outer = buildParser(`@external grammar inner from "." @top V { "[" nest.inner "]" } @tokens { "["[@name=O] "]"[@name=C] }`,
                             {nestedGrammar() { return inner1 }})
-    testTree(outer.parse("[x]"), "O,A,C")
-    testTree(outer.withNested({inner: inner2}).parse("[x]"), "O,B,C")
+    testTree(outer.parse("[x]"), "V(O,T(A),C)")
+    testTree(outer.withNested({inner: inner2}).parse("[x]"), "V(O,U(B),C)")
   })
 
   it("supports tag-less nesting", () => {
-    let inner = buildParser(`@top { X{"x"} }`)
-    let outer = buildParser(`@external grammar x from "." @top { "&" nest.x "&" } @tokens { "&"[@name=And] }`, {nestedGrammar() { return inner }})
-    testTree(outer.parse("&x&"), 'And,X,And')
+    let inner = buildParser(`@top U { X{"x"} }`)
+    let outer = buildParser(`@external grammar x from "." @top T { "&" nest.x "&" } @tokens { "&"[@name=And] }`, {nestedGrammar() { return inner }})
+    testTree(outer.parse("&x&"), 'T(And,U(X),And)')
   })
 
   it("skips ranges with missing nested parsers", () => {
-    let outer = buildParser(`@external grammar inner empty @top { "[" nest.inner "]" } @tokens { "["[@name=O] "]"[@name=C] }`)
-    testTree(outer.parse("[lfkdsajfa]"), 'O,C')
+    let outer = buildParser(`@external grammar inner empty @top T { "[" nest.inner "]" } @tokens { "["[@name=O] "]"[@name=C] }`)
+    testTree(outer.parse("[lfkdsajfa]"), 'T(O,C)')
   })
 })

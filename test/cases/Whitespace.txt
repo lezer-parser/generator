@@ -1,4 +1,4 @@
-@top { X+ }
+@top T { X+ }
 
 @skip { whitespace | Comment }
 
@@ -14,7 +14,7 @@
 
 x x
 
-==> X, X
+==> T(X, X)
 
 # Skips comments
 
@@ -22,4 +22,4 @@ x
 x # I'm a comment!
 x
 
-==> X, X, Comment, X
+==> T(X, X, Comment, X)

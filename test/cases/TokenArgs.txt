@@ -1,4 +1,4 @@
-@top { (kw<"let"> | kw<"if"> | Foo)+ }
+@top T { (kw<"let"> | kw<"if"> | Foo)+ }
 
 @skip { whitespace }
 
@@ -14,10 +14,10 @@
 
 let if let
 
-==> let, if, let
+==> T(let, if, let)
 
 # Tokens can call other tokens
 
 !foo
 
-==> Foo
+==> T(Foo)

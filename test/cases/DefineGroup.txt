@@ -1,4 +1,4 @@
-@top { expr* }
+@top T { expr* }
 
 expr[@isGroup=Expression] {
   atom |
@@ -17,4 +17,4 @@ atom { Id | Number }
 
 a(1)
 
-==> Id[group=Expression],ParenExpr[group=Expression]("(", Number[group=Expression], ")")
+==> T(Id[group=Expression],ParenExpr[group=Expression]("(", Number[group=Expression], ")"))

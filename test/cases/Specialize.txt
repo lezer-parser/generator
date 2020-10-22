@@ -1,4 +1,4 @@
-@top { (statement ";")+ }
+@top T { (statement ";")+ }
 
 statement {
   Decl { kw<"let"> Id "=" Number } |
@@ -25,18 +25,18 @@ kwExt<word> { @extend<Id, word> }
 let async = 10;
 exit;
 
-==> Decl(Id, Number), Exit
+==> T(Decl(Id, Number), Exit)
 
 # Can not use a non-contextual keyword as identifier
 
 print 10;
 let print 2;
 
-==> Print(Number),Decl(⚠),⚠,Print(Number)
+==> T(Print(Number),Decl(⚠),⚠,Print(Number))
 
 # Use of extended token can be determined by next token
 
 async 1;
 async;
 
-==> Async(Number), Id
+==> T(Async(Number), Id)

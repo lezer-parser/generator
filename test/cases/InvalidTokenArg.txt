@@ -1,4 +1,4 @@
-@top { foo<bar> }
+@top T { foo<bar> }
 
 bar { bar "x" | "" }
 

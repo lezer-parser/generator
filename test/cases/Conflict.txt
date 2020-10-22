@@ -1,4 +1,4 @@
-@top { expr+ }
+@top T { expr+ }
 
 expr { ArrowExpr | ParenExpr | Identifier }
 
@@ -21,10 +21,10 @@ ParamName { word ~arrow }
 
 (a) => b
 
-==> ArrowExpr(ParamName, Identifier)
+==> T(ArrowExpr(ParamName, Identifier))
 
 # Paren expr
 
 (a)
 
-==> ParenExpr(Identifier)
+==> T(ParenExpr(Identifier))

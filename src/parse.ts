@@ -139,7 +139,8 @@ function parseGrammar(input: Input) {
     let start = input.start
     if (input.type == "at" && input.value == "top") {
       input.next()
-      let name = input.type as any == "id" ? parseIdent(input) : new Identifier(start, "@top")
+      if (input.type as any != "id") input.raise(`Top rules must have a name`, input.start)
+      let name = parseIdent(input)
       if (tops.length && name.name === '@top') {
         input.raise(`Unnamed secondary @top declaration`, input.start)
       }

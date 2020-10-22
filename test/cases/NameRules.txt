@@ -1,4 +1,4 @@
-@top { (A | b | @specialize[@name=I]<i, "ii">)+ }
+@top T { (A | b | @specialize[@name=I]<i, "ii">)+ }
 
 A { "a" }
 
@@ -11,4 +11,4 @@ A { "a" }
 
 abaii
 
-==> A, B, A, I
+==> T(A, B, A, I)

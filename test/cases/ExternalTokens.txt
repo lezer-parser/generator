@@ -1,4 +1,4 @@
-@top { expr* }
+@top T { expr* }
 
 expr {
   Braced { braceOpen expr braceClose } |
@@ -15,4 +15,4 @@ expr {
 
 x{x}x.y
 
-==> X, Braced(X), X(Dot, Y)
+==> T(X, Braced(X), X(Dot, Y))

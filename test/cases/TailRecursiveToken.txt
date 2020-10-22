@@ -1,4 +1,4 @@
-@top { (Single | Open "." Close)+ }
+@top T { (Single | Open "." Close)+ }
 
 @skip { spaces }
 
@@ -24,16 +24,16 @@
 
 `foo`
 
-==> Single
+==> T(Single)
 
 # Interpolation
 
 `foo${.}bar`
 
-==> Open, Close
+==> T(Open, Close)
 
 # Dollar signs
 
 `$$` `$` `$${.}`
 
-==> Single, Single, Open, Close
+==> T(Single, Single, Open, Close)

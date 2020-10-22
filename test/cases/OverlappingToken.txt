@@ -1,4 +1,4 @@
-@top { (x | y)+ }
+@top T { (x | y)+ }
 
 @tokens {
   x { "x"+ }

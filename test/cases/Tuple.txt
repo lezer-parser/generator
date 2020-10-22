@@ -1,4 +1,4 @@
-@top { "(" (Expr ",")* Expr? ")" }
+@top T { "(" (Expr ",")* Expr? ")" }
 
 @tokens { Expr { "E" } }
 
@@ -6,10 +6,10 @@
 
 (E,E,)
 
-==> Expr,Expr
+==> T(Expr,Expr)
 
 # Can parse without trailing comma
 
 (E,E,E)
 
-==> Expr,Expr,Expr
+==> T(Expr,Expr,Expr)

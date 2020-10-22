@@ -1,4 +1,4 @@
-@top { A* }
+@top T { A* }
 
 A { B ~ambig "." | C ~ambig "." }
 
@@ -10,4 +10,4 @@ C { "x" }
 
 x.
 
-==> A(C)
+==> T(A(C))

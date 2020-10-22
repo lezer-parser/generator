@@ -1,4 +1,4 @@
-@top { Statement+ }
+@top T { Statement+ }
 
 Statement {
   Variable ";" |
@@ -19,4 +19,4 @@ Variable { identifier }
 
 x'c';'c' x 'c' x 'c'; 'c'
 
-==> Statement(Variable, Comment), Comment, Statement(Variable, Comment, Variable, Comment), Comment
+==> T(Statement(Variable, Comment), Comment, Statement(Variable, Comment, Variable, Comment), Comment)

@@ -1,4 +1,4 @@
-@top { (A | B)+ }
+@top T { (A | B)+ }
 
 A[@dynamicPrecedence=2] { "foo" "bar" ~ambig }
 
@@ -10,16 +10,16 @@ Inner[@dynamicPrecedence=-1] { ("baz" | "quux") ~ambig }
 
 foobarfoobar
 
-==> A, A
+==> T(A, A)
 
 # Can parse Bs
 
 foobazfoobar
 
-==> B, A
+==> T(B, A)
 
 # Will use penalized rules when necessary
 
 fooquux
 
-==> B(Inner)
+==> T(B(Inner))

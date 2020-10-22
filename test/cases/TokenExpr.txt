@@ -1,4 +1,4 @@
-@top { (Word | Number | Operator)+ }
+@top T { (Word | Number | Operator)+ }
 
 @skip { whitespace }
 
@@ -19,10 +19,10 @@
 Hello		Catch22 Foo
 azAZ09
 
-==> Word,Word,Word,Word
+==> T(Word,Word,Word,Word)
 
 # Numbers and operators
 
 50 + 200e-5 ++ .2 - 111.111e+111
 
-==> Number,Operator,Number,Operator,Number,Operator,Number
+==> T(Number,Operator,Number,Operator,Number,Operator,Number)

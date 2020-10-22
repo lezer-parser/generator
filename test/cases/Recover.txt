@@ -1,4 +1,4 @@
-@top { (Class | Block)* }
+@top T { (Class | Block)* }
 
 Class { "class" "{" "classitem"* "}" }
 
@@ -14,10 +14,10 @@ Block { "{" (Block | "statement")* "}" }
 
 { { { class { classitem classitem }
 
-==> Block(Block(Block(⚠),⚠),⚠),Class
+==> T(Block(Block(Block(⚠),⚠),⚠),Class)
 
 # Properly places end-of-file errors
 
 { { {	
 
-==> Block(Block(Block(⚠),⚠),⚠)
+==> T(Block(Block(Block(⚠),⚠),⚠))

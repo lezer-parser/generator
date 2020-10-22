@@ -190,8 +190,7 @@ class Builder {
 
     for (const top of this.ast.topRules) {
       this.currentSkip.push(mainSkip)
-      let {name, props} = this.nodeInfo(top.props, "", top.id.name == "@top" ? null : top.id.name,
-                                        none, none, top.expr)
+      let {name, props} = this.nodeInfo(top.props, "", top.id.name, none, none, top.expr)
       this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
       this.currentSkip.pop()
     }
@@ -319,7 +318,7 @@ class Builder {
 
     let topRules: {[rule: string]: [number, number]} = Object.create(null)
     for (let term of this.terms.tops)
-      topRules[term.nodeName || "@top"] = [table.find(state => state.startRule == term)!.id, term.id]
+      topRules[term.nodeName] = [table.find(state => state.startRule == term)!.id, term.id]
 
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let {nodeProps, skippedTypes} = this.gatherNodeProps(nodeTypes)
@@ -910,7 +909,8 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     group: string | null,
     exported: boolean
   } {
-    let result: Props = {}, name = defaultName && !ignored(defaultName) && !/ /.test(defaultName) ? defaultName : null
+    let result: Props = {}
+    let name = defaultName && (defaultProps?.top || !ignored(defaultName)) && !/ /.test(defaultName) ? defaultName : null
     let dialect = null, dynamicPrec = 0, inline = false, group: string | null = null, exported = false
     for (let prop of props) {
       if (!prop.at) {
@@ -961,7 +961,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     if (defaultProps && hasProps(defaultProps)) {
       for (let prop in defaultProps) if (!(prop in result)) result[prop] = defaultProps[prop]
     }
-    if (hasProps(result) && !name && !result.top)
+    if (hasProps(result) && !name)
       this.raise(`Node has properties but no name`, props.length ? props[0].start : expr!.start)
     if (inline && (hasProps(result) || dialect || dynamicPrec))
       this.raise(`Inline nodes can't have props, dynamic precedence, or a dialect`, props[0].start)

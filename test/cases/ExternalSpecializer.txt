@@ -1,4 +1,4 @@
-@top { (One | Two | Id)+ }
+@top T { (One | Two | Id)+ }
 
 @skip { space }
 
@@ -18,4 +18,4 @@ Two { two Id }
 
 one a two b three
 
-==> One(Id), Two(Id), Id
+==> T(One(Id), Two(Id), Id)

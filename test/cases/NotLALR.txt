@@ -1,6 +1,6 @@
 // This grammar is LR(1) but not LALR(1)
 
-@top { "a" E "a" | "b" E "b" | "a" F "b" | "b" F "a" }
+@top T { "a" E "a" | "b" E "b" | "a" F "b" | "b" F "a" }
 E { "e" }
 F { "e" }
 
@@ -8,4 +8,4 @@ F { "e" }
 
 aeb
 
-==> F
+==> T(F)

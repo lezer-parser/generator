@@ -1,4 +1,4 @@
-@top { expr+ }
+@top T { expr+ }
 
 expr[@isGroup] { "foo" | A { "bar" } B { "baz" } }
 

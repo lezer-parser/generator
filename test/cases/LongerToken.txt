@@ -1,7 +1,7 @@
-@top { (A { "foo" } | B { "foobar" } | C { "baz" })+ }
+@top T { (A { "foo" } | B { "foobar" } | C { "baz" })+ }
 
 # Properly splits tokens
 
 foobaz
 
-==> A, C
+==> T(A, C)

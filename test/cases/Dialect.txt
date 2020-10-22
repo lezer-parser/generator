@@ -1,6 +1,6 @@
 @dialects { a, b }
 
-@top { (A | B | C)+ }
+@top T { (A | B | C)+ }
 
 A { "a" }
 
@@ -17,34 +17,34 @@ C { "c" }
 
 cc
 
-==> C, C
+==> T(C, C)
 
 # No dialect, error
 
 ca
 
-==> C, ⚠
+==> T(C, ⚠)
 
 # Dialect A {"dialect": "a"}
 
 ca
 
-==> C, A
+==> T(C, A)
 
 # Dialect A, error {"dialect": "a"}
 
 cab
 
-==> C, A, ⚠
+==> T(C, A, ⚠)
 
 # Dialect B {"dialect": "b"}
 
 bc
 
-==> B, C
+==> T(B, C)
 
 # Both dialects {"dialect": "a b"}
 
 abc
 
-==> A, B, C
+==> T(A, B, C)

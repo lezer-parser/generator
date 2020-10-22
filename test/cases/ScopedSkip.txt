@@ -1,4 +1,4 @@
-@top { A+ }
+@top T { A+ }
 
 @skip { spaces }
 
@@ -15,10 +15,10 @@
 
 x (---b---) (b)
 
-==> A, A, A
+==> T(A, A, A)
 
 # Marks invalid whitespace
 
 ( b )
 
-==> A(⚠, ⚠)
+==> T(A(⚠, ⚠))

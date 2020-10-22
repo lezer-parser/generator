@@ -1,4 +1,4 @@
-@top { (A | B | BB)+ }
+@top T { (A | B | BB)+ }
 
 @tokens {
   @precedence { BB, B }
@@ -12,4 +12,4 @@
 
 ABBAB
 
-==> A, BB, A, B
+==> T(A, BB, A, B)

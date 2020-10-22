@@ -1,4 +1,4 @@
-@top { X<"hi"> }
+@top T { X<"hi"> }
 
 @tokens {
   X<a, b> { a b }

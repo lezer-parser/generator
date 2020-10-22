@@ -1,4 +1,4 @@
-@top { expr+ }
+@top T { expr+ }
 
 expr {
   ParenExpr { "(" Number ")" } |
@@ -35,28 +35,28 @@ DualExpr {
 
 (11)
 
-==> ParenExpr("("[closedBy=")"], Number, ")"[openedBy="("])
+==> T(ParenExpr("("[closedBy=")"], Number, ")"[openedBy="("]))
 
 # Sees through rules
 
 [|50|]
 
-==> BracketExpr(BracketLeft[closedBy="BracketRight"], Number, BracketRight[openedBy="BracketLeft"])
+==> T(BracketExpr(BracketLeft[closedBy="BracketRight"], Number, BracketRight[openedBy="BracketLeft"]))
 
 # Doesn't assign delim when tokens self-close
 
 ((5()
 
-==> WeirdExpr("((", Number, "()")
+==> T(WeirdExpr("((", Number, "()"))
 
 # Doesn't assign delim when tokens are part of a choice
 
 {{8}}
 
-==> DualExpr("{{", Number, "}}")
+==> T(DualExpr("{{", Number, "}}"))
 
 # Recognizes named literals
 
 [[5]]
 
-==> DoubleExpr(DoubleLeft[closedBy="DoubleRight"], Number, DoubleRight[openedBy="DoubleLeft"])
+==> T(DoubleExpr(DoubleLeft[closedBy="DoubleRight"], Number, DoubleRight[openedBy="DoubleLeft"]))

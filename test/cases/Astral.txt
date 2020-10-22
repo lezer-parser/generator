@@ -1,4 +1,4 @@
-@top { (Id | Thing)+ }
+@top T { (Id | Thing)+ }
 
 @skip { whitespace }
 
@@ -16,4 +16,4 @@
 
 foo föö 象𫝄鼻 -💩 -🦆 -& -🍰
 
-==> Id,Id,Id,Thing,Thing,⚠,⚠,Id
+==> T(Id,Id,Id,Thing,Thing,⚠,⚠,Id)

@@ -1,4 +1,4 @@
-@top { A+ }
+@top T { A+ }
 
 @skip { space }
 

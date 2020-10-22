@@ -1,4 +1,4 @@
-@top { statement* }
+@top T { statement* }
 
 expr[@isGroup=Expression] {
   Id |

@@ -1,6 +1,6 @@
 @precedence { div @left }
 
-@top { expr }
+@top T { expr }
 
 expr { RegExp | Symbol | BinOp }
 
@@ -20,4 +20,4 @@ BinOp { expr !div "/" expr }
 
 x / y / /foo/
 
-==> BinOp(BinOp(Symbol,Symbol),RegExp)
+==> T(BinOp(BinOp(Symbol,Symbol),RegExp))

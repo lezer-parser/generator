@@ -1,4 +1,4 @@
-@top { Foo }
+@top T { Foo }
 
 prefix[@inline] { "::" (A "::")* | (A "::")+ }
 
@@ -10,4 +10,4 @@ A { "a" }
 
 a::a
 
-==> Foo(A, A)
+==> T(Foo(A, A))

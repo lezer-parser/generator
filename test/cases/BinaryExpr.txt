@@ -1,6 +1,6 @@
 @precedence { mult @left, plus @left }
 
-@top { expr }
+@top T { expr }
 
 expr {
   atom | BinaryExpr
@@ -23,40 +23,40 @@ atom { Symbol | "(" expr ")" }
 
 (x+y)/x
 
-==> BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),MultOp,Symbol)
+==> T(BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),MultOp,Symbol))
 
 # Associativity
 
 x+x+x+x
 
-==> BinaryExpr(BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),AddOp,Symbol),AddOp,Symbol)
+==> T(BinaryExpr(BinaryExpr(BinaryExpr(Symbol,AddOp,Symbol),AddOp,Symbol),AddOp,Symbol))
 
 # Precedence
 
 x+x*x-x
 
-==> BinaryExpr(BinaryExpr(Symbol,AddOp,BinaryExpr(Symbol,MultOp,Symbol)),AddOp,Symbol)
+==> T(BinaryExpr(BinaryExpr(Symbol,AddOp,BinaryExpr(Symbol,MultOp,Symbol)),AddOp,Symbol))
 
 # Mixed precedence
 
 x*x+y/y
 
-==> BinaryExpr(BinaryExpr(Symbol,MultOp,Symbol),AddOp,BinaryExpr(Symbol,MultOp,Symbol))
+==> T(BinaryExpr(BinaryExpr(Symbol,MultOp,Symbol),AddOp,BinaryExpr(Symbol,MultOp,Symbol)))
 
 # Duplicate operator
 
 x++y
 
-==> BinaryExpr(BinaryExpr(Symbol,AddOp,⚠),AddOp,Symbol)
+==> T(BinaryExpr(BinaryExpr(Symbol,AddOp,⚠),AddOp,Symbol))
 
 # Dropped character 
 
 x%+y
 
-==> BinaryExpr(Symbol,⚠,AddOp,Symbol)
+==> T(BinaryExpr(Symbol,⚠,AddOp,Symbol))
 
 # Missing operator
 
 xy
 
-==> BinaryExpr(Symbol,⚠,Symbol)
+==> T(BinaryExpr(Symbol,⚠,Symbol))

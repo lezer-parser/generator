@@ -1,7 +1,7 @@
-@top { (A{"a"} | B{"b"})+ }
+@top T { (A{"a"} | B{"b"})+ }
 
 # Assigns tags to tagged expressions
 
 baba
 
-==> B,A,B,A
+==> T(B,A,B,A)
