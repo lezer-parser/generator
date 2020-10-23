@@ -1,3 +1,19 @@
+## 0.12.0 (2020-10-23)
+
+### Breaking changes
+
+The serialized parser format changed.
+
+Pseudo-props like `name`, `dialect`, `inline` and `dynamicPrec` now require an `@` in front of them when specified in a rule's prop list.
+
+`@export` is now specified as a pseudo-prop instead of in front of the rule.
+
+Top rule names are now required.
+
+### New features
+
+Rules can now specify an `@isGroup` pseudo-prop to automatically attach a group name to all the (single) named nodes they produce.
+
 ## 0.11.2 (2020-09-29)
 
 ### Bug fixes
