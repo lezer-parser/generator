@@ -189,6 +189,8 @@ class Builder {
     this.currentSkip.pop()
 
     for (const top of this.ast.topRules) {
+      this.unique(top.id)
+      this.used(top.id.name)
       this.currentSkip.push(mainSkip)
       let {name, props} = this.nodeInfo(top.props, "t", top.id.name, none, none, top.expr)
       let term = this.terms.makeTop(name, props)

@@ -1,0 +1,5 @@
+@top A { A }
+
+A { "a" }
+
+//! Duplicate definition
