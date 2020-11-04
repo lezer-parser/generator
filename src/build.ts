@@ -190,8 +190,10 @@ class Builder {
 
     for (const top of this.ast.topRules) {
       this.currentSkip.push(mainSkip)
-      let {name, props} = this.nodeInfo(top.props, "", top.id.name, none, none, top.expr)
-      this.defineRule(this.terms.makeTop(name, props), this.normalizeExpr(top.expr))
+      let {name, props} = this.nodeInfo(top.props, "t", top.id.name, none, none, top.expr)
+      let term = this.terms.makeTop(name, props)
+      this.namedTerms[name!] = term
+      this.defineRule(term, this.normalizeExpr(top.expr))
       this.currentSkip.pop()
     }
 
@@ -318,7 +320,7 @@ class Builder {
 
     let topRules: {[rule: string]: [number, number]} = Object.create(null)
     for (let term of this.terms.tops)
-      topRules[term.nodeName] = [table.find(state => state.startRule == term)!.id, term.id]
+      topRules[term.nodeName!] = [table.find(state => state.startRule == term)!.id, term.id]
 
     let precTable = data.storeArray(tokenPrec.concat(Seq.End))
     let {nodeProps, skippedTypes} = this.gatherNodeProps(nodeTypes)
@@ -896,7 +898,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
   }
 
   nodeInfo(props: readonly Prop[],
-           // p for dynamic precedence, d for dialect, i for inline, g for group
+           // p for dynamic precedence, d for dialect, i for inline, g for group, t for top
            allow: string,
            defaultName: string | null = null,
            args: readonly Expression[] = none, params: readonly Identifier[] = none,
@@ -910,7 +912,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     exported: boolean
   } {
     let result: Props = {}
-    let name = defaultName && (defaultProps?.top || !ignored(defaultName)) && !/ /.test(defaultName) ? defaultName : null
+    let name = defaultName && (allow.indexOf("t") > -1 || !ignored(defaultName)) && !/ /.test(defaultName) ? defaultName : null
     let dialect = null, dynamicPrec = 0, inline = false, group: string | null = null, exported = false
     for (let prop of props) {
       if (!prop.at) {

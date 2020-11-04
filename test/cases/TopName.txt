@@ -1,0 +1,7 @@
+@top lowerCase { "x" }
+
+# It keeps a lower-case top rule name
+
+x
+
+==> lowerCase
