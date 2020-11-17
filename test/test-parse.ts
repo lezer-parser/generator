@@ -1,5 +1,6 @@
 import {buildParser, BuildOptions} from ".."
 import {Parser, InputStream, Stack, Tree} from "lezer"
+import {TreeFragment} from "lezer-tree"
 // @ts-ignore
 import {testTree} from "../dist/test.cjs"
 import ist from "ist"
@@ -22,8 +23,10 @@ function shared(a: Tree, b: Tree) {
   return Math.round(100 * shared / b.length)
 }
 
-function change(tree: Tree, ...changes: ([number, number] | [number, number, number, number])[]) {
-  return tree.applyChanges(changes.map(([fromA, toA, fromB = fromA, toB = toA]) => ({fromA, toA, fromB, toB})))
+function fragments(tree: Tree, ...changes: ([number, number] | [number, number, number, number])[]) {
+  return TreeFragment.applyChanges(TreeFragment.addTree(tree),
+                                   changes.map(([fromA, toA, fromB = fromA, toB = toA]) => ({fromA, toA, fromB, toB})),
+                                   2)
 }
 
 describe("parsing", () => {
@@ -64,8 +67,8 @@ describe("parsing", () => {
     testTree(ast, expected)
     ist(ast.length, 70)
     let pos = doc.indexOf("false"), doc2 = doc.slice(0, pos) + "x" + doc.slice(pos + 5)
-    let ast2 = p1().parse(doc2, {bufferLength: 2, cache: change(ast, [pos, pos + 5, pos, pos + 1])})
-    testTree(ast, expected)
+    let ast2 = p1().parse(doc2, {bufferLength: 2, fragments: fragments(ast, [pos, pos + 5, pos, pos + 1])})
+    testTree(ast2, expected)
     ist(shared(ast, ast2), 40, ">")
     ist(ast2.length, 66)
   })
@@ -188,7 +191,7 @@ Bin { expr !plus "+" expr | expr !times "*" expr }
 `)
     let ast = parser.parse("x + x + x", {strict: true, bufferLength: 2})
     testTree(ast, "T(Bin(Bin(Var,Plus,Var),Plus,Var))")
-    let ast2 = parser.parse("x * x + x + x", {strict: true, bufferLength: 2, cache: change(ast, [0, 0, 0, 4])})
+    let ast2 = parser.parse("x * x + x + x", {strict: true, bufferLength: 2, fragments: fragments(ast, [0, 0, 0, 4])})
     testTree(ast2, "T(Bin(Bin(Bin(Var,Times,Var),Plus,Var),Plus,Var))")
   })
 
@@ -207,7 +210,7 @@ Bin { expr !plus "+" expr | expr !times "*" expr }
 }`)
     let doc = "x  (one (two) (three " + "(y)".repeat(500) + ")) x"
     let ast = comments.parse(doc, {bufferLength: 10, strict: true})
-    let ast2 = comments.parse(doc.slice(1), {cache: change(ast, [0, 1, 0, 0]), bufferLength: 10})
+    let ast2 = comments.parse(doc.slice(1), {fragments: fragments(ast, [0, 1, 0, 0]), bufferLength: 10})
     ist(shared(ast, ast2), 80, ">")
   })
 
@@ -260,15 +263,15 @@ describe("sequences", () => {
   it("caches parts of sequences", () => {
     let doc = "x".repeat(1000), p = p1()
     let ast = p.parse(doc, {bufferLength: 10})
-    let full = p.parse(doc, {cache: ast, bufferLength: 10})
+    let full = p.parse(doc, {fragments: TreeFragment.addTree(ast), bufferLength: 10})
     ist(shared(ast, full), 99, ">")
-    let front = p.parse(doc, {cache: change(ast, [900, 1000]), bufferLength: 10})
+    let front = p.parse(doc, {fragments: fragments(ast, [900, 1000]), bufferLength: 10})
     ist(shared(ast, front), 50, ">")
-    let back = p.parse(doc, {cache: change(ast, [0, 100]), bufferLength: 10})
+    let back = p.parse(doc, {fragments: fragments(ast, [0, 100]), bufferLength: 10})
     ist(shared(ast, back), 50, ">")
-    let middle = p.parse(doc, {cache: change(ast, [0, 100], [900, 1000]), bufferLength: 10})
+    let middle = p.parse(doc, {fragments: fragments(ast, [0, 100], [900, 1000]), bufferLength: 10})
     ist(shared(ast, middle), 50, ">")
-    let sides = p.parse(doc, {cache: change(ast, [450, 550]), bufferLength: 10})
+    let sides = p.parse(doc, {fragments: fragments(ast, [450, 550]), bufferLength: 10})
     ist(shared(ast, sides), 50, ">")
   })
 
@@ -333,7 +336,7 @@ expr { B { Open{"("} expr+ Close{")"} } | Dot{"."} }`)
 @top O { expr+ }
 expr { "[[" nest.inner "]]" | Bang{"!"} }
 @tokens { "[["[@name=Start] "]]"[@name=End] }
-`, {nestedGrammar() { return inner }})
+`, {nestedParser() { return inner }})
 
     testTree(outer.parse("![[((.).)]][[.]]"), 'O(Bang,Start,I(B(Open,B(Open,Dot,Close),Dot,Close)),End,Start,I(Dot),End)')
     testTree(outer.parse("[[/\]]"), 'O(Start,I(⚠),End)')
@@ -348,12 +351,12 @@ Open { "<" name ">" }
 Close { "</" name ">" }
 @tokens { name { std.asciiLetter+ } }
 Text[@export] {}`, {
-    nestedGrammar(_, terms) {
-      return function nest(stream: InputStream, stack: Stack) {
+    nestedParser(_, terms) {
+      return (stream: InputStream, stack: Stack) => {
         let tag = /<(\w+)>$/.exec(stream.read(stack.ruleStart, stack.pos))
-        if (!tag || !["textarea", "script", "style"].includes(tag[1])) return {stay: true}
+        if (!tag || !["textarea", "script", "style"].includes(tag[1])) return null
         return {
-          filterEnd(token: string) { return token == "</" + tag![1] + ">" },
+          filterEnd: (token: string) => token == "</" + tag![1] + ">",
           wrapType: terms.Text
         }
       }
@@ -369,14 +372,16 @@ Text[@export] {}`, {
     let inner1 = buildParser(`@top T { A { "x" }+ }`)
     let inner2 = buildParser(`@top U { B { "x" }+ }`)
     let outer = buildParser(`@external grammar inner from "." @top V { "[" nest.inner "]" } @tokens { "["[@name=O] "]"[@name=C] }`,
-                            {nestedGrammar() { return inner1 }})
+                            {nestedParser() { return inner1 }})
     testTree(outer.parse("[x]"), "V(O,T(A),C)")
     testTree(outer.withNested({inner: inner2}).parse("[x]"), "V(O,U(B),C)")
   })
 
   it("supports tag-less nesting", () => {
     let inner = buildParser(`@top U { X{"x"} }`)
-    let outer = buildParser(`@external grammar x from "." @top T { "&" nest.x "&" } @tokens { "&"[@name=And] }`, {nestedGrammar() { return inner }})
+    let outer = buildParser(`@external grammar x from "." @top T { "&" nest.x "&" } @tokens { "&"[@name=And] }`, {
+      nestedParser() { return inner }
+    })
     testTree(outer.parse("&x&"), 'T(And,U(X),And)')
   })
 
