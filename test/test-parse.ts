@@ -1,5 +1,5 @@
 import {buildParser, BuildOptions} from ".."
-import {Parser, InputStream, Stack, Tree} from "lezer"
+import {Parser, Input, Stack, Tree} from "lezer"
 import {TreeFragment} from "lezer-tree"
 // @ts-ignore
 import {testTree} from "../dist/test.cjs"
@@ -308,8 +308,8 @@ C { "c" }
 `)
 
     testTree(parser.parse("bc"), "X(FOO(B), C)")
-    testTree(parser.parse("bc", { top: "X" }), "X(FOO(B), C)")
-    testTree(parser.parse("bc", { top: "Y" }), "Y(B, C)")
+    testTree(parser.configure({top: "X"}).parse("bc"), "X(FOO(B), C)")
+    testTree(parser.configure({top: "Y"}).parse("bc"), "Y(B, C)")
   })
 
   it("parses first top as default", () => {
@@ -322,7 +322,7 @@ C { "c" }
 `)
 
     testTree(parser.parse("bc"), "X(FOO(B), C)")
-    testTree(parser.parse("bc", { top: "Y" }), "Y(B, C)")
+    testTree(parser.configure({top: "Y"}).parse("bc"), "Y(B, C)")
   })
 })
 
@@ -352,7 +352,7 @@ Close { "</" name ">" }
 @tokens { name { std.asciiLetter+ } }
 Text[@export] {}`, {
     nestedParser(_, terms) {
-      return (stream: InputStream, stack: Stack) => {
+      return (stream: Input, stack: Stack) => {
         let tag = /<(\w+)>$/.exec(stream.read(stack.ruleStart, stack.pos))
         if (!tag || !["textarea", "script", "style"].includes(tag[1])) return null
         return {
@@ -374,7 +374,7 @@ Text[@export] {}`, {
     let outer = buildParser(`@external grammar inner from "." @top V { "[" nest.inner "]" } @tokens { "["[@name=O] "]"[@name=C] }`,
                             {nestedParser() { return inner1 }})
     testTree(outer.parse("[x]"), "V(O,T(A),C)")
-    testTree(outer.withNested({inner: inner2}).parse("[x]"), "V(O,U(B),C)")
+    testTree(outer.configure({nested: {inner: {parser: inner2}}}).parse("[x]"), "V(O,U(B),C)")
   })
 
   it("supports tag-less nesting", () => {

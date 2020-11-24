@@ -1,15 +1,15 @@
 import {buildParser} from ".."
-import {Parser, ExternalTokenizer, InputStream, Token, NodeProp} from "lezer"
+import {Parser, ExternalTokenizer, Input, Token, NodeProp} from "lezer"
 // @ts-ignore
 import {fileTests} from "../dist/test.cjs"
 
-const ist = require("ist")
+import ist from "ist"
 
 let fs = require("fs"), path = require("path")
 let caseDir = path.join(__dirname, "cases")
 
 function externalTokenizer(name: string, terms: {[name: string]: number}) {
-  if (name == "ext1") return new ExternalTokenizer((input: InputStream, token: Token) => {
+  if (name == "ext1") return new ExternalTokenizer((input: Input, token: Token) => {
     let pos = token.start
     let next = input.get(pos++)
     if (next == "{".charCodeAt(0)) token.accept(terms.braceOpen, pos)

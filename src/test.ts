@@ -153,14 +153,14 @@ export function fileTests(file: string, fileName: string, mayIgnore = defaultIgn
     if (!m) throw new Error(`Unexpected file format in ${fileName} around\n\n${toLineContext(file, lastIndex)}`)
 
     let [, name, configStr] = /(.*?)(\{.*?\})?$/.exec(m[1])!
-    let extraConfig = configStr ? JSON.parse(configStr) : {}
+    let config = configStr ? JSON.parse(configStr) : null
 
     let text = m[2].trim(), expected = m[3]
     tests.push({
       name,
       run(parser: Parser) {
         let strict = !/⚠|\.\.\./.test(expected)
-        testTree(parser.parse(text, {strict, ...extraConfig}), expected, mayIgnore)
+        testTree((config ? parser.configure(config) : parser).parse(text, {strict}), expected, mayIgnore)
       }
     })
     lastIndex = m.index + m[0].length
