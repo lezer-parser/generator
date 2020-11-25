@@ -340,6 +340,14 @@ expr { "[[" nest.inner "]]" | Bang{"!"} }
 
     testTree(outer.parse("![[((.).)]][[.]]"), 'O(Bang,Start,I(B(Open,B(Open,Dot,Close),Dot,Close)),End,Start,I(Dot),End)')
     testTree(outer.parse("[[/\]]"), 'O(Start,I(⚠),End)')
+
+    let tree = outer.parse("[[(.)]]")
+    let innerNode = tree.topNode.childAfter(2)!
+    ist(innerNode.name, "I")
+    ist(innerNode.from, 2)
+    ist(innerNode.to, 5)
+    ist(innerNode.firstChild!.from, 2)
+    ist(innerNode.firstChild!.to, 5)
   })
 
   it("supports conditional nesting and end token predicates", () => {
