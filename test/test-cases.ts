@@ -1,5 +1,6 @@
 import {buildParser} from ".."
-import {Parser, ExternalTokenizer, Input, Token, NodeProp} from "lezer"
+import {Parser, ExternalTokenizer, Token, NodeProp} from "lezer"
+import {Input} from "lezer-tree"
 // @ts-ignore
 import {fileTests} from "../dist/test.cjs"
 
