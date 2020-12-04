@@ -1,3 +1,15 @@
+## 0.13.0 (2020-12-04)
+
+### Breaking changes
+
+Adjust to the new way nested parsers work in Lezer.
+
+### Bug fixes
+
+Top rule node types will now show up in the terms file.
+
+It is no longer allowed for a top rule to share a name with another rule.
+
 ## 0.12.0 (2020-10-23)
 
 ### Breaking changes
