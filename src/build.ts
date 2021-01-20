@@ -435,7 +435,8 @@ class Builder {
       : `import {Parser} from "lezer"\n`
     let imports: {[source: string]: string[]} = {}, imported: {[spec: string]: string} = Object.create(null)
     let defined = Object.create(null)
-    defined.Parser = true
+    let exportName = this.options.exportName || "parser"
+    defined.Parser = defined[exportName] = true
     let getName = (prefix: string) => {
       for (let i = 0;; i++) {
         let id = prefix + (i ? "_" + i : "")
@@ -544,7 +545,6 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     for (let id = 0; id < this.dialects.length; id++)
       terms.push(`Dialect_${this.dialects[id]}${mod == "cjs" ? ":" : " ="} ${id}`)
 
-    let exportName = this.options.exportName || "parser"
     return {
       parser: head + (mod == "cjs" ? `exports.${exportName} = ${parserStr}\n` : `export const ${exportName} = ${parserStr}\n`),
       terms: mod == "cjs" ? `${gen}module.exports = {\n  ${terms.join(",\n  ")}\n}`
