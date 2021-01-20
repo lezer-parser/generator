@@ -1,3 +1,9 @@
+## 0.13.2 (2021-01-20)
+
+### Bug fixes
+
+Fix an issue where imported identifiers could clash with the export name in generated code.
+
 ## 0.13.1 (2020-12-04)
 
 ### Bug fixes
