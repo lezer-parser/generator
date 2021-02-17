@@ -1,3 +1,9 @@
+## 0.13.3 (2021-02-17)
+
+### New features
+
+Support `@context` syntax to register a context tracker for a grammar.
+
 ## 0.13.2 (2021-01-20)
 
 ### Bug fixes
