@@ -1,6 +1,6 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
         TokenPrecDeclaration, TokenConflictDeclaration, TokenDeclaration, LiteralDeclaration,
-        ExternalTokenDeclaration,
+        ContextDeclaration, ExternalTokenDeclaration,
         ExternalSpecializeDeclaration, ExternalGrammarDeclaration, ExternalPropDeclaration, Identifier,
         Expression, NameExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, InlineRuleExpression, Prop, PropPart,
@@ -128,6 +128,7 @@ function parseGrammar(input: Input) {
   let mainSkip: Expression | null = null
   let scopedSkip: {expr: Expression, rules: readonly RuleDeclaration[]}[] = []
   let dialects: Identifier[] = []
+  let context: ContextDeclaration | null = null
   let external: ExternalTokenDeclaration[] = []
   let specialized: ExternalSpecializeDeclaration[] = []
   let nested: ExternalGrammarDeclaration[] = []
@@ -148,6 +149,12 @@ function parseGrammar(input: Input) {
     } else if (input.type == "at" && input.value == "tokens") {
       if (tokens) input.raise(`Multiple @tokens declaractions`, input.start)
       else tokens = parseTokens(input)
+    } else if (input.eat("at", "context")) {
+      if (context) input.raise(`Multiple @context declarations`, start)
+      let id = parseIdent(input)
+      input.expect("id", "from")
+      let source = input.expect("string")
+      context = new ContextDeclaration(start, id, source)
     } else if (input.eat("at", "external")) {
       if (input.eat("id", "tokens")) external.push(parseExternalTokens(input, start))
       else if (input.eat("id", "grammar")) nested.push(parseExternalGrammar(input, start))
@@ -182,7 +189,7 @@ function parseGrammar(input: Input) {
     }
   }
   if (!tops.length) return input.raise(`Missing @top declaration`)
-  return new GrammarDeclaration(start, rules, tops, tokens, external, specialized, prec,
+  return new GrammarDeclaration(start, rules, tops, tokens, context, external, specialized, prec,
                                 mainSkip, scopedSkip, dialects, nested, props, autoDelim)
 }
 

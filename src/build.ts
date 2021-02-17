@@ -10,7 +10,7 @@ import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce, Pos} from "./automaton"
 import {encodeArray} from "./encode"
 import {GenError} from "./error"
-import {Parser, ExternalTokenizer, NestedParser, Stack, NodeProp} from "lezer"
+import {Parser, ExternalTokenizer, NestedParser, Stack, NodeProp, ContextTracker} from "lezer"
 import {Action, Specialize, StateFlag, Seq, ParseState, File} from "lezer/dist/constants"
 
 const none: readonly any[] = []
@@ -95,6 +95,9 @@ export type BuildOptions = {
   /// If given, will be used to initialize external props in the parser
   /// returned by `buildParser`.
   externalProp?: (name: string) => NodeProp<any>
+  /// If given, will be used as context tracker in a parser built with
+  /// `buildParser`.
+  contextTracker?: ContextTracker<any>
 }
 
 type SkipInfo = {skip: readonly Term[], rule: Term | null, startTokens: readonly Term[], id: number}
@@ -395,6 +398,7 @@ class Builder {
       skippedNodes: skippedTypes,
       tokenData,
       tokenizers,
+      context: this.ast.context ? this.options.contextTracker : undefined,
       topRules,
       nested: this.nestedParsers.map(spec => {
         return [spec.name, spec.source ? this.options.nestedParser!(spec.name, this.termTable) : {},
@@ -470,6 +474,8 @@ class Builder {
 ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     })
 
+    let context = this.ast.context ? importName(this.ast.context.id.name, this.ast.context.source, "cx") : null
+
     let nodeProps = rawNodeProps.map(({prop, terms}) => {
       let {source} = this.knownProps[prop]
       let propID = source.from ? importName(source.name, source.from, "prop") :
@@ -516,7 +522,8 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
   stateData: ${encodeArray(stateData)},
   goto: ${encodeArray(goto)},
   nodeNames: ${JSON.stringify(nodeNames)},
-  maxTerm: ${maxTerm}${nodeProps.length ? `,
+  maxTerm: ${maxTerm}${context ? `,
+  context: ${context}` : ""}${nodeProps.length ? `,
   nodeProps: [
     ${nodeProps.join(",\n    ")}
   ]` : ""}${skippedTypes.length ? `,
