@@ -425,7 +425,7 @@ function parseTokenPrecedence(input: Input) {
   input.expect("{")
   let tokens: (LiteralExpression | NameExpression)[] = []
   while (!input.eat("}")) {
-    if (tokens.length) input.expect(",")
+    if (tokens.length) input.eat(",")
     let expr = parseExprInner(input)
     if (expr instanceof LiteralExpression || expr instanceof NameExpression)
       tokens.push(expr)
