@@ -470,9 +470,7 @@ function parseExternalTokens(input: Input, start: number) {
 }
 
 function parseExternalSpecialize(input: Input, type: "extend" | "specialize", start: number) {
-  input.expect("{")
-  let token = parseExprChoice(input)
-  input.expect("}")
+  let token = parseBracedExpr(input)
   let id = parseIdent(input)
   input.expect("id", "from")
   let from = input.expect("string")
