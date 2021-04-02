@@ -1,6 +1,7 @@
 import {Term, TermSet, Rule, cmpSet, Conflicts, union} from "./grammar"
 import {hash, hashString} from "./hash"
 import {GenError} from "./error"
+import {timing} from "./log"
 
 export class Pos {
   hash: number = 0
@@ -376,6 +377,7 @@ function findConflictOrigin(a: Pos, b: Pos) {
 export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[name: string]: Term[]}) {
   let states: State[] = []
   let cores: {[hash: number]: Core[]} = {}
+  let t0 = Date.now()
   function getState(core: readonly Pos[], top?: Term) {
     if (core.length == 0) return null
     let coreHash = hashPositions(core), byHash = cores[coreHash]
@@ -395,6 +397,8 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
     if (!found) {
       found = new State(states.length, set, 0, skip!, hash, top)
       states.push(found)
+      if (timing && states.length % 500 == 0)
+        console.log(`${states.length} states after ${((Date.now() - t0) / 1000).toFixed(2)}s`)
     }
     ;(cores[coreHash] || (cores[coreHash] = [])).push(new Core(core, found))
     return found
@@ -459,6 +463,7 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
 
   // Resolve alwaysReduce and sort actions
   for (let state of states) state.finish()
+  if (timing) console.log(`${states.length} states total.`)
   return states
 }
 
@@ -572,8 +577,8 @@ function collapseAutomaton(states: readonly State[]): readonly State[] {
     groups.push(new Group(group.origin, state.id))
   }
 
-  for (;;) {
-    let conflicts = false
+  for (let pass = 1;; pass++) {
+    let conflicts = false, t0 = Date.now()
     for (let g = 0, startLen = groups.length; g < startLen; g++) {
       let group = groups[g]
       for (let i = 0; i < group.members.length - 1; i++) {
@@ -586,13 +591,14 @@ function collapseAutomaton(states: readonly State[]): readonly State[] {
         }
       }
     }
+    if (timing) console.log(`Collapse pass ${pass}${conflicts ? `` : `, done`} (${((Date.now() - t0) / 1000).toFixed(2)}s)`)
     if (!conflicts) return mergeStates(states, mapping)
   }
 }
 
 function mergeIdentical(states: readonly State[]): readonly State[] {
-  for (;;) {
-    let mapping: number[] = [], didMerge = false
+  for (let pass = 1;; pass++) {
+    let mapping: number[] = [], didMerge = false, t0 = Date.now()
     let newStates: State[] = []
     // Find states that either have the same alwaysReduce or the same
     // actions, and merge them.
@@ -610,6 +616,7 @@ function mergeIdentical(states: readonly State[]): readonly State[] {
         if (add) other.set = add.concat(other.set).sort((a, b) => a.cmp(b))
       }
     }
+    if (timing) console.log(`Merge identical pass ${pass}${didMerge ? "" : ", done"} (${((Date.now() - t0) / 1000).toFixed(2)}s)`)
     if (!didMerge) return states
     // Make sure actions point at merged state objects
     for (let state of newStates) if (!state.defaultReduce) {

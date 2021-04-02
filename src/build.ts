@@ -10,12 +10,11 @@ import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce, Pos} from "./automaton"
 import {encodeArray} from "./encode"
 import {GenError} from "./error"
+import {verbose, timing, time} from "./log"
 import {Parser, ExternalTokenizer, NestedParser, Stack, NodeProp, ContextTracker} from "lezer"
 import {Action, Specialize, StateFlag, Seq, ParseState, File} from "lezer/dist/constants"
 
 const none: readonly any[] = []
-
-const verbose = (typeof process != "undefined" && process.env.LOG) || ""
 
 class Parts {
   constructor(readonly terms: readonly Term[],
@@ -103,8 +102,8 @@ export type BuildOptions = {
 type SkipInfo = {skip: readonly Term[], rule: Term | null, startTokens: readonly Term[], id: number}
 
 class Builder {
-  ast: GrammarDeclaration
-  input: Input
+  ast!: GrammarDeclaration
+  input!: Input
   terms = new TermSet
   tokens: TokenSet
   externalTokens: ExternalTokenSet[]
@@ -126,11 +125,13 @@ class Builder {
 
   astRules: {skip: Term, rule: RuleDeclaration}[] = []
   currentSkip: Term[] = []
-  skipRules: Term[]
+  skipRules!: Term[]
 
   constructor(text: string, readonly options: BuildOptions) {
-    this.input = new Input(text, options.fileName)
-    this.ast = this.input.parse()
+    time("Parse", () => {
+      this.input = new Input(text, options.fileName)
+      this.ast = this.input.parse()
+    })
 
     let NP: {[key: string]: any} = NodeProp
     for (let prop in NP) {
@@ -156,61 +157,63 @@ class Builder {
         this.raise(`Duplicate external grammar name '${grammar.id.name}'`, grammar.id.start)
     }
 
-    let noSkip = this.newName("%noskip", true)
-    this.defineRule(noSkip, [])
+    time("Build rules", () => {
+      let noSkip = this.newName("%noskip", true)
+      this.defineRule(noSkip, [])
 
-    let mainSkip = this.ast.mainSkip ? this.newName("%mainskip", true) : noSkip
-    let scopedSkip: Term[] = []
-    for (let rule of this.ast.rules) this.astRules.push({skip: mainSkip, rule})
-    for (let scoped of this.ast.scopedSkip) {
-      let skip = noSkip, found = this.ast.scopedSkip.findIndex((sc, i) => i < scopedSkip.length && exprEq(sc.expr, scoped.expr))
-      if (found > -1) skip = scopedSkip[found]
-      else if (this.ast.mainSkip && exprEq(scoped.expr, this.ast.mainSkip)) skip = mainSkip
-      else if (!isEmpty(scoped.expr)) skip = this.newName("%skip", true)
-      scopedSkip.push(skip)
-      for (let rule of scoped.rules) this.astRules.push({skip, rule})
-    }
-
-    for (let {rule} of this.astRules) {
-      this.unique(rule.id)
-      if (this.namespaces[rule.id.name])
-        this.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
-    }
-
-    this.currentSkip.push(noSkip)
-    this.skipRules = mainSkip == noSkip ? [mainSkip] : [noSkip, mainSkip]
-    if (mainSkip != noSkip)
-      this.defineRule(mainSkip, this.normalizeExpr(this.ast.mainSkip!))
-    for (let i = 0; i < this.ast.scopedSkip.length; i++) {
-      let skip = scopedSkip[i]
-      if (!this.skipRules.includes(skip)) {
-        this.skipRules.push(skip)
-        if (skip != noSkip)
-          this.defineRule(skip, this.normalizeExpr(this.ast.scopedSkip[i].expr))
+      let mainSkip = this.ast.mainSkip ? this.newName("%mainskip", true) : noSkip
+      let scopedSkip: Term[] = []
+      for (let rule of this.ast.rules) this.astRules.push({skip: mainSkip, rule})
+      for (let scoped of this.ast.scopedSkip) {
+        let skip = noSkip, found = this.ast.scopedSkip.findIndex((sc, i) => i < scopedSkip.length && exprEq(sc.expr, scoped.expr))
+        if (found > -1) skip = scopedSkip[found]
+        else if (this.ast.mainSkip && exprEq(scoped.expr, this.ast.mainSkip)) skip = mainSkip
+        else if (!isEmpty(scoped.expr)) skip = this.newName("%skip", true)
+        scopedSkip.push(skip)
+        for (let rule of scoped.rules) this.astRules.push({skip, rule})
       }
-    }
-    this.currentSkip.pop()
 
-    for (const top of this.ast.topRules) {
-      this.unique(top.id)
-      this.used(top.id.name)
-      this.currentSkip.push(mainSkip)
-      let {name, props} = this.nodeInfo(top.props, "t", top.id.name, none, none, top.expr)
-      let term = this.terms.makeTop(name, props)
-      this.namedTerms[name!] = term
-      this.defineRule(term, this.normalizeExpr(top.expr))
+      for (let {rule} of this.astRules) {
+        this.unique(rule.id)
+        if (this.namespaces[rule.id.name])
+          this.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
+      }
+
+      this.currentSkip.push(noSkip)
+      this.skipRules = mainSkip == noSkip ? [mainSkip] : [noSkip, mainSkip]
+      if (mainSkip != noSkip)
+        this.defineRule(mainSkip, this.normalizeExpr(this.ast.mainSkip!))
+      for (let i = 0; i < this.ast.scopedSkip.length; i++) {
+        let skip = scopedSkip[i]
+        if (!this.skipRules.includes(skip)) {
+          this.skipRules.push(skip)
+          if (skip != noSkip)
+            this.defineRule(skip, this.normalizeExpr(this.ast.scopedSkip[i].expr))
+        }
+      }
       this.currentSkip.pop()
-    }
 
-    for (let ext of this.externalSpecializers) ext.finish()
-
-    for (let {skip, rule} of this.astRules) {
-      if (this.ruleNames[rule.id.name] && isExported(rule) && !rule.params.length) {
-        this.buildRule(rule, [], skip, false)
-        if (rule.expr instanceof SequenceExpression && rule.expr.exprs.length == 0)
-          this.used(rule.id.name)
+      for (const top of this.ast.topRules) {
+        this.unique(top.id)
+        this.used(top.id.name)
+        this.currentSkip.push(mainSkip)
+        let {name, props} = this.nodeInfo(top.props, "t", top.id.name, none, none, top.expr)
+        let term = this.terms.makeTop(name, props)
+        this.namedTerms[name!] = term
+        this.defineRule(term, this.normalizeExpr(top.expr))
+        this.currentSkip.pop()
       }
-    }
+
+      for (let ext of this.externalSpecializers) ext.finish()
+
+      for (let {skip, rule} of this.astRules) {
+        if (this.ruleNames[rule.id.name] && isExported(rule) && !rule.params.length) {
+          this.buildRule(rule, [], skip, false)
+          if (rule.expr instanceof SequenceExpression && rule.expr.exprs.length == 0)
+            this.used(rule.id.name)
+        }
+      }
+    })
 
     for (let name in this.ruleNames) {
       let value = this.ruleNames[name]
@@ -248,9 +251,10 @@ class Builder {
   }
 
   prepareParser() {
-    let rules = simplifyRules(this.rules, [...this.skipRules,
-                                           ...this.nestedParsers.map(g => g.placeholder),
-                                           ...this.terms.tops])
+    let rules = time("Simplify rules", () => simplifyRules(this.rules, [
+      ...this.skipRules,
+      ...this.nestedParsers.map(g => g.placeholder),
+      ...this.terms.tops]))
     let {nodeTypes, names: termNames, minRepeatTerm, maxTerm} = this.terms.finish(rules)
     for (let prop in this.namedTerms) this.termTable[prop] = this.namedTerms[prop].id
 
@@ -274,9 +278,10 @@ class Builder {
       if (rules.length) startTerms.push(name)
       return {skip, rule: rules.length ? name : null, startTokens, id}
     })
-    let fullTable = buildFullAutomaton(this.terms, startTerms, first)
-    let {tokenGroups, tokenPrec, tokenData} = this.tokens.buildTokenGroups(fullTable, skipInfo)
-    let table = finishAutomaton(fullTable) as readonly LRState[]
+    let fullTable = time("Build full automaton", () => buildFullAutomaton(this.terms, startTerms, first))
+    let {tokenGroups, tokenPrec, tokenData} =
+      time("Build token groups", () => this.tokens.buildTokenGroups(fullTable, skipInfo))
+    let table = time("Finish automaton", () => finishAutomaton(fullTable) as readonly LRState[])
     let skipState = findSkipStates(table, this.terms.tops)
 
     this.addNestedParsers(table)
@@ -309,10 +314,13 @@ class Builder {
       actions.push(Seq.End, Seq.Done)
       return data.storeArray(actions)
     })
-    let states = new Uint32Array(table.length * ParseState.Size)
-    let forceReductions = this.computeForceReductions(table, skipInfo)
-    let finishCx = new FinishStateContext(tokenizers, data, states, skipData, skipInfo, table, this)
-    for (let s of table) finishCx.finish(s, skipState(s.id), forceReductions[s.id])
+    let states = time("Finish states", () => {
+      let states = new Uint32Array(table.length * ParseState.Size)
+      let forceReductions = this.computeForceReductions(table, skipInfo)
+      let finishCx = new FinishStateContext(tokenizers, data, states, skipData, skipInfo, table, this)
+      for (let s of table) finishCx.finish(s, skipState(s.id), forceReductions[s.id])
+      return states
+    })
     let dialects: {[name: string]: number} = Object.create(null)
     for (let i = 0; i < this.dialects.length; i++)
       dialects[this.dialects[i]] = data.storeArray((this.tokens.byDialect[i] || none).map(t => t.id).concat(Seq.End))
