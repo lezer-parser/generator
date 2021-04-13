@@ -10,7 +10,7 @@ import {Input} from "./parse"
 import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState, Shift, Reduce, Pos} from "./automaton"
 import {encodeArray} from "./encode"
 import {GenError} from "./error"
-import {verbose, timing, time} from "./log"
+import {verbose, time} from "./log"
 import {Parser, ExternalTokenizer, NestedParser, Stack, NodeProp, ContextTracker} from "lezer"
 import {Action, Specialize, StateFlag, Seq, ParseState, File} from "lezer/dist/constants"
 
