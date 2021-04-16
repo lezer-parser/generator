@@ -17,6 +17,65 @@ function charFor(n: number) {
   return n > MAX_CHAR ? "∞" : n >= 0xd800 && n < 0xdfff ? "\\u{" + n.toString(16) + "}" : String.fromCharCode(n)
 }
 
+type Partition = {[id: number]: State[]}
+
+function minimize(states: State[], start: State) {
+  let partition: Partition = Object.create(null)
+  let byAccepting: {[terms: string]: State[]} = Object.create(null)
+  for (let state of states) {
+    let id = ids(state.accepting)
+    let group = byAccepting[id] || (byAccepting[id] = [])
+    group.push(state)
+    partition[state.id] = group
+  }
+
+  for (;;) {
+    let split = false, newPartition: Partition = Object.create(null)
+    for (let state of states) {
+      if (newPartition[state.id]) continue
+      let group = partition[state.id]
+      if (group.length == 1) {
+        newPartition[group[0].id] = group
+        continue
+      }
+      let parts = []
+      groups: for (let state of group) {
+        for (let p of parts) {
+          if (isEquivalent(state, p[0], partition)) {
+            p.push(state)
+            continue groups
+          }
+        }
+        parts.push([state])
+      }
+      if (parts.length > 1) split = true
+      for (let p of parts) for (let s of p) newPartition[s.id] = p
+    }
+    if (!split) return applyMinimization(states, start, partition)
+    partition = newPartition
+  }
+}
+
+function isEquivalent(a: State, b: State, partition: Partition) {
+  if (a.edges.length != b.edges.length) return false
+  for (let i = 0; i < a.edges.length; i++) {
+    let eA = a.edges[i], eB = b.edges[i]
+    if (eA.from != eB.from || eA.to != eB.to || partition[eA.target.id] != partition[eB.target.id])
+      return false
+  }
+  return true
+}
+
+function applyMinimization(states: readonly State[], start: State, partition: Partition) {
+  for (let state of states) {
+    for (let i = 0; i < state.edges.length; i++) {
+      let edge = state.edges[i], target = partition[edge.target.id][0]
+      if (target != edge.target) state.edges[i] = new Edge(edge.from, edge.to, target)
+    }
+  }
+  return partition[start.id][0]
+}
+
 let stateID = 1
 
 export class State {
@@ -32,7 +91,8 @@ export class State {
 
   compile() {
     let labeled: {[id: string]: State} = Object.create(null), localID = 0
-    return explore(this.closure().sort((a, b) => a.id - b.id))
+    let startState = explore(this.closure().sort((a, b) => a.id - b.id))
+    return minimize(Object.values(labeled), startState)
 
     function explore(states: State[]) {
       let newState = labeled[ids(states)] =
@@ -199,9 +259,12 @@ function exampleFromEdges(edges: readonly Edge[]) {
   return str
 }
 
-function ids(states: State[]) {
+function ids(elts: {id: number}[]) {
   let result = ""
-  for (let state of states) result += (result.length ? "-" : "") + state.id
+  for (let elt of elts) {
+    if (result.length) result += "-"
+    result += elt.id
+  }
   return result
 }
 
