@@ -903,7 +903,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
     if (dynamicPrec) this.registerDynamicPrec(name, dynamicPrec)
     if ((name.nodeType || exported) && rule.params.length == 0) {
       if (!nodeName) name.preserve = true
-      this.namedTerms[rule.id.name] = name
+      if (!inline) this.namedTerms[rule.id.name] = name
     }
 
     if (!inline) this.built.push(new BuiltRule(rule.id.name, args, name))
