@@ -1,3 +1,11 @@
+## 0.13.4 (2021-05-14)
+
+### Bug fixes
+
+Don't add inline rules to the terms file (since they may not be uniquely identified by name).
+
+Generate more minimal state machines for the tokenizer.
+
 ## 0.13.3 (2021-02-17)
 
 ### New features
