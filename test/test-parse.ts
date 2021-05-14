@@ -189,9 +189,10 @@ Bin { expr !plus "+" expr | expr !times "*" expr }
 @skip { space }
 @tokens { space { " "+ } Var { "x" } "*"[@name=Times] "+"[@name=Plus] }
 `)
-    let ast = parser.configure({strict: true, bufferLength: 2}).parse("x + x + x")
+    let p = parser.configure({strict: true, bufferLength: 2})
+    let ast = p.parse("x + x + x")
     testTree(ast, "T(Bin(Bin(Var,Plus,Var),Plus,Var))")
-    let ast2 = parser.configure({strict: true, bufferLength: 2}).parse("x * x + x + x", 0, {fragments: fragments(ast, [0, 0, 0, 4])})
+    let ast2 = p.parse("x * x + x + x", 0, {fragments: fragments(ast, [0, 0, 0, 4])})
     testTree(ast2, "T(Bin(Bin(Bin(Var,Times,Var),Plus,Var),Plus,Var))")
   })
 
