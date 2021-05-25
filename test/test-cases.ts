@@ -1,6 +1,5 @@
 import {buildParser} from ".."
-import {Parser, ExternalTokenizer, Token, NodeProp} from "lezer"
-import {Input} from "lezer-tree"
+import {Parser, ExternalTokenizer, Token, NodeProp, InputStream} from "lezer"
 // @ts-ignore
 import {fileTests} from "../dist/test.cjs"
 
@@ -10,12 +9,10 @@ let fs = require("fs"), path = require("path")
 let caseDir = path.join(__dirname, "cases")
 
 function externalTokenizer(name: string, terms: {[name: string]: number}) {
-  if (name == "ext1") return new ExternalTokenizer((input: Input, token: Token) => {
-    let pos = token.start
-    let next = input.get(pos++)
-    if (next == "{".charCodeAt(0)) token.accept(terms.braceOpen, pos)
-    else if (next == "}".charCodeAt(0)) token.accept(terms.braceClose, pos)
-    else if (next == ".".charCodeAt(0)) token.accept(terms.Dot, pos)
+  if (name == "ext1") return new ExternalTokenizer((input: InputStream, token: Token) => {
+    if (input.next == "{".charCodeAt(0)) { input.advance(); token.accept(terms.braceOpen, input.pos) }
+    else if (input.next == "}".charCodeAt(0)) { input.advance(); token.accept(terms.braceClose, input.pos) }
+    else if (input.next == ".".charCodeAt(0)) { input.advance(); token.accept(terms.Dot, input.pos) }
   })
   throw new Error("Undefined external tokenizer " + name)
 }
