@@ -23,7 +23,7 @@ function externalSpecializer(name: string, terms: {[name: string]: number}) {
 }
 
 function externalProp() {
-  return NodeProp.string()
+  return new NodeProp<string>({deserialize: x => x})
 }
 
 describe("Cases", () => {

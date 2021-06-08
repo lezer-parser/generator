@@ -139,7 +139,7 @@ class Builder {
     }
     for (let prop of this.ast.externalProps) {
       this.knownProps[prop.id.name] = {
-        prop: this.options.externalProp ? this.options.externalProp(prop.id.name) : NodeProp.string(),
+        prop: this.options.externalProp ? this.options.externalProp(prop.id.name) : new NodeProp<string>(),
         source: {name: prop.externalID.name, from: prop.source}
       }
     }
