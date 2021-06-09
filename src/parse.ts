@@ -1,7 +1,7 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
         TokenPrecDeclaration, TokenConflictDeclaration, TokenDeclaration, LiteralDeclaration,
         ContextDeclaration, ExternalTokenDeclaration,
-        ExternalSpecializeDeclaration, ExternalGrammarDeclaration, ExternalPropDeclaration, Identifier,
+        ExternalSpecializeDeclaration, ExternalPropDeclaration, Identifier,
         Expression, NameExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, InlineRuleExpression, Prop, PropPart,
         SpecializeExpression, AnyExpression, ConflictMarker} from "./node"
@@ -131,7 +131,6 @@ function parseGrammar(input: Input) {
   let context: ContextDeclaration | null = null
   let external: ExternalTokenDeclaration[] = []
   let specialized: ExternalSpecializeDeclaration[] = []
-  let nested: ExternalGrammarDeclaration[] = []
   let props: ExternalPropDeclaration[] = []
   let tops: RuleDeclaration[] = []
   let autoDelim = false
@@ -157,7 +156,6 @@ function parseGrammar(input: Input) {
       context = new ContextDeclaration(start, id, source)
     } else if (input.eat("at", "external")) {
       if (input.eat("id", "tokens")) external.push(parseExternalTokens(input, start))
-      else if (input.eat("id", "grammar")) nested.push(parseExternalGrammar(input, start))
       else if (input.eat("id", "prop")) props.push(parseExternalProp(input, start))
       else if (input.eat("id", "extend")) specialized.push(parseExternalSpecialize(input, "extend", start))
       else if (input.eat("id", "specialize")) specialized.push(parseExternalSpecialize(input, "specialize", start))
@@ -190,7 +188,7 @@ function parseGrammar(input: Input) {
   }
   if (!tops.length) return input.raise(`Missing @top declaration`)
   return new GrammarDeclaration(start, rules, tops, tokens, context, external, specialized, prec,
-                                mainSkip, scopedSkip, dialects, nested, props, autoDelim)
+                                mainSkip, scopedSkip, dialects, props, autoDelim)
 }
 
 function parseRule(input: Input, named?: Identifier) {
@@ -475,15 +473,6 @@ function parseExternalSpecialize(input: Input, type: "extend" | "specialize", st
   input.expect("id", "from")
   let from = input.expect("string")
   return new ExternalSpecializeDeclaration(start, type, token, id, from, parseExternalTokenSet(input))
-}
-
-function parseExternalGrammar(input: Input, start: number) {
-  let externalID = parseIdent(input)
-  let id = input.eat("id", "as") ? parseIdent(input) : externalID
-  let from = null
-  if (input.eat("id", "from")) from = input.expect("string")
-  else input.expect("id", "empty")
-  return new ExternalGrammarDeclaration(start, id, externalID, from)
 }
 
 function parseExternalProp(input: Input, start: number) {

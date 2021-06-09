@@ -179,7 +179,6 @@ export class State {
   goto: Shift[] = []
   tokenGroup: number = -1
   defaultReduce: Rule | null = null
-  nested = -1
 
   constructor(public id: number,
               public set: readonly Pos[],

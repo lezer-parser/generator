@@ -327,17 +327,26 @@ C { "c" }
   })
 })
 
+function getTerm(parser: Parser, name: string) {
+  return (parser as any).termTable[name]
+}
+
 describe("nesting", () => {
   it("can nest grammars", () => {
     let inner = buildParser(`
 @top I { expr+ }
 expr { B { Open{"("} expr+ Close{")"} } | Dot{"."} }`)
     let outer = buildParser(`
-@external grammar inner from "."
 @top O { expr+ }
-expr { "[[" nest.inner "]]" | Bang{"!"} }
-@tokens { "[["[@name=Start] "]]"[@name=End] }
-`, {nestedParser() { return inner }})
+expr { "[[" NestContent "]]" | Bang{"!"} }
+@tokens {
+  NestContent[@export] { ![\\]]+ }
+  "[["[@name=Start] "]]"[@name=End]
+}
+`)
+    outer = outer.configure({
+      nested: {[getTerm(outer, "NestContent")]: () => inner}
+    })
 
     testTree(outer.parse("![[((.).)]][[.]]"), 'O(Bang,Start,I(B(Open,B(Open,Dot,Close),Dot,Close)),End,Start,I(Dot),End)')
     testTree(outer.parse("[[/\]]"), 'O(Start,I(⚠),End)')
@@ -351,51 +360,29 @@ expr { "[[" nest.inner "]]" | Bang{"!"} }
     ist(innerNode.firstChild!.to, 5)
   })
 
-  it("supports conditional nesting and end token predicates", () => {
+  it("supports conditional nesting", () => {
+    let inner = buildParser(`@top Script { any } @tokens { any { ![]+ } }`)
     let outer = buildParser(`
-@external grammar inner from "."
 @top T { Tag }
-Tag { Open nest.inner<"</" name ">", Tag*> Close }
+Tag { Open Content? Close }
 Open { "<" name ">" }
 Close { "</" name ">" }
-@tokens { name { std.asciiLetter+ } }
-Text[@export] {}`, {
-    nestedParser(_, terms) {
-      return (stream: InputStream, stack: Stack) => {
-        let tag = /<(\w+)>$/.exec(stream.read(stack.ruleStart, stack.pos))
-        if (!tag || !["textarea", "script", "style"].includes(tag[1])) return null
-        return {
-          filterEnd: (token: string) => token == "</" + tag![1] + ">",
-          wrapType: terms.Text
+@tokens {
+  name { std.asciiLetter+ }
+  Content { ![<]+ }
+}`)
+    outer = outer.configure({
+      nested: {
+        [getTerm(outer, "Content")]: (input, from) => {
+          let {pos, text} = input.chunkAfter(Math.max(0, from - 20))!
+          let tag = /<([^>]+)>$/.exec(text.slice(0, from - pos))
+          return tag && tag[1] == "script" ? inner : null
         }
       }
-    }})
-
-    testTree(outer.parse("<foo><bar></baz></foo>"),
-             "T(Tag(Open,Tag(Open,Close),Close))")
-    testTree(outer.parse("<textarea><bar></baz></textarea>"),
-             "T(Tag(Open,Text,Close))")
-  })
-
-  it("allows updating the nested grammars for a parser", () => {
-    let inner1 = buildParser(`@top T { A { "x" }+ }`)
-    let inner2 = buildParser(`@top U { B { "x" }+ }`)
-    let outer = buildParser(`@external grammar inner from "." @top V { "[" nest.inner "]" } @tokens { "["[@name=O] "]"[@name=C] }`,
-                            {nestedParser() { return inner1 }})
-    testTree(outer.parse("[x]"), "V(O,T(A),C)")
-    testTree(outer.configure({nested: {inner: inner2}}).parse("[x]"), "V(O,U(B),C)")
-  })
-
-  it("supports tag-less nesting", () => {
-    let inner = buildParser(`@top U { X{"x"} }`)
-    let outer = buildParser(`@external grammar x from "." @top T { "&" nest.x "&" } @tokens { "&"[@name=And] }`, {
-      nestedParser() { return inner }
     })
-    testTree(outer.parse("&x&"), 'T(And,U(X),And)')
-  })
-
-  it("skips ranges with missing nested parsers", () => {
-    let outer = buildParser(`@external grammar inner empty @top T { "[" nest.inner "]" } @tokens { "["[@name=O] "]"[@name=C] }`)
-    testTree(outer.parse("[lfkdsajfa]"), 'T(O,C)')
+    testTree(outer.parse("<foo>bar</foo>"),
+             "T(Tag(Open,Content,Close))")
+    testTree(outer.parse("<script>hello</script>"),
+             "T(Tag(Open,Script,Close))")
   })
 })

@@ -14,7 +14,6 @@ export class GrammarDeclaration extends Node {
               readonly mainSkip: Expression | null,
               readonly scopedSkip: readonly {expr: Expression, rules: readonly RuleDeclaration[]}[],
               readonly dialects: readonly Identifier[],
-              readonly grammars: readonly ExternalGrammarDeclaration[],
               readonly externalProps: readonly ExternalPropDeclaration[],
               readonly autoDelim: boolean) {
     super(start)
@@ -95,15 +94,6 @@ export class ExternalSpecializeDeclaration extends Node {
               readonly id: Identifier,
               readonly source: string,
               readonly tokens: readonly {id: Identifier, props: readonly Prop[]}[]) {
-    super(start)
-  }
-}
-
-export class ExternalGrammarDeclaration extends Node {
-  constructor(start: number,
-              readonly id: Identifier,
-              readonly externalID: Identifier,
-              readonly source: string | null) {
     super(start)
   }
 }

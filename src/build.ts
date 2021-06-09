@@ -11,7 +11,7 @@ import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState,
 import {encodeArray} from "./encode"
 import {GenError} from "./error"
 import {verbose, time} from "./log"
-import {Parser, ExternalTokenizer, NestedParser, Stack, NodeProp, ContextTracker} from "lezer"
+import {Parser, ExternalTokenizer, Stack, NodeProp, ContextTracker} from "lezer"
 import {Action, Specialize, StateFlag, Seq, ParseState, File} from "lezer/dist/constants"
 
 const none: readonly any[] = []
@@ -88,9 +88,6 @@ export type BuildOptions = {
   /// Provide placeholders for external specializers when using
   /// `buildParser`.
   externalSpecializer?: (name: string, terms: {[name: string]: number}) => (value: string, stack: Stack) => number
-  /// Only relevant when using `buildParser`. Provides placeholders
-  /// for nested grammars.
-  nestedParser?: (name: string, terms: {[name: string]: number}) => NestedParser | Parser
   /// If given, will be used to initialize external props in the parser
   /// returned by `buildParser`.
   externalProp?: (name: string) => NodeProp<any>
@@ -108,7 +105,6 @@ class Builder {
   tokens: TokenSet
   externalTokens: ExternalTokenSet[]
   externalSpecializers: ExternalSpecializer[]
-  nestedParsers: NestedParserSpec[] = []
   specialized: {[name: string]: {value: string, name: string | null, term: Term, type: string, dialect: number | null}[]}
     = Object.create(null)
   tokenOrigins: {[name: string]: {spec?: Term, external?: ExternalTokenSet | ExternalSpecializer}} = Object.create(null)
@@ -149,13 +145,6 @@ class Builder {
     this.tokens = new TokenSet(this, this.ast.tokens)
     this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
     this.externalSpecializers = this.ast.externalSpecializers.map(decl => new ExternalSpecializer(this, decl))
-
-    this.defineNamespace("nest", new NestNamespace)
-
-    for (let grammar of this.ast.grammars) {
-      if (this.ast.grammars.some(g => g != grammar && g.id.name == grammar.id.name))
-        this.raise(`Duplicate external grammar name '${grammar.id.name}'`, grammar.id.start)
-    }
 
     time("Build rules", () => {
       let noSkip = this.newName("%noskip", true)
@@ -253,7 +242,6 @@ class Builder {
   prepareParser() {
     let rules = time("Simplify rules", () => simplifyRules(this.rules, [
       ...this.skipRules,
-      ...this.nestedParsers.map(g => g.placeholder),
       ...this.terms.tops]))
     let {nodeTypes, names: termNames, minRepeatTerm, maxTerm} = this.terms.finish(rules)
     for (let prop in this.namedTerms) this.termTable[prop] = this.namedTerms[prop].id
@@ -283,8 +271,6 @@ class Builder {
       time("Build token groups", () => this.tokens.buildTokenGroups(fullTable, skipInfo))
     let table = time("Finish automaton", () => finishAutomaton(fullTable) as readonly LRState[])
     let skipState = findSkipStates(table, this.terms.tops)
-
-    this.addNestedParsers(table)
 
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
 
@@ -408,10 +394,6 @@ class Builder {
       tokenizers,
       context: this.ast.context ? this.options.contextTracker : undefined,
       topRules,
-      nested: this.nestedParsers.map(spec => {
-        return [spec.name, spec.source ? this.options.nestedParser!(spec.name, this.termTable) : {},
-                spec.end.compile().toArray({}, none), spec.placeholder.id]
-      }),
       dialects,
       dynamicPrecedences,
       specialized,
@@ -477,11 +459,6 @@ class Builder {
       }
     })
 
-    let nested = this.nestedParsers.map(spec => {
-      return `[${JSON.stringify(spec.name)}, ${spec.source ? importName(spec.extName, spec.source, spec.name) : "{}"},\
-${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
-    })
-
     let context = this.ast.context ? importName(this.ast.context.id.name, this.ast.context.source, "cx") : null
 
     let nodeProps = rawNodeProps.map(({prop, terms}) => {
@@ -539,8 +516,7 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
   repeatNodeCount: ${repeatNodeCount},
   tokenData: ${encodeArray(tokenData)},
   tokenizers: [${tokenizers.join(", ")}],
-  topRules: ${JSON.stringify(topRules)}${nested.length ? `,
-  nested: [${nested.join(", ")}]` : ""}${dialects.length ? `,
+  topRules: ${JSON.stringify(topRules)}${dialects.length ? `,
   dialects: {${dialects.join(", ")}}` : ""}${dynamicPrecedences ? `,
   dynamicPrecedences: ${JSON.stringify(dynamicPrecedences)}` : ""}${specialized.length ? `,
   specialized: [${specialized.join(",")}]` : ""},
@@ -613,20 +589,6 @@ ${encodeArray(spec.end.compile().toArray({}, none))}, ${spec.placeholder.id}]`
         return {prop, terms}
       }),
       skippedTypes
-    }
-  }
-
-  addNestedParsers(table: readonly LRState[]) {
-    for (let state of table) {
-      let nest = state.set.filter(pos => this.nestedParsers.some(g => g.placeholder == pos.next))
-      if (nest.length) {
-        let placeholder = nest[0].next
-        if (!nest.every(pos => pos.next == placeholder))
-          this.raise(`Multiple nested grammars possible after ${nest[0].trail()}`)
-        if (!state.set.every(pos => pos.next == placeholder || (pos.pos == 0 && state.set.some(p => p.next == pos.rule.name))))
-          this.raise(`Nested grammar in ambiguous position after ${nest[0].trail()} ` + state.set)
-        state.nested = this.nestedParsers.findIndex(g => g.placeholder == placeholder)
-      }
     }
   }
 
@@ -1182,8 +1144,7 @@ class FinishStateContext {
     let skipTable = this.skipData[skipID], skipTerms = this.skipInfo[skipID].startTokens
 
     let defaultReduce = state.defaultReduce ? reduceAction(state.defaultReduce, this.skipInfo) : 0
-    let flags = (isSkip ? StateFlag.Skipped : 0) |
-      (state.nested > -1 ? StateFlag.StartNest | (state.nested << StateFlag.NestShift) : 0)
+    let flags = isSkip ? StateFlag.Skipped : 0
 
     let skipReduce = -1, shared = null
     if (defaultReduce == 0) {
@@ -1374,55 +1335,6 @@ function buildTokenMasks(groups: TokenGroup[]) {
 
 interface Namespace {
   resolve(expr: NameExpression, builder: Builder): Parts[]
-}
-
-class NestedParserSpec {
-  constructor(readonly placeholder: Term,
-              readonly name: string,
-              readonly extName: string,
-              readonly source: string | null,
-              readonly end: State) {}
-}
-
-class NestNamespace implements Namespace {
-  resolve(expr: NameExpression, builder: Builder): Parts[] {
-    if (expr.args.length > 2)
-      builder.raise(`Too many arguments to 'nest.${expr.id.name}'`, expr.start)
-    let [endExpr, defaultExpr] = expr.args as [Expression | undefined, Expression | undefined]
-    let extGrammar = builder.ast.grammars.find(g => g.id.name == expr.id.name)
-    if (!extGrammar) return builder.raise(`No external grammar '${expr.id.name}' defined`, expr.id.start)
-    let placeholder = builder.newName(expr.id.name + "-placeholder", true)
-    builder.defineRule(placeholder, defaultExpr ? builder.normalizeExpr(defaultExpr) : [])
-
-    if (!endExpr && !(endExpr = findExprAfter(builder.ast, expr)))
-      return builder.raise(`No end token specified, and no token found directly after the nest expression`, expr.start)
-    let endStart = new State, endEnd = new State([builder.terms.eof])
-    try {
-      builder.tokens.build(endExpr, endStart, endEnd, none)
-    } catch(e) {
-      if (!(e instanceof SyntaxError)) throw e
-      builder.raise(`End token '${endExpr}' for nested grammar is not a valid token expression`, endExpr.start)
-    }
-    builder.nestedParsers.push(new NestedParserSpec(placeholder, extGrammar.id.name, extGrammar.externalID.name,
-                                                    extGrammar.source, endStart))
-    if (builder.nestedParsers.length >= 2**(30 - StateFlag.NestShift))
-      builder.raise("Too many nested grammars used")
-    return [p(placeholder)]
-  }
-}
-
-function findExprAfter(ast: GrammarDeclaration, expr: Expression) {
-  let found: Expression | undefined
-  function walk(cur: Expression) {
-    if (cur instanceof SequenceExpression) {
-      let index = cur.exprs.indexOf(expr)
-      if (index > -1 && index < cur.exprs.length - 1) found = cur.exprs[index + 1]
-    }
-    return cur
-  }
-  for (let rule of ast.rules) rule.expr.walk(walk)
-  for (let topRule of ast.topRules) topRule.expr.walk(walk)
-  return found
 }
 
 class TokenArg {
@@ -1969,11 +1881,12 @@ function simplifyRules(rules: readonly Rule[], preserve: readonly Term[]): reado
 
 /// Build an in-memory parser instance for a given grammar. This is
 /// mostly useful for testing. If your grammar uses external
-/// tokenizers or nested grammars, you'll have to provide the
-/// `externalTokenizer` and/or `nestedParser` options for the
-/// returned parser to be able to parse anything.
+/// tokenizers, you'll have to provide the `externalTokenizer` option
+/// for the returned parser to be able to parse anything.
 export function buildParser(text: string, options: BuildOptions = {}): Parser {
-  return new Builder(text, options).getParser()
+  let builder = new Builder(text, options), parser = builder.getParser()
+  ;(parser as any).termTable = builder.termTable
+  return parser
 }
 
 const KEYWORDS = ["break", "case", "catch", "continue", "debugger", "default", "do", "else", "finally",
