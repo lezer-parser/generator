@@ -1,6 +1,6 @@
 import {buildParser, BuildOptions} from ".."
-import {Parser, Stack, Tree, InputStream} from "lezer"
-import {TreeFragment} from "lezer-tree"
+import {Parser, Tree} from "lezer"
+import {TreeFragment, NodeProp} from "lezer-tree"
 // @ts-ignore
 import {testTree} from "../dist/test.cjs"
 import ist from "ist"
@@ -11,14 +11,18 @@ function p(text: string, options?: BuildOptions): () => Parser {
 }
 
 function shared(a: Tree, b: Tree) {
-  let inA = [], shared = 0
+  let inA = new Set<Tree>(), shared = 0
   ;(function register(t: any) {
-    inA.push(t)
-    if (t instanceof Tree) t.children.forEach(register)
+    if (t instanceof Tree) {
+      let mounted = t.prop(NodeProp.mountedTree)
+      if (mounted) t = mounted
+      t.children.forEach(register)
+    }
+    inA.add(t)
   })(a)
   ;(function scan(t: any) {
-    if (inA.includes(t)) shared += t.length
-    else if (t instanceof Tree) t.children.forEach(scan)
+    if (inA.has(t)) shared += t.length
+    else if (t instanceof Tree) (t.prop(NodeProp.mountedTree) || t).children.forEach(scan)
   })(b)
   return Math.round(100 * shared / b.length)
 }
@@ -253,6 +257,18 @@ describe("sequences", () => {
     ist(b, 10, "<=")
   })
 
+  it("creates a tree for long content-less repeats", () => {
+    let p = buildParser(`
+@top T { (A | B { "[" b+ "]" })+ }
+@tokens {
+  A { "a" }
+  b { "b" }
+}`).configure({bufferLength: 10})
+    let tree = p.parse("a[" + "b".repeat(500) + "]")
+    ist(tree.toString(), "T(A,B)")
+    ist(depth(tree), 5, ">=")
+  })
+
   it("balancing doesn't get confused by skipped nodes", () => {
     let ast = p1().configure({strict: true, bufferLength: 10}).parse("xc".repeat(1000))
     let d = depth(ast), b = breadth(ast)
@@ -384,5 +400,35 @@ Close { "</" name ">" }
              "T(Tag(Open,Content,Close))")
     testTree(outer.parse("<script>hello</script>"),
              "T(Tag(Open,Script,Close))")
+  })
+
+  it("can parse incrementally across nesting", () => {
+    let inner = buildParser(`@top Blob { "b"* }`)
+    let outer = buildParser(`
+@top Program { (Nest | Name)* }
+@skip { space }
+@skip {} {
+  Nest { "{" Nested "}" }
+  Nested { nestedChar* }
+}
+@tokens {
+  space { std.whitespace+ }
+  nestedChar { ![}] }
+  Name { $[a-z]+ }
+}`)
+    outer = outer.configure({
+      bufferLength: 10,
+      nested: {[getTerm(outer, "Nested")]: () => inner}
+    })
+    let base = "hello {bbbb} "
+    let doc = base.repeat(500) + "{" + "b".repeat(1000) + "} " + base.repeat(500), off = base.length * 500 + 500
+    let ast1 = outer.parse(doc)
+    let ast2 = outer.parse(doc.slice(0, off) + "bbb" + doc.slice(off), {
+      context: {
+        fragments: TreeFragment.applyChanges(TreeFragment.addTree(ast1), [{fromA: off, toA: off, fromB: off, toB: off + 3}])
+      }
+    })
+    ist(ast1.toString(), ast2.toString())
+    ist(shared(ast1, ast2), 90, ">")
   })
 })
