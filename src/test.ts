@@ -1,4 +1,4 @@
-import {Tree, NodeType, NodeProp, LRParser} from "lezer"
+import {Tree, NodeType, NodeProp, LRParser, parse} from "lezer"
 
 const none: readonly any[] = []
 
@@ -160,7 +160,7 @@ export function fileTests(file: string, fileName: string, mayIgnore = defaultIgn
       name,
       run(parser: LRParser) {
         let strict = !/⚠|\.\.\./.test(expected)
-        testTree(parser.configure({strict, ...config}).parse(text), expected, mayIgnore)
+        testTree(parse(parser.configure({strict, ...config}), {input: text}), expected, mayIgnore)
       }
     })
     lastIndex = m.index + m[0].length
