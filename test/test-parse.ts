@@ -1,12 +1,12 @@
 import {buildParser, BuildOptions} from ".."
-import {Parser, Tree} from "lezer"
-import {TreeFragment, NodeProp} from "lezer-tree"
+import {LRParser, Tree} from "lezer"
+import {TreeFragment, NodeProp, NodeType, InputGap} from "lezer-tree"
 // @ts-ignore
 import {testTree} from "../dist/test.cjs"
 import ist from "ist"
 
-function p(text: string, options?: BuildOptions): () => Parser {
-  let value: Parser | null = null
+function p(text: string, options?: BuildOptions): () => LRParser {
+  let value: LRParser | null = null
   return () => value || (value = buildParser(text, Object.assign({}, {warn(e: string) { throw new Error(e) }}, options)))
 }
 
@@ -230,6 +230,25 @@ Bin { expr !plus "+" expr | expr !times "*" expr }
     ist(Date.now() - t0 < 500)
     ist(ast.toString(), "T(⚠)")
   })
+
+
+  it("supports input gaps", () => {
+    let placeholder = NodeType.define({id: 1, name: "Gap"})
+    let tree = p1().parse(`if 1{{x}}0{{y}}0 foo {{z}};`, {
+      gaps: [new InputGap(4, 9, new Tree(placeholder, [], [], 5)),
+             new InputGap(10, 15, new Tree(placeholder, [], [], 5)),
+             new InputGap(21, 26, new Tree(placeholder, [], [], 5))]
+    })
+    ist(tree.toString(), "T(Cond(Num(Gap,Gap),Var,Gap))")
+    let num = tree.resolve(3, 1)
+    ist(num.name, "Num")
+    ist(num.from, 3)
+    ist(num.to, 16)
+    ist(num.firstChild!.name, "Gap")
+    ist(num.firstChild!.from, 4)
+    ist(num.lastChild!.name, "Gap")
+    ist(num.lastChild!.from, 10)
+  })
 })
 
 describe("sequences", () => {
@@ -343,7 +362,7 @@ C { "c" }
   })
 })
 
-function getTerm(parser: Parser, name: string) {
+function getTerm(parser: LRParser, name: string) {
   return (parser as any).termTable[name]
 }
 
@@ -390,8 +409,8 @@ Close { "</" name ">" }
     outer = outer.configure({
       nested: {
         [getTerm(outer, "Content")]: (input, from) => {
-          let {pos, text} = input.chunkAfter(Math.max(0, from - 20))!
-          let tag = /<([^>]+)>$/.exec(text.slice(0, from - pos))
+          let off = Math.max(0, from - 20), text = input.chunk(off)
+          let tag = /<([^>]+)>$/.exec(text.slice(0, from - off))
           return tag && tag[1] == "script" ? inner : null
         }
       }
@@ -430,5 +449,18 @@ Close { "</" name ">" }
     })
     ist(ast1.toString(), ast2.toString())
     ist(shared(ast1, ast2), 90, ">")
+  })
+
+  it("allows a nested parse to materialize the replaced node", () => {
+    let inner = buildParser(`@top X { "x"+ }`)
+    let outer = buildParser(`@top Y { Z } Z { "x"+ }`)
+    outer = outer.configure({nested: {
+      [getTerm(outer, "Z")]: () => (node) => {
+        ist(node.toString(), "Z")
+        ist(node.length, 5)
+        return inner
+      }
+    }})
+    ist(outer.parse("xxxxx").toString(), "Y(X)")
   })
 })
