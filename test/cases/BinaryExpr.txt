@@ -59,4 +59,4 @@ x%+y
 
 xy
 
-==> T(BinaryExpr(Symbol,⚠,Symbol))
+==> T(Symbol,⚠(Symbol))
