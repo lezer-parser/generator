@@ -1,6 +1,6 @@
 import {buildParser, BuildOptions} from ".."
 import {LRParser, Tree} from "lezer"
-import {TreeFragment, NodeProp, NodeType, InputGap, parse} from "lezer-tree"
+import {TreeFragment, NodeProp, NodeType, InputGap, parse, ScaffoldParser} from "lezer-tree"
 // @ts-ignore
 import {testTree} from "../dist/test.cjs"
 import ist from "ist"
@@ -365,7 +365,7 @@ C { "c" }
   })
 })
 
-function getTerm(parser: LRParser, name: string) {
+function getTerm(parser: LRParser, name: string): number {
   return (parser as any).termTable[name]
 }
 
@@ -426,7 +426,7 @@ Close { "</" name ">" }
   })
 
   it("can parse incrementally across nesting", () => {
-    let inner = buildParser(`@top Blob { "b"* }`)
+    let inner = buildParser(`@top Blob { "b"* }`).configure({bufferLength: 10})
     let outer = buildParser(`
 @top Program { (Nest | Name)* }
 @skip { space }
@@ -465,5 +465,42 @@ Close { "</" name ">" }
       }
     }})
     ist(parse(outer, {input: "xxxxx"}).toString(), "Y(X)")
+  })
+
+  it("can use a scaffold parser", () => {
+    let scaffold = buildParser(`
+@top Template { (Content | TemplateElement)* }
+@skip { space } {
+  TemplateElement { "{{" Variable+ "}}" }
+}
+@tokens {
+  Content { (![{] | "{" ![{])+ }
+  Variable { std.asciiLetter+ }
+  space { std.whitespace+ }
+}`).configure({bufferLength: 10})
+    let fill = buildParser(`
+@top Program { expr+ }
+@skip { space }
+expr { Symbol | List { "(" expr* ")" } }
+@tokens {
+  Symbol { std.asciiLetter+ }
+  space { std.whitespace+ }
+}
+`).configure({bufferLength: 10})
+    let parser = new ScaffoldParser({
+      scaffold,
+      fill,
+      scaffoldNodes: [scaffold.nodeSet.types[getTerm(scaffold, "TemplateElement")]]
+    })
+    ist(parse(parser, {input: "(list of (elements {{hi}}) and {{woo}})"}).toString(),
+        "Program(List(Symbol,Symbol,List(Symbol,TemplateElement(Variable)),Symbol,TemplateElement(Variable)))")
+
+    let bigDoc = "foo ".repeat(500) + "{{" + "x ".repeat(500) + "}} foo"
+    let tree1 = parse(parser, {input: bigDoc})
+    let tree2 = parse(parser, {
+      input: bigDoc.slice(0, 750) + " y " + bigDoc.slice(750),
+      fragments: TreeFragment.applyChanges(TreeFragment.addTree(tree1), [{fromA: 750, toA: 750, fromB: 750, toB: 753}])
+    })
+    ist(shared(tree1, tree2), 95, ">")
   })
 })
