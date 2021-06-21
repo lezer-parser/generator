@@ -1,5 +1,5 @@
 import {buildParser} from ".."
-import {LRParser, ExternalTokenizer, NodeProp, InputStream} from "lezer"
+import {Parser, ExternalTokenizer, NodeProp, InputStream} from "lezer"
 // @ts-ignore
 import {fileTests} from "../dist/test.cjs"
 
@@ -34,7 +34,7 @@ describe("Cases", () => {
     let content = fs.readFileSync(fileName, "utf8")
     let grammar = /^([^]*?)($|\n# )/.exec(content)!
     content = content.slice(grammar[1].length)
-    let parser: LRParser | null = null
+    let parser: Parser | null = null
     let force = () => {
       if (!parser) parser = buildParser(grammar[1], {
         fileName,
