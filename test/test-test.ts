@@ -1,5 +1,5 @@
 // @ts-ignore
-import {fileTests} from "../dist/test.cjs"
+import {fileTests} from "../dist/test.js"
 
 describe("test", () => {
 

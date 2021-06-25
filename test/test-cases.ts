@@ -1,12 +1,16 @@
-import {buildParser} from ".."
-import {Parser, ExternalTokenizer, NodeProp, InputStream} from "lezer"
+import {buildParser} from "../dist/index.js"
+import {NodeProp} from "@lezer/common"
+import {LRParser, ExternalTokenizer, InputStream} from "@lezer/lr"
 // @ts-ignore
-import {fileTests} from "../dist/test.cjs"
+import {fileTests} from "../dist/test.js"
 
 import ist from "ist"
 
-let fs = require("fs"), path = require("path")
-let caseDir = path.join(__dirname, "cases")
+import * as fs from "fs"
+import * as path from "path"
+import {fileURLToPath} from "url"
+
+let caseDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "cases")
 
 function externalTokenizer(name: string, terms: {[name: string]: number}) {
   if (name == "ext1") return new ExternalTokenizer((input: InputStream) => {
@@ -34,7 +38,7 @@ describe("Cases", () => {
     let content = fs.readFileSync(fileName, "utf8")
     let grammar = /^([^]*?)($|\n# )/.exec(content)!
     content = content.slice(grammar[1].length)
-    let parser: Parser | null = null
+    let parser: LRParser | null = null
     let force = () => {
       if (!parser) parser = buildParser(grammar[1], {
         fileName,

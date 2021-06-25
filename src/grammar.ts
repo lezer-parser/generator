@@ -1,4 +1,4 @@
-import {Term as T} from "lezer/dist/constants"
+import {Term as T} from "@lezer/lr/dist/constants"
 import {GenError} from "./error"
 
 const enum TermFlag {

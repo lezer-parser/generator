@@ -1,4 +1,5 @@
-import {Tree, NodeType, NodeProp, Parser} from "lezer"
+import {Tree, NodeType, NodeProp} from "@lezer/common"
+import {LRParser} from "@lezer/lr"
 
 const none: readonly any[] = []
 
@@ -146,7 +147,7 @@ function toLineContext(file: string, index: number) {
 
 export function fileTests(file: string, fileName: string, mayIgnore = defaultIgnore) {
   let caseExpr = /\s*#\s*(.*)(?:\r\n|\r|\n)([^]*?)==+>([^]*?)(?:$|(?:\r\n|\r|\n)+(?=#))/gy
-  let tests: {name: string, run(parser: Parser): void}[] = []
+  let tests: {name: string, run(parser: LRParser): void}[] = []
   let lastIndex = 0;
   for (;;) {
     let m = caseExpr.exec(file)
@@ -158,7 +159,7 @@ export function fileTests(file: string, fileName: string, mayIgnore = defaultIgn
     let text = m[2].trim(), expected = m[3]
     tests.push({
       name,
-      run(parser: Parser) {
+      run(parser: LRParser) {
         let strict = !/⚠|\.\.\./.test(expected)
         testTree(parser.configure({strict, ...config}).parse({input: text}), expected, mayIgnore)
       }

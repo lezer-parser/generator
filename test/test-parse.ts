@@ -1,12 +1,12 @@
-import {buildParser, BuildOptions} from ".."
-import {Parser, Tree} from "lezer"
-import {TreeFragment, NodeProp, NodeType, InputGap, ScaffoldParser} from "lezer-tree"
+import {buildParser, BuildOptions} from "../dist/index.js"
+import {Tree, TreeFragment, NodeProp, NodeType, InputGap, ScaffoldParser} from "@lezer/common"
+import {LRParser} from "@lezer/lr"
 // @ts-ignore
-import {testTree} from "../dist/test.cjs"
+import {testTree} from "../dist/test.js"
 import ist from "ist"
 
-function p(text: string, options?: BuildOptions): () => Parser {
-  let value: Parser | null = null
+function p(text: string, options?: BuildOptions): () => LRParser {
+  let value: LRParser | null = null
   return () => value || (value = buildParser(text, Object.assign({}, {warn(e: string) { throw new Error(e) }}, options)))
 }
 
@@ -382,7 +382,7 @@ C { "c" }
   })
 })
 
-function getTerm(parser: Parser, name: string): number {
+function getTerm(parser: LRParser, name: string): number {
   return (parser as any).termTable[name]
 }
 

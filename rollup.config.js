@@ -6,12 +6,10 @@ export default [{
   input: "./src/index.ts",
   output: [{
     format: "cjs",
-    file: "./dist/index.cjs",
-    sourcemap: true
+    file: "./dist/index.cjs"
   }, {
     format: "es",
-    file: "./dist/index.es.js",
-    sourcemap: true,
+    file: "./dist/index.js",
     externalLiveBindings: false
   }],
   external(id) { return !/^[\.\/]/.test(id) },
@@ -22,14 +20,12 @@ export default [{
       tsconfigOverride: {
         compilerOptions: {
           lib: ["es2018"],
-          sourceMap: true,
           target: "es2018",
           strict: false,
           declaration: true
         },
         include: ["src/*.ts"]
-      },
-      include: ["src/*.ts"]
+      }
     }),
     commonjs()
   ]
@@ -40,7 +36,7 @@ export default [{
     file: "./dist/rollup-plugin-lezer.cjs"
   }, {
     format: "es",
-    file: "./dist/rollup-plugin-lezer.es.js"
+    file: "./dist/rollup-plugin-lezer.js"
   }],
   external(id) { return true }
 }]

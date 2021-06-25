@@ -3,9 +3,9 @@
     "lib": ["es2017"],
     "noImplicitReturns": true,
     "noUnusedLocals": true,
-    "sourceMap": true,
     "strict": true,
     "target": "es2018",
+    "module": "esnext",
     "newLine": "lf",
     "moduleResolution": "node"
   },
