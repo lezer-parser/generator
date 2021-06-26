@@ -1,5 +1,5 @@
 import {buildParser, BuildOptions} from "../dist/index.js"
-import {Tree, TreeFragment, NodeProp, NodeType, InputGap, ScaffoldParser} from "@lezer/common"
+import {Tree, TreeFragment, NodeProp, NodeType, InputGap, FramingParser} from "@lezer/common"
 import {LRParser} from "@lezer/lr"
 // @ts-ignore
 import {testTree} from "../dist/test.js"
@@ -484,8 +484,8 @@ Close { "</" name ">" }
     ist(outer.parse({input: "xxxxx"}).toString(), "Y(X)")
   })
 
-  it("can use a scaffold parser", () => {
-    let scaffold = buildParser(`
+  it("can use a framing parser", () => {
+    let frame = buildParser(`
 @top Template { (Content | TemplateElement)* }
 @skip { space } {
   TemplateElement { "{{" Variable+ "}}" }
@@ -504,10 +504,10 @@ expr { Symbol | List { "(" expr* ")" } }
   space { std.whitespace+ }
 }
 `).configure({bufferLength: 10})
-    let parser = new ScaffoldParser({
-      scaffold,
+    let parser = new FramingParser({
+      frame,
       fill,
-      scaffoldNodes: [scaffold.nodeSet.types[getTerm(scaffold, "TemplateElement")]]
+      frameNodes: [frame.nodeSet.types[getTerm(frame, "TemplateElement")]]
     })
     ist(parser.parse({input: "(list of (elements {{hi}}) and {{woo}})"}).toString(),
         "Program(List(Symbol,Symbol,List(Symbol,TemplateElement(Variable)),Symbol,TemplateElement(Variable)))")
