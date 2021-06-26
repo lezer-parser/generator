@@ -132,7 +132,8 @@ class Builder {
 
     let NP: {[key: string]: any} = NodeProp
     for (let prop in NP) {
-      if (NP[prop] instanceof NodeProp) this.knownProps[prop] = {prop: NP[prop], source: {name: prop, from: null}}
+      if (NP[prop] instanceof NodeProp && !NP[prop].perNode)
+        this.knownProps[prop] = {prop: NP[prop], source: {name: prop, from: null}}
     }
     for (let prop of this.ast.externalProps) {
       this.knownProps[prop.id.name] = {
