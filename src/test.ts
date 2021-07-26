@@ -161,7 +161,7 @@ export function fileTests(file: string, fileName: string, mayIgnore = defaultIgn
       name,
       run(parser: LRParser) {
         let strict = !/⚠|\.\.\./.test(expected)
-        testTree(parser.configure({strict, ...config}).parse({input: text}), expected, mayIgnore)
+        testTree(parser.configure({strict, ...config}).parse(text), expected, mayIgnore)
       }
     })
     lastIndex = m.index + m[0].length
