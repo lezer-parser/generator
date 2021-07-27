@@ -16,14 +16,18 @@ function shared(a: Tree, b: Tree) {
   ;(function register(t: any) {
     if (t instanceof Tree) {
       let mounted = t.prop(NodeProp.mounted)
-      if (mounted) t = mounted.tree
+      if (mounted && !mounted.overlay) t = mounted.tree
       t.children.forEach(register)
     }
     inA.add(t)
   })(a)
   ;(function scan(t: any) {
-    if (inA.has(t)) shared += t.length
-    else if (t instanceof Tree) (t.prop(NodeProp.mounted)?.tree || t).children.forEach(scan)
+    if (inA.has(t)) {
+      shared += t.length
+    } else if (t instanceof Tree) {
+      let mounted = t.prop(NodeProp.mounted)
+      ;(mounted && !mounted.overlay ? mounted.tree : t).children.forEach(scan)
+    }
   })(b)
   return Math.round(100 * shared / b.length)
 }
@@ -450,5 +454,157 @@ Close { "</" name ">" }
     ist(shared(ast1, ast2), 90, ">")
   })
 
-  // FIXME test overlays
+  it("can create overlays", () => {
+    let inner = buildParser(`@top Blob { any } @tokens { any { _+ } }`)
+    let outer = buildParser(`
+      @top Doc { (Dir | Content)* }
+      Dir { "{{" Word "}}" }
+      @tokens {
+        Content { (![{] | "{" ![{])+ }
+        Word { $[a-z]+ }
+      }`)
+    let mix = new MixParser(outer, node => {
+      return node.name == "Doc" ? {
+        parser: inner,
+        overlay: node => node.name == "Content"
+      } : null
+    })
+    let tree = mix.parse("foo{{bar}}baz{{bug}}")
+    ist(tree.toString(), "Doc(Content,Dir(Word),Content,Dir(Word))")
+    let c1 = tree.resolveInner(1)
+    ist(c1.name, "Blob")
+    ist(c1.from, 0)
+    ist(c1.to, 13)
+    ist(c1.parent!.name, "Doc")
+    ist(tree.resolveInner(10, 1).name, "Blob")
+
+    let mix2 = new MixParser(outer, node => {
+      return node.name == "Doc" ? {
+        parser: inner,
+        overlay: [{from: 5, to: 7}]
+      } : null
+    })
+    let tree2 = mix2.parse("{{a}}bc{{d}}")
+    let c2 = tree2.resolveInner(6)
+    ist(c2.name, "Blob")
+    ist(c2.from, 5)
+    ist(c2.to, 7)
+  })
+
+  it("reuses ranges from previous parses", () => {
+    let inner = buildParser(`@top Blob { any } @tokens { any { _+ } }`)
+    let outer = buildParser(`
+      @top Doc { expr* }
+      expr {
+        Paren { "(" expr* ")" } |
+        Array { "[" expr* "]" } |
+        Number |
+        String
+      }
+      @skip { space }
+      @tokens {
+        Number { $[0-9]+ }
+        String { "'" ![']* "'" }
+        space { $[ \n]+ }
+      }`).configure({bufferLength: 2})
+    let queried: number[] = []
+    let mix = new MixParser(outer, node => {
+      return node.name == "Array" ? {
+        parser: inner,
+        overlay: node => {
+          if (node.name == "String") {
+            queried.push(node.from)
+            return true
+          }
+          return null
+        }
+      } : null
+    })
+
+    let doc = " (100) (() [50] 123456789012345678901234 ((['one' 123456789012345678901234 (('two'))]) ['three'])) "
+    let tree = mix.parse(doc)
+    ist(tree.toString(),
+        "Doc(Paren(Number),Paren(Paren,Array(Number),Number,Paren(Paren(Array(String,Number,Paren(Paren(String)))),Array(String))))")
+    let inOne = tree.resolveInner(45)
+    ist(inOne.name, "Blob")
+    ist(inOne.from, 44)
+    ist(inOne.to, 82)
+    ist(inOne.nextSibling, null)
+    ist(inOne.prevSibling, null)
+    ist(inOne.parent!.name, "Array")
+    ist(tree.resolveInner(89).name, "Blob")
+    ist(queried.join(), "44,77,88")
+    queried.length = 0
+
+    let tree2 = mix.parse(doc.slice(0, 45) + "x" + doc.slice(46), fragments(tree, [45, 46]))
+    ist(queried.join(), "44")
+    ist(shared(tree, tree2), 20, ">")
+  })
+
+  it("properly handles fragment offsets", () => {
+    let inner = buildParser(`@top Text { (Word | " ")* } @tokens { Word { ![ ]+ } }`).configure({bufferLength: 2})
+    let outer = buildParser(`
+      @top Doc { expr* }
+      expr { Wrap { "(" expr* ")" } | Templ { "[" expr* "]" } | Number | String }
+      @skip { space }
+      @tokens {
+        Number { $[0-9]+ }
+        String { "'" ![']* "'" }
+        space { $[ \n]+ }
+      }`).configure({bufferLength: 2})
+    let mix = new MixParser(outer, node => {
+      return node.name == "Templ" ? {
+        parser: inner,
+        overlay: node => node.name == "String" ? {from: node.from + 1, to: node.to - 1} : false
+      } : null
+    })
+
+    let doc = " 0123456789012345678901234 (['123456789 123456789 12345 stuff' (('123456789 123456789 12345 other' 4))] 200)"
+    let tree = mix.parse(doc)
+
+    // Verify that mounts inside reused nodes don't get re-parsed
+    let tree1 = mix.parse("88" + doc, fragments(tree, [0, 0, 0, 2]))
+    ist(tree.resolveInner(40).tree, tree1.resolveInner(42).tree)
+
+    // Verify that content inside the nested parse gets accurately reused
+    let tree2 = mix.parse("88" + doc.slice(0, 30) + doc.slice(31), fragments(tree, [0, 0, 0, 2], [30, 31, 32, 32]))
+    ist(shared(tree.resolveInner(39).tree!, tree2.resolveInner(40).tree!), 20, ">")
+    let other = tree2.resolveInner(93, 1)
+    ist(other.from, 93)
+    ist(other.to, 98)
+  })
+
+  it("supports nested overlays", () => {
+    let inner = buildParser(`@top Blob { "x"* }`)
+    let outer = buildParser(`
+      @top Doc { expr* }
+      expr {
+        Paren { "(" expr* ")" } |
+        Array { "[" expr* "]" } |
+        Number |
+        String
+      }
+      @skip { space }
+      @tokens {
+        Number { $[0-9]+ }
+        String { "'" ![']* "'" }
+        space { $[ \n]+ }
+      }`).configure({bufferLength: 2})
+    let mix = new MixParser(outer, node => {
+      return node.name == "Array" ? {
+        parser: inner,
+        overlay: node => node.name == "String" ? {from: node.from + 1, to: node.to - 1} : false
+      } : null
+    })
+
+    let tree = mix.parse("['x' 100 (['xxx' 20 ('xx')] 'xxx')]")
+    let blob1 = tree.resolveInner(2, 1)
+    ist(blob1.name, "Blob")
+    ist(blob1.from, 2)
+    ist(blob1.to, 32)
+    let blob2 = tree.resolveInner(12, 1)
+    ist(blob2.name, "Blob")
+    ist(blob2.from, 12)
+    ist(blob2.to, 24)
+  })
 })
