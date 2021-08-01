@@ -342,7 +342,7 @@ class Builder {
       states,
       stateData: data.finish(),
       goto: computeGotoTable(table),
-      nodeNames: nodeTypes.filter(t => t.id < minRepeatTerm).map(t => t.nodeName).join(" "),
+      nodeNames: nodeTypes.filter(t => t.id < minRepeatTerm).map(t => t.nodeName),
       nodeProps,
       skippedTypes,
       maxTerm,
