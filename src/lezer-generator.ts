@@ -47,8 +47,8 @@ try {
 }
 
 if (out) {
-  let ext = /^(.*)*?\.js$/.exec(out)
-  let [parserFile, termFile] = ext ? [out, ext[1] + ".terms.js"] : [out + ".js", out + ".terms.js"]
+  let ext = /^(.*)\.(c?js|ts|esm?)$/.exec(out)
+  let [parserFile, termFile] = ext ? [out, ext[1] + ".terms." + ext[2]] : [out + ".js", out + ".terms.js"]
   writeFileSync(parserFile, parser)
   if (!noTerms) writeFileSync(termFile, terms)
   console.log(`Wrote ${parserFile}${noTerms ? "" : ` and ${termFile}`}`)
