@@ -1,7 +1,6 @@
 import {buildParser, BuildOptions} from "../dist/index.js"
-import {Tree, TreeFragment, NodeProp} from "@lezer/common"
+import {Tree, TreeFragment, NodeProp, parseMixed} from "@lezer/common"
 import {LRParser} from "@lezer/lr"
-import {MixParser} from "@lezer/mix"
 // @ts-ignore
 import {testTree} from "../dist/test.js"
 import ist from "ist"
@@ -375,26 +374,27 @@ C { "c" }
 describe("mix", () => {
   it("can mix grammars", () => {
     let inner = buildParser(`
-@top I { expr+ }
-expr { B { Open{"("} expr+ Close{")"} } | Dot{"."} }`)
+      @top I { expr+ }
+      expr { B { Open{"("} expr+ Close{")"} } | Dot{"."} }`)
     let outer = buildParser(`
-@top O { expr+ }
-expr { "[[" NestContent "]]" | Bang{"!"} }
-@tokens {
-  NestContent[@export] { ![\\]]+ }
-  "[["[@name=Start] "]]"[@name=End]
-}
-`)
-    let mix = new MixParser(outer, node => {
-      if (node.name == "NestContent") return {parser: inner}
-      return null
+      @top O { expr+ }
+      expr { "[[" NestContent "]]" | Bang{"!"} }
+      @tokens {
+        NestContent[@export] { ![\\]]+ }
+        "[["[@name=Start] "]]"[@name=End]
+      }
+    `).configure({
+      wrap: parseMixed(node => {
+        if (node.name == "NestContent") return {parser: inner}
+        return null
+      })
     })
 
-    testTree(mix.parse("![[((.).)]][[.]]"),
+    testTree(outer.parse("![[((.).)]][[.]]"),
              'O(Bang,Start,I(B(Open,B(Open,Dot,Close),Dot,Close)),End,Start,I(Dot),End)')
-    testTree(mix.parse("[[/\]]"), 'O(Start,I(⚠),End)')
+    testTree(outer.parse("[[/\]]"), 'O(Start,I(⚠),End)')
 
-    let tree = mix.parse("[[(.)]]")
+    let tree = outer.parse("[[(.)]]")
     let innerNode = tree.topNode.childAfter(2)!
     ist(innerNode.name, "I")
     ist(innerNode.from, 2)
@@ -406,47 +406,52 @@ expr { "[[" NestContent "]]" | Bang{"!"} }
   it("supports conditional nesting", () => {
     let inner = buildParser(`@top Script { any } @tokens { any { ![]+ } }`)
     let outer = buildParser(`
-@top T { Tag }
-Tag { Open Content? Close }
-Open { "<" name ">" }
-Close { "</" name ">" }
-@tokens {
-  name { std.asciiLetter+ }
-  Content { ![<]+ }
-}`)
-    let mix = new MixParser(outer, (node, input) => {
-      if (node.name == "Content") {
-        let open = node.node.parent!.firstChild!
-        if (input.read(open.from, open.to) == "<script>")
-          return {parser: inner}
+      @top T { Tag }
+      Tag { Open Content? Close }
+      Open { "<" name ">" }
+      Close { "</" name ">" }
+      @tokens {
+        name { std.asciiLetter+ }
+        Content { ![<]+ }
       }
-      return null
+    `).configure({
+      wrap: parseMixed((node, input) => {
+        if (node.name == "Content") {
+          let open = node.node.parent!.firstChild!
+          if (input.read(open.from, open.to) == "<script>")
+            return {parser: inner}
+        }
+        return null
+      })
     })
-    testTree(mix.parse("<foo>bar</foo>"),
+    testTree(outer.parse("<foo>bar</foo>"),
              "T(Tag(Open,Content,Close))")
-    testTree(mix.parse("<script>hello</script>"),
+    testTree(outer.parse("<script>hello</script>"),
              "T(Tag(Open,Script,Close))")
   })
 
   it("can parse incrementally across nesting", () => {
     let inner = buildParser(`@top Blob { "b"* }`).configure({bufferLength: 10})
     let outer = buildParser(`
-@top Program { (Nest | Name)* }
-@skip { space }
-@skip {} {
-  Nest { "{" Nested "}" }
-  Nested { nestedChar* }
-}
-@tokens {
-  space { std.whitespace+ }
-  nestedChar { ![}] }
-  Name { $[a-z]+ }
-}`).configure({bufferLength: 10})
-    let mix = new MixParser(outer, node => node.name == "Nested" ? {parser: inner} : null)
+      @top Program { (Nest | Name)* }
+      @skip { space }
+      @skip {} {
+        Nest { "{" Nested "}" }
+        Nested { nestedChar* }
+      }
+      @tokens {
+        space { std.whitespace+ }
+        nestedChar { ![}] }
+        Name { $[a-z]+ }
+      }
+    `).configure({
+      bufferLength: 10,
+      wrap: parseMixed(node => node.name == "Nested" ? {parser: inner} : null)
+    })
     let base = "hello {bbbb} "
     let doc = base.repeat(500) + "{" + "b".repeat(1000) + "} " + base.repeat(500), off = base.length * 500 + 500
-    let ast1 = mix.parse(doc)
-    let ast2 = mix.parse(
+    let ast1 = outer.parse(doc)
+    let ast2 = outer.parse(
       doc.slice(0, off) + "bbb" + doc.slice(off),
       TreeFragment.applyChanges(TreeFragment.addTree(ast1), [{fromA: off, toA: off, fromB: off, toB: off + 3}])
     )
@@ -462,12 +467,15 @@ Close { "</" name ">" }
       @tokens {
         Content { (![{] | "{" ![{])+ }
         Word { $[a-z]+ }
-      }`)
-    let mix = new MixParser(outer, node => {
-      return node.name == "Doc" ? {
-        parser: inner,
-        overlay: node => node.name == "Content"
-      } : null
+      }
+    `)
+    let mix = outer.configure({
+      wrap: parseMixed(node => {
+        return node.name == "Doc" ? {
+          parser: inner,
+          overlay: node => node.name == "Content"
+        } : null
+      })
     })
     let tree = mix.parse("foo{{bar}}baz{{bug}}")
     ist(tree.toString(), "Doc(Content,Dir(Word),Content,Dir(Word))")
@@ -478,11 +486,13 @@ Close { "</" name ">" }
     ist(c1.parent!.name, "Doc")
     ist(tree.resolveInner(10, 1).name, "Blob")
 
-    let mix2 = new MixParser(outer, node => {
-      return node.name == "Doc" ? {
-        parser: inner,
-        overlay: [{from: 5, to: 7}]
-      } : null
+    let mix2 = outer.configure({
+      wrap: parseMixed(node => {
+        return node.name == "Doc" ? {
+          parser: inner,
+          overlay: [{from: 5, to: 7}]
+        } : null
+      })
     })
     let tree2 = mix2.parse("{{a}}bc{{d}}")
     let c2 = tree2.resolveInner(6)
@@ -506,23 +516,26 @@ Close { "</" name ">" }
         Number { $[0-9]+ }
         String { "'" ![']* "'" }
         space { $[ \n]+ }
-      }`).configure({bufferLength: 2})
-    let queried: number[] = []
-    let mix = new MixParser(outer, node => {
-      return node.name == "Array" ? {
-        parser: inner,
-        overlay: node => {
-          if (node.name == "String") {
-            queried.push(node.from)
-            return true
+      }
+    `).configure({
+      bufferLength: 2,
+      wrap: parseMixed(node => {
+        return node.name == "Array" ? {
+          parser: inner,
+          overlay: node => {
+            if (node.name == "String") {
+              queried.push(node.from)
+              return true
+            }
+            return false
           }
-          return null
-        }
-      } : null
+        } : null
+      })
     })
+    let queried: number[] = []
 
     let doc = " (100) (() [50] 123456789012345678901234 ((['one' 123456789012345678901234 (('two'))]) ['three'])) "
-    let tree = mix.parse(doc)
+    let tree = outer.parse(doc)
     ist(tree.toString(),
         "Doc(Paren(Number),Paren(Paren,Array(Number),Number,Paren(Paren(Array(String,Number,Paren(Paren(String)))),Array(String))))")
     let inOne = tree.resolveInner(45)
@@ -536,7 +549,7 @@ Close { "</" name ">" }
     ist(queried.join(), "44,77,88")
     queried.length = 0
 
-    let tree2 = mix.parse(doc.slice(0, 45) + "x" + doc.slice(46), fragments(tree, [45, 46]))
+    let tree2 = outer.parse(doc.slice(0, 45) + "x" + doc.slice(46), fragments(tree, [45, 46]))
     ist(queried.join(), "44")
     ist(shared(tree, tree2), 20, ">")
   })
@@ -551,23 +564,26 @@ Close { "</" name ">" }
         Number { $[0-9]+ }
         String { "'" ![']* "'" }
         space { $[ \n]+ }
-      }`).configure({bufferLength: 2})
-    let mix = new MixParser(outer, node => {
-      return node.name == "Templ" ? {
-        parser: inner,
-        overlay: node => node.name == "String" ? {from: node.from + 1, to: node.to - 1} : false
-      } : null
+      }
+    `).configure({
+      bufferLength: 2,
+      wrap: parseMixed(node => {
+        return node.name == "Templ" ? {
+          parser: inner,
+          overlay: node => node.name == "String" ? {from: node.from + 1, to: node.to - 1} : false
+        } : null
+      })
     })
 
     let doc = " 0123456789012345678901234 (['123456789 123456789 12345 stuff' (('123456789 123456789 12345 other' 4))] 200)"
-    let tree = mix.parse(doc)
+    let tree = outer.parse(doc)
 
     // Verify that mounts inside reused nodes don't get re-parsed
-    let tree1 = mix.parse("88" + doc, fragments(tree, [0, 0, 0, 2]))
+    let tree1 = outer.parse("88" + doc, fragments(tree, [0, 0, 0, 2]))
     ist(tree.resolveInner(40).tree, tree1.resolveInner(42).tree)
 
     // Verify that content inside the nested parse gets accurately reused
-    let tree2 = mix.parse("88" + doc.slice(0, 30) + doc.slice(31), fragments(tree, [0, 0, 0, 2], [30, 31, 32, 32]))
+    let tree2 = outer.parse("88" + doc.slice(0, 30) + doc.slice(31), fragments(tree, [0, 0, 0, 2], [30, 31, 32, 32]))
     ist(shared(tree.resolveInner(39).tree!, tree2.resolveInner(40).tree!), 20, ">")
     let other = tree2.resolveInner(93, 1)
     ist(other.from, 93)
@@ -589,15 +605,18 @@ Close { "</" name ">" }
         Number { $[0-9]+ }
         String { "'" ![']* "'" }
         space { $[ \n]+ }
-      }`).configure({bufferLength: 2})
-    let mix = new MixParser(outer, node => {
-      return node.name == "Array" ? {
-        parser: inner,
-        overlay: node => node.name == "String" ? {from: node.from + 1, to: node.to - 1} : false
-      } : null
+      }
+    `).configure({
+      bufferLength: 2,
+      wrap: parseMixed(node => {
+        return node.name == "Array" ? {
+          parser: inner,
+          overlay: node => node.name == "String" ? {from: node.from + 1, to: node.to - 1} : false
+        } : null
+      })
     })
 
-    let tree = mix.parse("['x' 100 (['xxx' 20 ('xx')] 'xxx')]")
+    let tree = outer.parse("['x' 100 (['xxx' 20 ('xx')] 'xxx')]")
     let blob1 = tree.resolveInner(2, 1)
     ist(blob1.name, "Blob")
     ist(blob1.from, 2)
