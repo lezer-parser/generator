@@ -484,7 +484,7 @@ function parseExternalProp(input: Input, start: number) {
 }
 
 function readString(string: string) {
-  let point = /\\(?:u\{([\da-f]+)\}|u([\da-f]{4})|x([\da-f]{2})|([ntbrf0])|(.))|./yig
+  let point = /\\(?:u\{([\da-f]+)\}|u([\da-f]{4})|x([\da-f]{2})|([ntbrf0])|(.))|[^]/yig
   let out = "", m
   while (m = point.exec(string)) {
     let [all, u1, u2, u3, single, unknown] = m
