@@ -867,7 +867,7 @@ class Builder {
     if (dynamicPrec) this.registerDynamicPrec(name, dynamicPrec)
     if ((name.nodeType || exported) && rule.params.length == 0) {
       if (!nodeName) name.preserve = true
-      if (!inline) this.namedTerms[rule.id.name] = name
+      if (!inline) this.namedTerms[exported || rule.id.name] = name
     }
 
     if (!inline) this.built.push(new BuiltRule(rule.id.name, args, name))
@@ -890,11 +890,11 @@ class Builder {
     dynamicPrec: number,
     inline: boolean,
     group: string | null,
-    exported: boolean
+    exported: string | null
   } {
     let result: Props = {}
     let name = defaultName && (allow.indexOf("t") > -1 || !ignored(defaultName)) && !/ /.test(defaultName) ? defaultName : null
-    let dialect = null, dynamicPrec = 0, inline = false, group: string | null = null, exported = false
+    let dialect = null, dynamicPrec = 0, inline = false, group: string | null = null, exported = null
     for (let prop of props) {
       if (!prop.at) {
         if (!this.knownProps[prop.name]) {
@@ -928,8 +928,8 @@ class Builder {
         if (allow.indexOf("g") < 0) this.raise("'@isGroup' can only be specified on nonterminals")
         group = prop.value.length ? this.finishProp(prop, args, params) : defaultName
       } else if (prop.name == "export") {
-        if (prop.value.length) this.raise("'@export' doesn't take a value", prop.value[0].start)
-        exported = true
+        if (prop.value.length) exported = this.finishProp(prop, args, params)
+        else exported = defaultName
       } else {
         this.raise(`Unknown built-in prop name '@${prop.name}'`, prop.start)
       }
@@ -1373,7 +1373,7 @@ class TokenSet {
 
     if ((term.nodeType || exported) && rule.params.length == 0) {
       if (!term.nodeType) term.preserve = true
-      this.b.namedTerms[name] = term
+      this.b.namedTerms[exported || name] = term
     }
     this.buildRule(rule, expr, this.startState, new State([term]))
     this.built.push(new BuiltRule(name, expr.args, term))
@@ -1383,12 +1383,13 @@ class TokenSet {
   getLiteral(expr: LiteralExpression) {
     let id = JSON.stringify(expr.value)
     for (let built of this.built) if (built.id == id) return built.term
-    let name = null, props = {}, dialect = null
+    let name = null, props = {}, dialect = null, exported = null
     let decl = this.ast ? this.ast.literals.find(l => l.literal == expr.value) : null
-    if (decl) ({name, props, dialect} = this.b.nodeInfo(decl.props, "d", expr.value))
+    if (decl) ({name, props, dialect, exported} = this.b.nodeInfo(decl.props, "d", expr.value))
 
     let term = this.b.makeTerminal(id, name, props)
     if (dialect != null) (this.byDialect[dialect] || (this.byDialect[dialect] = [])).push(term)
+    if (exported) this.b.namedTerms[exported] = term
     this.build(expr, this.startState, new State([term]), none)
     this.built.push(new BuiltRule(id, none, term))
     return term
