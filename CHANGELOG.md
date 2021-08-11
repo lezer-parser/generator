@@ -1,3 +1,21 @@
+## 0.15.0 (2021-08-11)
+
+### Breaking changes
+
+The module's name changed from `lezer-generator` to `@lezer/generator`.
+
+Nested parsers can no longer be specified in the grammar (they must now be set up programmatically).
+
+### Bug fixes
+
+Fix an issue where newlines in string tokens could silently corrupt the token.
+
+Handle alternative output file extensions more gracefully.
+
+### New features
+
+`@export` props may now have a value to set a specific export name.
+
 ## 0.13.4 (2021-05-14)
 
 ### Bug fixes
