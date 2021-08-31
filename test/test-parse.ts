@@ -1,5 +1,5 @@
 import {buildParser, BuildOptions} from "../dist/index.js"
-import {Tree, TreeFragment, NodeProp, parseMixed} from "@lezer/common"
+import {Tree, TreeFragment, NodeProp, parseMixed, SyntaxNode} from "@lezer/common"
 import {LRParser, ParserConfig} from "@lezer/lr"
 // @ts-ignore
 import {testTree} from "../dist/test.js"
@@ -613,22 +613,40 @@ describe("mixed languages", () => {
       }
     `).configure({
       bufferLength: 2,
+    });
+
+    function testMixed(parser: LRParser) {
+      let tree = parser.parse("['x' 100 (['xxx' 20 ('xx')] 'xxx')]")
+      let blob1 = tree.resolveInner(2, 1)
+      ist(blob1.name, "Blob")
+      ist(blob1.from, 2)
+      ist(blob1.to, 32)
+      let blob2 = tree.resolveInner(12, 1)
+      ist(blob2.name, "Blob")
+      ist(blob2.from, 12)
+      ist(blob2.to, 24)
+    }
+
+    testMixed(outer.configure({
       wrap: parseMixed(node => {
         return node.name == "Array" ? {
           parser: blob(),
           overlay: node => node.name == "String" ? {from: node.from + 1, to: node.to - 1} : false
         } : null
       })
-    })
+    }))
 
-    let tree = outer.parse("['x' 100 (['xxx' 20 ('xx')] 'xxx')]")
-    let blob1 = tree.resolveInner(2, 1)
-    ist(blob1.name, "Blob")
-    ist(blob1.from, 2)
-    ist(blob1.to, 32)
-    let blob2 = tree.resolveInner(12, 1)
-    ist(blob2.name, "Blob")
-    ist(blob2.from, 12)
-    ist(blob2.to, 24)
+    testMixed(outer.configure({
+      wrap: parseMixed(node => {
+        if (node.name != "Array") return null
+        let ranges: {from: number, to: number}[] = []
+        let scan = (node: SyntaxNode) => {
+          if (node.name == "String") ranges.push({from: node.from + 1, to: node.to - 1})
+          else for (let ch = node.firstChild; ch; ch = ch.nextSibling) if (ch.name != "Array") scan(ch)
+        }
+        scan(node.node)
+        return {parser: blob(), overlay: ranges}
+      })
+    }))
   })
 })
