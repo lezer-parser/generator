@@ -303,7 +303,7 @@ function closure(set: readonly Pos[], first: {[name: string]: Term[]}) {
     let add = redo.pop()!
     addFor(add.rule.parts[0], termsAhead(add.rule, 0, add.ahead, first),
            union(add.rule.conflicts[1].ambigGroups, add.rule.parts.length == 1 ? add.ambigAhead : none),
-           add.skipAhead, add)
+           add.rule.parts.length == 1 ? add.skipAhead : add.rule.skip, add)
   }
 
   let result = set.slice()
