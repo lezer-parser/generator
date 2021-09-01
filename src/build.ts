@@ -153,8 +153,9 @@ class Builder {
       this.defineRule(noSkip, [])
 
       let mainSkip = this.ast.mainSkip ? this.newName("%mainskip", true) : noSkip
-      let scopedSkip: Term[] = []
+      let scopedSkip: Term[] = [], topRules: {rule: RuleDeclaration, skip: Term}[] = []
       for (let rule of this.ast.rules) this.astRules.push({skip: mainSkip, rule})
+      for (let rule of this.ast.topRules) topRules.push({skip: mainSkip, rule})
       for (let scoped of this.ast.scopedSkip) {
         let skip = noSkip, found = this.ast.scopedSkip.findIndex((sc, i) => i < scopedSkip.length && exprEq(sc.expr, scoped.expr))
         if (found > -1) skip = scopedSkip[found]
@@ -162,6 +163,7 @@ class Builder {
         else if (!isEmpty(scoped.expr)) skip = this.newName("%skip", true)
         scopedSkip.push(skip)
         for (let rule of scoped.rules) this.astRules.push({skip, rule})
+        for (let rule of scoped.topRules) topRules.push({skip, rule})
       }
 
       for (let {rule} of this.astRules) {
@@ -184,14 +186,14 @@ class Builder {
       }
       this.currentSkip.pop()
 
-      for (const top of this.ast.topRules) {
-        this.unique(top.id)
-        this.used(top.id.name)
-        this.currentSkip.push(mainSkip)
-        let {name, props} = this.nodeInfo(top.props, "t", top.id.name, none, none, top.expr)
+      for (let {rule, skip} of topRules.sort((a, b) => a.rule.start - b.rule.start)) {
+        this.unique(rule.id)
+        this.used(rule.id.name)
+        this.currentSkip.push(skip)
+        let {name, props} = this.nodeInfo(rule.props, "t", rule.id.name, none, none, rule.expr)
         let term = this.terms.makeTop(name, props)
         this.namedTerms[name!] = term
-        this.defineRule(term, this.normalizeExpr(top.expr))
+        this.defineRule(term, this.normalizeExpr(rule.expr))
         this.currentSkip.pop()
       }
 

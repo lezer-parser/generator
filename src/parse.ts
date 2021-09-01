@@ -126,25 +126,22 @@ function parseGrammar(input: Input) {
   let prec: PrecDeclaration | null = null
   let tokens: TokenDeclaration | null = null
   let mainSkip: Expression | null = null
-  let scopedSkip: {expr: Expression, rules: readonly RuleDeclaration[]}[] = []
+  let scopedSkip: {expr: Expression, topRules: readonly RuleDeclaration[], rules: readonly RuleDeclaration[]}[] = []
   let dialects: Identifier[] = []
   let context: ContextDeclaration | null = null
   let external: ExternalTokenDeclaration[] = []
   let specialized: ExternalSpecializeDeclaration[] = []
   let props: ExternalPropDeclaration[] = []
   let tops: RuleDeclaration[] = []
+  let sawTop = false
   let autoDelim = false
 
   while (input.type != "eof") {
     let start = input.start
-    if (input.type == "at" && input.value == "top") {
-      input.next()
+    if (input.eat("at", "top")) {
       if (input.type as any != "id") input.raise(`Top rules must have a name`, input.start)
-      let name = parseIdent(input)
-      if (tops.length && name.name === '@top') {
-        input.raise(`Unnamed secondary @top declaration`, input.start)
-      }
-      tops.push(parseRule(input, name))
+      tops.push(parseRule(input, parseIdent(input)))
+      sawTop = true
     } else if (input.type == "at" && input.value == "tokens") {
       if (tokens) input.raise(`Multiple @tokens declaractions`, input.start)
       else tokens = parseTokens(input)
@@ -175,9 +172,16 @@ function parseGrammar(input: Input) {
       let skip = parseBracedExpr(input)
       if (input.type == "{") {
         input.next()
-        let scoped = []
-        while (!input.eat("}")) scoped.push(parseRule(input))
-        scopedSkip.push({expr: skip, rules: scoped})
+        let rules = [], topRules = []
+        while (!input.eat("}")) {
+          if (input.eat("at", "top")) {
+            topRules.push(parseRule(input, parseIdent(input)))
+            sawTop = true
+          } else {
+            rules.push(parseRule(input))
+          }
+        }
+        scopedSkip.push({expr: skip, topRules, rules})
       } else {
         if (mainSkip) input.raise(`Multiple top-level skip declarations`, input.start)
         mainSkip = skip
@@ -186,7 +190,7 @@ function parseGrammar(input: Input) {
       rules.push(parseRule(input))
     }
   }
-  if (!tops.length) return input.raise(`Missing @top declaration`)
+  if (!sawTop) return input.raise(`Missing @top declaration`)
   return new GrammarDeclaration(start, rules, tops, tokens, context, external, specialized, prec,
                                 mainSkip, scopedSkip, dialects, props, autoDelim)
 }

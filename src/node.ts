@@ -5,14 +5,18 @@ export class Node {
 export class GrammarDeclaration extends Node {
   constructor(start: number,
               readonly rules: readonly RuleDeclaration[],
-              readonly topRules: RuleDeclaration[],
+              readonly topRules: readonly RuleDeclaration[],
               readonly tokens: TokenDeclaration | null,
               readonly context: ContextDeclaration | null,
               readonly externalTokens: readonly ExternalTokenDeclaration[],
               readonly externalSpecializers: readonly ExternalSpecializeDeclaration[],
               readonly precedences: PrecDeclaration | null,
               readonly mainSkip: Expression | null,
-              readonly scopedSkip: readonly {expr: Expression, rules: readonly RuleDeclaration[]}[],
+              readonly scopedSkip: readonly {
+                expr: Expression,
+                topRules: readonly RuleDeclaration[],
+                rules: readonly RuleDeclaration[]
+              }[],
               readonly dialects: readonly Identifier[],
               readonly externalProps: readonly ExternalPropDeclaration[],
               readonly autoDelim: boolean) {
