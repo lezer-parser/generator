@@ -190,10 +190,15 @@ export class ChoiceExpression extends Expression {
 ChoiceExpression.prototype.prec = 1
 
 export class SequenceExpression extends Expression {
-  constructor(start: number, readonly exprs: readonly Expression[], readonly markers: readonly (readonly ConflictMarker[])[]) {
+  constructor(
+    start: number,
+    readonly exprs: readonly Expression[],
+    readonly markers: readonly (readonly ConflictMarker[])[],
+    readonly empty = false
+  ) {
     super(start)
   }
-  toString() { return this.exprs.map(e => maybeParens(e, this)).join(" ") }
+  toString() { return this.empty ? "()" : this.exprs.map(e => maybeParens(e, this)).join(" ") }
   eq(other: SequenceExpression) {
     return exprsEq(this.exprs, other.exprs) && this.markers.every((m, i) => {
       let om = other.markers[i]
@@ -202,7 +207,7 @@ export class SequenceExpression extends Expression {
   }
   walk(f: (expr: Expression) => Expression): Expression {
     let exprs = walkExprs(this.exprs, f)
-    return f(exprs == this.exprs ? this : new SequenceExpression(this.start, exprs, this.markers))
+    return f(exprs == this.exprs ? this : new SequenceExpression(this.start, exprs, this.markers, this.empty && !exprs.length))
   }
 }
 

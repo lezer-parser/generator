@@ -1,0 +1,4 @@
+@top Top { | "a" }
+
+//! empty expression in choice
+

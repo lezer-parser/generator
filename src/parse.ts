@@ -366,7 +366,7 @@ function parseExprSequence(input: Input) {
     markers.push(none)
   } while (!endOfSequence(input))
   if (exprs.length == 1 && markers.every(ms => ms.length == 0)) return exprs[0]
-  return new SequenceExpression(start, exprs, markers)
+  return new SequenceExpression(start, exprs, markers, !exprs.length)
 }
 
 function parseExprChoice(input: Input) {
@@ -375,6 +375,8 @@ function parseExprChoice(input: Input) {
   let exprs: Expression[] = [left]
   do { exprs.push(parseExprSequence(input)) }
   while (input.eat("|"))
+  let empty = exprs.find(s => s instanceof SequenceExpression && s.empty)
+  if (empty) input.raise("Empty expression in choice operator. If this is intentional, use () to make it explicit.", empty.start)
   return new ChoiceExpression(start, exprs)
 }
 
