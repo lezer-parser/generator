@@ -275,6 +275,7 @@ function parseExprInner(input: Input): Expression {
         if (end < code) input.raise("Invalid character range", input.start)
         addRange(input, ranges, code, end + 1)
       } else {
+        if (code == SET_MARKER.charCodeAt(0)) code = 45
         addRange(input, ranges, code, code + 1)
       }
     }
