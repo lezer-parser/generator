@@ -1,3 +1,19 @@
+## 0.15.1 (2021-09-03)
+
+### Bug fixes
+
+Fix a bug that could lead to spurious 'inconsistent skip sets' errors.
+
+Fix a bug that caused an unescaped '-' at the start or end of a character set to silently be converted to a nonsensical character.
+
+Fix a confusing behavior where literal tokens declared in the `@tokens` block didn't get names when they started with a lower-case character.
+
+### New features
+
+Top rules may now be defined inside `@skip` scopes.
+
+The parser no longer treats an empty position in a choice operator as the empty expression, but requires an explicit () marker (to avoid a common mistake).
+
 ## 0.15.0 (2021-08-11)
 
 ### Breaking changes
