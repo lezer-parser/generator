@@ -11,18 +11,18 @@
 
 a
 
-==> A
+==> A(a)
 
 
 # Recognize "a" { "top": "A" }
 
 a
 
-==> A
+==> A(a)
 
 
 # Recognize "b" { "top": "B" }
 
 b
 
-==> B
+==> B(b)

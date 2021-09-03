@@ -9,8 +9,8 @@ B { "b" }
 C { "c" }
 
 @tokens {
-  "a"[@dialect=a]
-  "b"[@dialect=b]
+  "a"[@dialect=a,@name=]
+  "b"[@dialect=b,@name=]
 }
 
 # No dialect

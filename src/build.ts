@@ -190,7 +190,7 @@ class Builder {
         this.unique(rule.id)
         this.used(rule.id.name)
         this.currentSkip.push(skip)
-        let {name, props} = this.nodeInfo(rule.props, "t", rule.id.name, none, none, rule.expr)
+        let {name, props} = this.nodeInfo(rule.props, "a", rule.id.name, none, none, rule.expr)
         let term = this.terms.makeTop(name, props)
         this.namedTerms[name!] = term
         this.defineRule(term, this.normalizeExpr(rule.expr))
@@ -881,7 +881,7 @@ class Builder {
   }
 
   nodeInfo(props: readonly Prop[],
-           // p for dynamic precedence, d for dialect, i for inline, g for group, t for top
+           // p for dynamic precedence, d for dialect, i for inline, g for group, a for disabling the ignore test for default name
            allow: string,
            defaultName: string | null = null,
            args: readonly Expression[] = none, params: readonly Identifier[] = none,
@@ -895,7 +895,7 @@ class Builder {
     exported: string | null
   } {
     let result: Props = {}
-    let name = defaultName && (allow.indexOf("t") > -1 || !ignored(defaultName)) && !/ /.test(defaultName) ? defaultName : null
+    let name = defaultName && (allow.indexOf("a") > -1 || !ignored(defaultName)) && !/ /.test(defaultName) ? defaultName : null
     let dialect = null, dynamicPrec = 0, inline = false, group: string | null = null, exported = null
     for (let prop of props) {
       if (!prop.at) {
@@ -1387,7 +1387,7 @@ class TokenSet {
     for (let built of this.built) if (built.id == id) return built.term
     let name = null, props = {}, dialect = null, exported = null
     let decl = this.ast ? this.ast.literals.find(l => l.literal == expr.value) : null
-    if (decl) ({name, props, dialect, exported} = this.b.nodeInfo(decl.props, "d", expr.value))
+    if (decl) ({name, props, dialect, exported} = this.b.nodeInfo(decl.props, "da", expr.value))
 
     let term = this.b.makeTerminal(id, name, props)
     if (dialect != null) (this.byDialect[dialect] || (this.byDialect[dialect] = [])).push(term)
