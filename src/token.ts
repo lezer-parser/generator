@@ -111,9 +111,10 @@ export class State {
   }
 
   closure() {
-    let result: State[] = []
+    let result: State[] = [], seen: {[id: number]: boolean} = Object.create(null)
     function explore(state: State): void {
-      if (result.includes(state)) return
+      if (seen[state.id]) return
+      seen[state.id] = true
       // States with only epsilon edges and no accepting term that
       // isn't also in the next states are left out to help reduce the
       // number of unique state combinations
