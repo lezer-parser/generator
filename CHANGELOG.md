@@ -1,3 +1,9 @@
+## 0.15.2 (2021-09-24)
+
+### Bug fixes
+
+Fix an infinite recursion caused by some kinds of (obscure) token state machines.
+
 ## 0.15.1 (2021-09-03)
 
 ### Bug fixes
