@@ -649,4 +649,24 @@ describe("mixed languages", () => {
       })
     }))
   })
+
+  it("re-parses cut-off inner parses even if the outer tree was finished", () => {
+    let inner = buildParser(`@top Phrase { "<" ch* ">" } @tokens { ch { ![>] } }`).configure({bufferLength: 2})
+    let parser = buildParser(`
+      @top Doc { Section* }
+      Section { "{" SectionContent? "}" }
+      @tokens { SectionContent { ![}]+ } }
+    `).configure({
+      bufferLength: 2,
+      wrap: parseMixed(node => node.name == "SectionContent" ? {parser: inner} : null)
+    })
+    let input = `{<${"x".repeat(100)}>}{<xxxx>}`, tree1
+    let parse = parser.startParse(input)
+    while (parse.parsedPos < 50) parse.advance()
+    parse.stopAt(parse.parsedPos)
+    while (!(tree1 = parse.advance())) {}
+    ist(tree1.toString(), "Doc(Section(Phrase(⚠)),Section(Phrase(⚠)))")
+    let tree2 = parser.parse(input, TreeFragment.addTree(tree1))
+    ist(tree2.toString(), "Doc(Section(Phrase),Section(Phrase))")
+  })
 })
