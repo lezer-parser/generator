@@ -864,6 +864,7 @@ class Builder {
     let {name: nodeName, props, dynamicPrec, inline: explicitInline, group, exported} =
       this.nodeInfo(rule.props || none, inline ? "pg" : "pgi", rule.id.name, args, rule.params, rule.expr)
     if (exported && rule.params.length) this.warn(`Can't export parameterized rules`, rule.start)
+    if (exported && inline) this.warn(`Can't export inline rule`, rule.start)
     let name = this.newName(rule.id.name + (args.length ? "<" + args.join(",") + ">" : ""), nodeName || true, props)
     if (explicitInline) name.inline = true
     if (dynamicPrec) this.registerDynamicPrec(name, dynamicPrec)
