@@ -1,3 +1,9 @@
+## 0.15.3 (2022-01-21)
+
+### Bug fixes
+
+Fix a bug that caused some kind of skip rules (those ending in something optional) to not work correctly.
+
 ## 0.15.2 (2021-09-24)
 
 ### Bug fixes
