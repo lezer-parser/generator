@@ -1153,8 +1153,8 @@ class FinishStateContext {
 
     let skipReduce = -1, shared = null
     if (defaultReduce == 0) {
-      for (const action of state.actions)
-        if (action instanceof Reduce && action.term.eof && this.skipInfo.some(i => i.rule == action.rule.name))
+      if (isSkip) for (const action of state.actions)
+        if (action instanceof Reduce && action.term.eof)
           skipReduce = reduceAction(action.rule, this.skipInfo)
       if (skipReduce < 0) shared = this.findSharedActions(state)
     }
