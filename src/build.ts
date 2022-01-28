@@ -1649,11 +1649,10 @@ class TokenSet {
       }
       this.b.raise(`Cyclic token precedence relation between ${rel.map(r => r.term).join(", ")}`)
     }
-    precTable = precTable.filter(id => allConflicts.some(c => !c.soft && (c.a.id == id || c.b.id == id)))
 
     return {
       tokenGroups: groups,
-      tokenPrec: precTable,
+      tokenPrec: precTable.filter(id => allConflicts.some(c => !c.soft && (c.a.id == id || c.b.id == id))),
       tokenData: tokens.toArray(buildTokenMasks(groups), precTable)
     }
   }
