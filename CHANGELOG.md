@@ -1,3 +1,9 @@
+## 0.15.4 (2022-01-28)
+
+### Bug fixes
+
+Fix a bug where explicitly specified token precedences were sometimes not properly enforced.
+
 ## 0.15.3 (2022-01-21)
 
 ### Bug fixes

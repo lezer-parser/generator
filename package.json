@@ -1,6 +1,6 @@
 {
   "name": "@lezer/generator",
-  "version": "0.15.3",
+  "version": "0.15.4",
   "description": "Parser generator for the incremental lezer parser",
   "main": "dist/index.cjs",
   "type": "module",
