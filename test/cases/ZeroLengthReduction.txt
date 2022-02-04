@@ -1,0 +1,11 @@
+@top T { Foo* }
+
+Foo { Attrs ";" }
+
+Attrs { "@"* }
+
+# Puts zero-length reductions in the right parent
+
+;
+
+==> T(Foo(Attrs))
