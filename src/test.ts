@@ -97,11 +97,11 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
   let specs = TestSpec.parse(expect)
   let stack = [specs], pos = [0]
   tree.iterate({
-    enter(type, start) {
-      if (!type.name) return
+    enter(n) {
+      if (!n.name) return
       let last = stack.length - 1, index = pos[last], seq = stack[last]
       let next = index < seq.length ? seq[index] : null
-      if (next && next.matches(type)) {
+      if (next && next.matches(n.type)) {
         if (next.wildcard) {
           pos[last]++
           return false
@@ -109,18 +109,18 @@ export function testTree(tree: Tree, expect: string, mayIgnore = defaultIgnore) 
         pos.push(0)
         stack.push(next.children)
         return undefined
-      } else if (mayIgnore(type)) {
+      } else if (mayIgnore(n.type)) {
         return false
       } else {
         let parent = last > 0 ? stack[last - 1][pos[last - 1]].name : "tree"
         let after = next ? next.name + (parent == "tree" ? "" : " in " + parent) : `end of ${parent}`
-        throw new Error(`Expected ${after}, got ${type.name} at ${start} \n${tree}`)
+        throw new Error(`Expected ${after}, got ${n.name} at ${n.to} \n${tree}`)
       }
     },
-    leave(type, start) {
-      if (!type.name) return
+    leave(n) {
+      if (!n.name) return
       let last = stack.length - 1, index = pos[last], seq = stack[last]
-      if (index < seq.length) throw new Error(`Unexpected end of ${type.name}. Expected ${seq.slice(index).map(s => s.name).join(", ")} at ${start}\n${tree}`)
+      if (index < seq.length) throw new Error(`Unexpected end of ${n.name}. Expected ${seq.slice(index).map(s => s.name).join(", ")} at ${n.from}\n${tree}`)
       pos.pop()
       stack.pop()
       pos[last - 1]++

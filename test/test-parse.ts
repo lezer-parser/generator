@@ -112,7 +112,7 @@ describe("parsing", () => {
   function testResolve(bufferLength: number) {
     let ast = p1().configure({strict: true, bufferLength}).parse(resolveDoc)
 
-    let cx111 = ast.cursor(7)
+    let cx111 = ast.cursorAt(7)
     ist(cx111.name, "Num")
     ist(cx111.from, 6)
     ist(cx111.to, 9)
@@ -121,7 +121,7 @@ describe("parsing", () => {
     ist(cx111.from, 0)
     ist(cx111.to, 33)
 
-    let cxThree = ast.cursor(22)
+    let cxThree = ast.cursorAt(22)
     ist(cxThree.name, "Var")
     ist(cxThree.from, 21)
     ist(cxThree.to, 26)
@@ -136,10 +136,10 @@ describe("parsing", () => {
     ist(branch.to, 20)
 
     // Always resolve to the uppermost context for a position
-    ist(ast.cursor(6).name, "Loop")
-    ist(ast.cursor(9).name, "Loop")
+    ist(ast.cursorAt(6).name, "Loop")
+    ist(ast.cursorAt(9).name, "Loop")
 
-    let c = ast.cursor(20)
+    let c = ast.cursorAt(20)
     ist(c.firstChild())
     ist(c.name, "Var")
     ist(c.nextSibling())
@@ -169,8 +169,8 @@ describe("parsing", () => {
     ast.iterate({
       from: partial ? 13 : 0,
       to: partial ? 19 : ast.length,
-      enter(open, start) { output.push(open.name, start) },
-      leave(close, _, end) { output.push("/" + close.name, end) }
+      enter(n) { output.push(n.name, n.from) },
+      leave(n) { output.push("/" + n.name, n.to) }
     })
     ist(output.join(), (partial ? partialSeq : iterSeq).join())
   }
@@ -187,9 +187,9 @@ describe("parsing", () => {
     let ast = p1().parse("foo(baz(baz), bug(quux)")
     let ids = 0
     ast.iterate({
-      enter(type, start) {
-        if (type.name == "Var") ids++
-        return start == 4 && type.name == "Call" ? false : undefined
+      enter(n) {
+        if (n.name == "Var") ids++
+        return n.from == 4 && n.name == "Call" ? false : undefined
       }
     })
     ist(ids, 3)
@@ -331,17 +331,17 @@ describe("sequences", () => {
     let doc = "x".repeat(100) + "y;;;;;;;;;" + "x".repeat(90)
     let ast = p1().configure({bufferLength: 10}).parse(doc)
     let i = 0
-    ast.iterate({enter(type, start, end) {
+    ast.iterate({enter(n) {
       if (i == 0) {
-        ist(type.name, "T")
+        ist(n.name, "T")
       } else if (i == 101) {
-        ist(type.name, "Y")
-        ist(start, 100)
-        ist(end, 110)
+        ist(n.name, "Y")
+        ist(n.from, 100)
+        ist(n.to, 110)
       } else {
-        ist(type.name, "X")
-        ist(end, start + 1)
-        ist(start, i <= 100 ? i - 1 : i + 8)
+        ist(n.name, "X")
+        ist(n.to, n.from + 1)
+        ist(n.from, i <= 100 ? i - 1 : i + 8)
       }
       i++
     }})
