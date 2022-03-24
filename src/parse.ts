@@ -1,6 +1,6 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
         TokenPrecDeclaration, TokenConflictDeclaration, TokenDeclaration, LiteralDeclaration,
-        ContextDeclaration, ExternalTokenDeclaration,
+        ContextDeclaration, ExternalTokenDeclaration, ExternalPropSourceDeclaration,
         ExternalSpecializeDeclaration, ExternalPropDeclaration, Identifier,
         Expression, NameExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, InlineRuleExpression, Prop, PropPart,
@@ -132,6 +132,7 @@ function parseGrammar(input: Input) {
   let external: ExternalTokenDeclaration[] = []
   let specialized: ExternalSpecializeDeclaration[] = []
   let props: ExternalPropDeclaration[] = []
+  let propSources: ExternalPropSourceDeclaration[] = []
   let tops: RuleDeclaration[] = []
   let sawTop = false
   let autoDelim = false
@@ -156,6 +157,7 @@ function parseGrammar(input: Input) {
       else if (input.eat("id", "prop")) props.push(parseExternalProp(input, start))
       else if (input.eat("id", "extend")) specialized.push(parseExternalSpecialize(input, "extend", start))
       else if (input.eat("id", "specialize")) specialized.push(parseExternalSpecialize(input, "specialize", start))
+      else if (input.eat("id", "propSource")) propSources.push(parseExternalPropSource(input, start))
       else input.unexpected()
     } else if (input.eat("at", "dialects")) {
       input.expect("{")
@@ -191,8 +193,8 @@ function parseGrammar(input: Input) {
     }
   }
   if (!sawTop) return input.raise(`Missing @top declaration`)
-  return new GrammarDeclaration(start, rules, tops, tokens, context, external, specialized, prec,
-                                mainSkip, scopedSkip, dialects, props, autoDelim)
+  return new GrammarDeclaration(start, rules, tops, tokens, context, external, specialized, propSources,
+                                prec, mainSkip, scopedSkip, dialects, props, autoDelim)
 }
 
 function parseRule(input: Input, named?: Identifier) {
@@ -480,6 +482,12 @@ function parseExternalSpecialize(input: Input, type: "extend" | "specialize", st
   input.expect("id", "from")
   let from = input.expect("string")
   return new ExternalSpecializeDeclaration(start, type, token, id, from, parseExternalTokenSet(input))
+}
+
+function parseExternalPropSource(input: Input, start: number) {
+  let id = parseIdent(input)
+  input.expect("id", "from")
+  return new ExternalPropSourceDeclaration(start, id, input.expect("string"))
 }
 
 function parseExternalProp(input: Input, start: number) {

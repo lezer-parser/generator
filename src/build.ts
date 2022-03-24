@@ -11,7 +11,7 @@ import {computeFirstSets, buildFullAutomaton, finishAutomaton, State as LRState,
 import {encodeArray} from "./encode"
 import {GenError} from "./error"
 import {verbose, time} from "./log"
-import {NodeProp} from "@lezer/common"
+import {NodeProp, NodePropSource} from "@lezer/common"
 import {LRParser, ExternalTokenizer, Stack, ContextTracker} from "@lezer/lr"
 import {Action, Specialize, StateFlag, Seq, ParseState, File} from "@lezer/lr/dist/constants"
 
@@ -86,6 +86,8 @@ export type BuildOptions = {
   /// When calling `buildParser`, this can be used to provide
   /// placeholders for external tokenizers.
   externalTokenizer?: (name: string, terms: {[name: string]: number}) => ExternalTokenizer
+  /// Used by `buildParser` to resolve external prop sources.
+  externalPropSource?: (name: string) => NodePropSource
   /// Provide placeholders for external specializers when using
   /// `buildParser`.
   externalSpecializer?: (name: string, terms: {[name: string]: number}) => (value: string, stack: Stack) => number
@@ -393,6 +395,8 @@ class Builder {
       maxTerm,
       repeatNodeCount,
       nodeProps: rawNodeProps.map(({prop, terms}) => [this.knownProps[prop].prop, ...terms]),
+      propSources: !this.options.externalPropSource ? undefined
+        : this.ast.externalPropSources.map(s => this.options.externalPropSource!(s.id.name)),
       skippedNodes: skippedTypes,
       tokenData,
       tokenizers,
@@ -403,7 +407,7 @@ class Builder {
       specialized,
       tokenPrec,
       termNames
-    })
+    }) as LRParser
   }
 
   getParserFile() {
@@ -490,6 +494,8 @@ class Builder {
       }
     })
 
+    let propSources = this.ast.externalPropSources.map(s => importName(s.id.name, s.source, "props"))
+
     for (let source in imports) {
       if (mod == "cjs")
         head += `const {${imports[source].join(", ")}} = require(${source})\n`
@@ -515,7 +521,8 @@ class Builder {
   context: ${context}` : ""}${nodeProps.length ? `,
   nodeProps: [
     ${nodeProps.join(",\n    ")}
-  ]` : ""}${skippedTypes.length ? `,
+  ]` : ""}${propSources.length ? `,
+  propSources: [${propSources.join()}]` : ""}${skippedTypes.length ? `,
   skippedNodes: ${JSON.stringify(skippedTypes)}` : ""},
   repeatNodeCount: ${repeatNodeCount},
   tokenData: ${encodeArray(tokenData)},
@@ -526,7 +533,7 @@ class Builder {
   specialized: [${specialized.join(",")}]` : ""},
   tokenPrec: ${tokenPrec}${this.options.includeNames ? `,
   termNames: ${JSON.stringify(termNames)}` : ''}
-})` // FIXME more compact format for term names (omit named nodes, drop quotes)
+})`
 
     let terms: string[] = []
     for (let name in this.termTable) {

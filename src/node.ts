@@ -10,6 +10,7 @@ export class GrammarDeclaration extends Node {
               readonly context: ContextDeclaration | null,
               readonly externalTokens: readonly ExternalTokenDeclaration[],
               readonly externalSpecializers: readonly ExternalSpecializeDeclaration[],
+              readonly externalPropSources: readonly ExternalPropSourceDeclaration[],
               readonly precedences: PrecDeclaration | null,
               readonly mainSkip: Expression | null,
               readonly scopedSkip: readonly {
@@ -98,6 +99,14 @@ export class ExternalSpecializeDeclaration extends Node {
               readonly id: Identifier,
               readonly source: string,
               readonly tokens: readonly {id: Identifier, props: readonly Prop[]}[]) {
+    super(start)
+  }
+}
+
+export class ExternalPropSourceDeclaration extends Node {
+  constructor(start: number,
+              readonly id: Identifier,
+              readonly source: string) {
     super(start)
   }
 }
