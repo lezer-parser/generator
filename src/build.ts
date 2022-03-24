@@ -471,8 +471,7 @@ class Builder {
 
     let nodeProps = rawNodeProps.map(({prop, terms}) => {
       let {source} = this.knownProps[prop]
-      let propID = source.from ? importName(source.name, source.from, "prop") :
-        importName("NodeProp", "@lezer/common", "NodeProp") + "." + source.name
+      let propID = source.from ? importName(source.name, source.from, "prop") : JSON.stringify(source.name)
       return `[${propID}, ${terms.map(serializePropValue).join(",")}]`
     })
 
