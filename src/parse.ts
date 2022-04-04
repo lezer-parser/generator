@@ -62,11 +62,11 @@ export class Input {
 
     let next = this.string[start]
     if (next == '"') {
-      let end = this.match(start + 1, /^(\\.|[^"])*"/)
+      let end = this.match(start + 1, /^(\\.|[^"\\])*"/)
       if (end == -1) this.raise("Unterminated string literal", start)
       return this.set("string", readString(this.string.slice(start + 1, end - 1)), start, end)
     } else if (next == "'") {
-      let end = this.match(start + 1, /^(\\.|[^'])*'/)
+      let end = this.match(start + 1, /^(\\.|[^'\\])*'/)
       if (end == -1) this.raise("Unterminated string literal", start)
       return this.set("string", readString(this.string.slice(start + 1, end - 1)), start, end)
     } else if (next == "@") {
@@ -75,7 +75,7 @@ export class Input {
       if (!m) return this.raise("@ without a name", start)
       return this.set("at", m[0], start, start + 1 + m[0].length)
     } else if ((next == "$" || next == "!") && this.string[start + 1] == "[") {
-      let end = this.match(start + 2, /^(?:\\.|[^\]])*\]/)
+      let end = this.match(start + 2, /^(?:\\.|[^\]\\])*\]/)
       if (end == -1) this.raise("Unterminated character set", start)
       return this.set("set", this.string.slice(start + 2, end - 1), start, end)
     } else if (/[\[\]()!~+*?{}<>\.,|:$=]/.test(next)) {
