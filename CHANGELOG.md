@@ -1,3 +1,13 @@
+## 0.16.0 (2022-04-20)
+
+### Bug fixes
+
+Fix an issue in the tokenizer for grammars that could cause it to run very slowly on some inputs.
+
+### New features
+
+A grammar can now include an `@external propSource a from "b"` declaration to import a programmatically defined node prop source.
+
 ## 0.15.4 (2022-01-28)
 
 ### Bug fixes
