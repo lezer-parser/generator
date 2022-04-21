@@ -1,0 +1,12 @@
+@top Program { Variable }
+Variable { Dollar Name }
+@tokens {
+  Dollar { "$" }
+  Name { $[a-z]+ }
+}
+
+# It inserts the error for insertion in the right place
+
+abc
+
+==> Program(Variable(⚠,Name))
