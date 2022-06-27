@@ -1,3 +1,11 @@
+## 1.1.0 (2022-06-27)
+
+### New features
+
+Things that used to be written like `std.digit` are now written `@digit`. The old notation will remain available until a breaking release.
+
+The new `@eof` marker can be used in tokens to match the end of the input.
+
 ## 1.0.0 (2022-06-06)
 
 ### New features
