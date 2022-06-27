@@ -2,7 +2,7 @@
 
 @tokens {
   X { "x" }
-  Y { "x" std.eof }
+  Y { "x" @eof }
   @precedence { Y, X }
 }
 

@@ -7,7 +7,7 @@ Block { "{" (Block | "statement")* "}" }
 @skip { whitespace }
 
 @tokens {
-  whitespace { std.whitespace+ }
+  whitespace { @whitespace+ }
 }
 
 # Can resynchronize to an outer context

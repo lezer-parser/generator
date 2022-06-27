@@ -4,7 +4,7 @@ import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
         ExternalSpecializeDeclaration, ExternalPropDeclaration, Identifier,
         Expression, NameExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, InlineRuleExpression, Prop, PropPart,
-        SpecializeExpression, AnyExpression, ConflictMarker} from "./node"
+        SpecializeExpression, AnyExpression, ConflictMarker, CharClasses, CharClass} from "./node"
 import {GenError} from "./error"
 
 // Note that this is the parser for grammar files, not the generated parser
@@ -298,6 +298,10 @@ function parseExprInner(input: Input): Expression {
     }
     input.expect(">")
     return new SpecializeExpression(start, value, props, token, content)
+  } else if (input.type == "at" && CharClasses.hasOwnProperty(input.value)) {
+    let cls = new CharClass(input.start, input.value)
+    input.next()
+    return cls
   } else if (input.type == "[") {
     let rule = parseRule(input, new Identifier(start, "_anon"))
     if (rule.params.length) input.raise(`Inline rules can't have parameters`, rule.start)
@@ -309,12 +313,12 @@ function parseExprInner(input: Input): Expression {
       if (rule.params.length) input.raise(`Inline rules can't have parameters`, rule.start)
       return new InlineRuleExpression(start, rule)
     } else {
-      let namespace = null
-      if (input.eat(".")) {
-        namespace = id
-        id = parseIdent(input)
+      if (input.eat(".") && id.name == "std" && CharClasses.hasOwnProperty(input.value)) {
+        let cls = new CharClass(start, input.value)
+        input.next()
+        return cls
       }
-      return new NameExpression(start, namespace, id, parseArgs(input))
+      return new NameExpression(start, id, parseArgs(input))
     }
   }
 }

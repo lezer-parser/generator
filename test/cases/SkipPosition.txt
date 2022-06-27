@@ -10,7 +10,7 @@ Variable { identifier }
 @skip { space | Comment }
 
 @tokens {
-  space { std.whitespace+ }
+  space { @whitespace+ }
   Comment { "'" ![']* "'" }
   identifier { "x" }
 }

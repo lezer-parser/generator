@@ -21,7 +21,7 @@ DualExpr {
 }
 
 @tokens {
-  Number { std.digit+ }
+  Number { @digit+ }
   BracketLeft { "[|" }
   BracketRight { "|]" }
   "[["[@name=DoubleLeft]

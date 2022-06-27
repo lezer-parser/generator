@@ -4,7 +4,7 @@
 
 @tokens {
   space { " "+ }
-  Tag { "<" "<"* std.asciiLetter+ }
+  Tag { "<" "<"* @asciiLetter+ }
   @precedence { Tag, "<<" }
   @precedence { Tag, "<" }
   @precedence { Tag, "<<<" }

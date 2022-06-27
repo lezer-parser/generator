@@ -3,7 +3,7 @@
 @skip { whitespace }
 
 @tokens {
-  whitespace { std.whitespace+ }
+  whitespace { @whitespace+ }
   kw[@name={word}]<word> { word }
   Foo { bar<"foo"> }
   bar<x> { baz<x> }

@@ -5,7 +5,7 @@
 @tokens {
   whitespace { " "+ }
 
-  identifierChar { std.asciiLetter | $[\u{a1}-\u{10ffff}] }
+  identifierChar { @asciiLetter | $[\u{a1}-\u{10ffff}] }
 
   Id { identifierChar+ }
 

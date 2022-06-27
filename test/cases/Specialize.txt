@@ -15,9 +15,9 @@ kwExt<word> { @extend<Id, word> }
 @skip { whitespace }
 
 @tokens {
-  whitespace { std.whitespace+ }
-  Id { std.asciiLetter+ }
-  Number { std.digit+ }
+  whitespace { @whitespace+ }
+  Id { @asciiLetter+ }
+  Number { @digit+ }
 }
 
 # Can use a contextual keyword as regular identifier

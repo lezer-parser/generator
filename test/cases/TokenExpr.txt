@@ -3,11 +3,11 @@
 @skip { whitespace }
 
 @tokens {
-  whitespace { std.whitespace+ }
+  whitespace { @whitespace+ }
 
-  Word { std.asciiLetter (letter | std.digit)* }
+  Word { @asciiLetter (letter | @digit)* }
 
-  Number { (std.digit+ ("." std.digit*)? | "." std.digit+) (("e" | "E") ("+" | "-")? std.digit+)? }
+  Number { (@digit+ ("." @digit*)? | "." @digit+) (("e" | "E") ("+" | "-")? @digit+)? }
 
   Operator { "+" "+"? | "-" }
 

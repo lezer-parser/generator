@@ -9,9 +9,9 @@ BinOp { expr !div "/" expr }
 @skip { whitespace }
 
 @tokens {
-  whitespace { std.whitespace+ }
+  whitespace { @whitespace+ }
 
-  Symbol { std.asciiLetter+ }
+  Symbol { @asciiLetter+ }
 
   RegExp { "/" ![/]+ "/" }
 }

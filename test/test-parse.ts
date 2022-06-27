@@ -57,9 +57,9 @@ describe("parsing", () => {
 
     kw<value> { @specialize<Var, value> }
     @tokens {
-      Num { std.digit+ }
-      Var { std.asciiLetter+ }
-      whitespace { std.whitespace+ }
+      Num { @digit+ }
+      Var { @asciiLetter+ }
+      whitespace { @whitespace+ }
     }
     @skip { whitespace }`)
 
@@ -419,7 +419,7 @@ describe("mixed languages", () => {
       Open { "<" name ">" }
       Close { "</" name ">" }
       @tokens {
-        name { std.asciiLetter+ }
+        name { @asciiLetter+ }
         Content { ![<]+ }
       }
     `).configure({
@@ -447,7 +447,7 @@ describe("mixed languages", () => {
         Nested { nestedChar* }
       }
       @tokens {
-        space { std.whitespace+ }
+        space { @whitespace+ }
         nestedChar { ![}] }
         Name { $[a-z]+ }
       }

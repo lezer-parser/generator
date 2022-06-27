@@ -13,8 +13,8 @@ ParamName { word ~arrow }
 @skip { whitespace }
 
 @tokens {
-  whitespace { std.whitespace+ }
-  word { std.asciiLetter+ }
+  whitespace { @whitespace+ }
+  word { @asciiLetter+ }
 }
 
 # Arrow

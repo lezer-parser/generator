@@ -136,17 +136,16 @@ export class Expression extends Node {
 Expression.prototype.prec = 10
 
 export class NameExpression extends Expression {
-  constructor(start: number, readonly namespace: Identifier | null, readonly id: Identifier, readonly args: readonly Expression[]) {
+  constructor(start: number, readonly id: Identifier, readonly args: readonly Expression[]) {
     super(start)
   }
   toString() { return this.id.name + (this.args.length ? `<${this.args.join()}>` : "") }
   eq(other: NameExpression) {
-    return (this.namespace ? other.namespace != null && other.namespace.name == this.namespace.name : !other.namespace) &&
-      this.id.name == other.id.name && exprsEq(this.args, other.args)
+    return this.id.name == other.id.name && exprsEq(this.args, other.args)
   }
   walk(f: (expr: Expression) => Expression): Expression {
     let args = walkExprs(this.args, f)
-    return f(args == this.args ? this : new NameExpression(this.start, this.namespace, this.id, args))
+    return f(args == this.args ? this : new NameExpression(this.start, this.id, args))
   }
 }
 
@@ -288,6 +287,24 @@ function walkExprs(exprs: readonly Expression[], f: (expr: Expression) => Expres
     if (result) result.push(expr)
   }
   return result || exprs
+}
+
+export const CharClasses: {[name: string]: [number, number][]} = {
+  asciiLetter: [[65, 91], [97, 123]],
+  asciiLowercase: [[97, 123]],
+  asciiUppercase: [[65, 91]],
+  digit: [[48, 58]],
+  whitespace: [[9, 14], [32, 33], [133, 134], [160, 161], [5760, 5761], [8192, 8203],
+               [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]],
+  eof: [[0xffff, 0xffff]]
+}
+
+export class CharClass extends Expression {
+  constructor(start: number, readonly type: string) {
+    super(start)
+  }
+  toString() { return "@" + this.type }
+  eq(expr: CharClass) { return this.type == expr.type }
 }
 
 export function exprEq(a: Expression, b: Expression): boolean {

@@ -2,7 +2,7 @@ import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDecl
         ExternalSpecializeDeclaration,
         Expression, Identifier, LiteralExpression, NameExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
-        InlineRuleExpression, SpecializeExpression, Prop, PropPart,
+        InlineRuleExpression, SpecializeExpression, Prop, PropPart, CharClass, CharClasses,
         exprsEq, exprEq} from "./node"
 import {Term, TermSet, Rule, Conflicts, Props, hasProps} from "./grammar"
 import {State, MAX_CHAR, Conflict} from "./token"
@@ -680,12 +680,12 @@ class Builder {
     if (args.length == 0) return expr
     return expr.walk(expr => {
       let found
-      if (expr instanceof NameExpression && !expr.namespace &&
+      if (expr instanceof NameExpression &&
           (found = params.findIndex(p => p.name == expr.id.name)) > -1) {
         let arg = args[found]
         if (expr.args.length) {
           if (arg instanceof NameExpression && !arg.args.length)
-            return new NameExpression(expr.start, arg.namespace, arg.id, expr.args)
+            return new NameExpression(expr.start, arg.id, expr.args)
           this.raise(`Passing arguments to a parameter that already has arguments`, expr.start)
         }
         return arg
@@ -712,7 +712,7 @@ class Builder {
         if (found < 0) continue
         if (result == value) result = value.slice()
         let expr = args[found]
-        if (expr instanceof NameExpression && !expr.namespace && !expr.args.length)
+        if (expr instanceof NameExpression && !expr.args.length)
           result[i] = new PropPart(part.start, expr.id.name, null)
         else if (expr instanceof LiteralExpression)
           result[i] = new PropPart(part.start, expr.value, null)
@@ -953,7 +953,7 @@ class Builder {
       let pos = params.findIndex(param => param.name == part.name)
       if (pos < 0) this.raise(`Property refers to '${part.name}', but no parameter by that name is in scope`, part.start)
       let expr = args[pos]
-      if (expr instanceof NameExpression && !expr.args.length && !expr.namespace) return expr.id.name
+      if (expr instanceof NameExpression && !expr.args.length) return expr.id.name
       if (expr instanceof LiteralExpression) return expr.value
       return this.raise(`Expression '${expr}' can not be used as part of a property value`, part.start)
     }).join("")
@@ -1416,15 +1416,13 @@ class TokenSet {
 
   build(expr: Expression, from: State, to: State, args: readonly TokenArg[]): void {
     if (expr instanceof NameExpression) {
-      if (expr.namespace) {
-        if (expr.namespace.name == "std") return this.buildStd(expr, from, to)
-        this.b.raise(`Unknown namespace '${expr.namespace.name}'`, expr.start)
-      }
       let name = expr.id.name, arg = args.find(a => a.name == name)
       if (arg) return this.build(arg.expr, from, to, arg.scope)
       let rule = this.rules.find(r => r.id.name == name)
       if (!rule) return this.b.raise(`Reference to rule '${expr.id.name}', which isn't found in this token group`, expr.start)
       this.buildRule(rule, expr, from, to, args)
+    } else if (expr instanceof CharClass) {
+      for (let [a, b] of CharClasses[expr.type]) from.edge(a, b, to)
     } else if (expr instanceof ChoiceExpression) {
       for (let choice of expr.exprs) this.build(choice, from, to, args)
     } else if (isEmpty(expr)) {
@@ -1467,12 +1465,6 @@ class TokenSet {
     } else {
       return this.b.raise(`Unrecognized expression type in token`, (expr as any).start)
     }
-  }
-
-  buildStd(expr: NameExpression, from: State, to: State) {
-    if (expr.args.length) this.b.raise(`'std.${expr.id.name}' does not take arguments`, expr.args[0].start)
-    if (!STD_RANGES.hasOwnProperty(expr.id.name)) this.b.raise(`There is no builtin rule 'std.${expr.id.name}'`, expr.start)
-    for (let [a, b] of STD_RANGES[expr.id.name]) from.edge(a, b, to)
   }
 
   takePrecedences() {
@@ -1719,16 +1711,6 @@ function rangeEdges(from: State, to: State, low: number, hi: number) {
       hop.edge(LOW_SURR_B, HIGH_SURR_B + 1, to)
     }
   }
-}
-
-const STD_RANGES: {[name: string]: [number, number][]} = {
-  asciiLetter: [[65, 91], [97, 123]],
-  asciiLowercase: [[97, 123]],
-  asciiUppercase: [[65, 91]],
-  digit: [[48, 58]],
-  whitespace: [[9, 14], [32, 33], [133, 134], [160, 161], [5760, 5761], [8192, 8203],
-               [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]],
-  eof: [[0xffff, 0xffff]]
 }
 
 function isEmpty(expr: Expression) {

@@ -9,8 +9,8 @@ Two { two Id }
 @external specialize {Id} spec1 from "./something" { one, two }
 
 @tokens {
-  Id { std.asciiLetter+ }
-  space { std.whitespace+ }
+  Id { @asciiLetter+ }
+  space { @whitespace+ }
 }
 
 
