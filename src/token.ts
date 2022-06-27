@@ -1,5 +1,6 @@
 import {Term, union} from "./grammar"
 import {GenError} from "./error"
+import {Seq} from "@lezer/lr/dist/constants"
 
 export const MAX_CHAR = 0xfffe
 
@@ -297,6 +298,12 @@ function mergeEdges(edges: Edge[]): MergedEdge[] {
         found.push(target)
     }
     if (found.length) result.push(new MergedEdge(from, to, found))
+  }
+  let eof = edges.filter(e => e.from == Seq.End)
+  if (eof.length) {
+    let found: State[] = []
+    for (let edge of eof) for (let target of edge.target.closure()) if (!found.includes(target)) found.push(target)
+    if (found.length) result.push(new MergedEdge(Seq.End, Seq.End, found))
   }
   return result
 }

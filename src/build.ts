@@ -1727,7 +1727,8 @@ const STD_RANGES: {[name: string]: [number, number][]} = {
   asciiUppercase: [[65, 91]],
   digit: [[48, 58]],
   whitespace: [[9, 14], [32, 33], [133, 134], [160, 161], [5760, 5761], [8192, 8203],
-               [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]]
+               [8232, 8234], [8239, 8240], [8287, 8288], [12288, 12289]],
+  eof: [[0xffff, 0xffff]]
 }
 
 function isEmpty(expr: Expression) {

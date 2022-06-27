@@ -1,0 +1,13 @@
+@top A { (X | Y)+ }
+
+@tokens {
+  X { "x" }
+  Y { "x" std.eof }
+  @precedence { Y, X }
+}
+
+# Matches EOF markers
+
+xxx
+
+==> A(X, X, Y)
