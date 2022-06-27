@@ -170,8 +170,6 @@ class Builder {
 
       for (let {rule} of this.astRules) {
         this.unique(rule.id)
-        if (this.namespaces[rule.id.name])
-          this.raise(`Rule name '${rule.id.name}' conflicts with a defined namespace`, rule.id.start)
       }
 
       this.currentSkip.push(noSkip)
@@ -230,11 +228,6 @@ class Builder {
 
   used(name: string) {
     this.ruleNames[name] = null
-  }
-
-  defineNamespace(name: string, value: Namespace, pos: number = 0) {
-    if (this.namespaces[name]) this.raise(`Duplicate definition of namespace '${name}'`, pos)
-    this.namespaces[name] = value
   }
 
   newName(base: string, nodeName: string | null | true = null, props: Props = {}): Term {
@@ -777,33 +770,26 @@ class Builder {
   }
 
   resolve(expr: NameExpression): Parts[] {
-    if (expr.namespace) {
-      let ns = this.namespaces[expr.namespace.name]
-      if (!ns)
-        this.raise(`Reference to undefined namespace '${expr.namespace.name}'`, expr.start)
-      return ns.resolve(expr, this)
-    } else {
-      for (let built of this.built) if (built.matches(expr)) return [p(built.term)]
+    for (let built of this.built) if (built.matches(expr)) return [p(built.term)]
 
-      let found = this.tokens.getToken(expr)
+    let found = this.tokens.getToken(expr)
+    if (found) return [p(found)]
+    for (let ext of this.externalTokens) {
+      let found = ext.getToken(expr)
       if (found) return [p(found)]
-      for (let ext of this.externalTokens) {
-        let found = ext.getToken(expr)
-        if (found) return [p(found)]
-      }
-      for (let ext of this.externalSpecializers) {
-        let found = ext.getToken(expr)
-        if (found) return [p(found)]
-      }
-
-      let known = this.astRules.find(r => r.rule.id.name == expr.id.name)
-      if (!known)
-        return this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
-      if (known.rule.params.length != expr.args.length)
-        this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
-      this.used(known.rule.id.name)
-      return [p(this.buildRule(known.rule, expr.args, known.skip))]
     }
+    for (let ext of this.externalSpecializers) {
+      let found = ext.getToken(expr)
+      if (found) return [p(found)]
+    }
+
+    let known = this.astRules.find(r => r.rule.id.name == expr.id.name)
+    if (!known)
+      return this.raise(`Reference to undefined rule '${expr.id.name}'`, expr.start)
+    if (known.rule.params.length != expr.args.length)
+      this.raise(`Wrong number or arguments for '${expr.id.name}'`, expr.start)
+    this.used(known.rule.id.name)
+    return [p(this.buildRule(known.rule, expr.args, known.skip))]
   }
 
   // For tree-balancing reasons, repeat expressions X+ have to be
