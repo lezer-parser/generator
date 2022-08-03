@@ -1,3 +1,9 @@
+## 1.1.1 (2022-08-03)
+
+### Bug fixes
+
+Emit enough information about external specializers to make `ParserConfig.specializers` fixable.
+
 ## 1.1.0 (2022-06-27)
 
 ### New features
