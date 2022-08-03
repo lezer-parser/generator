@@ -366,8 +366,13 @@ class Builder {
     let specialized = rawSpecialized.map(v => {
       if (v instanceof ExternalSpecializer) {
         let ext = this.options.externalSpecializer!(v.ast.id.name, this.termTable)
-        return {term: v.term!.id, get: (value: string, stack: Stack) => (ext(value, stack) << 1) |
-                (v.ast.type == "extend" ? Specialize.Extend : Specialize.Specialize)}
+        return {
+          term: v.term!.id,
+          get: (value: string, stack: Stack) => (ext(value, stack) << 1) |
+            (v.ast.type == "extend" ? Specialize.Extend : Specialize.Specialize),
+          external: ext,
+          extend: v.ast.type == "extend"
+        }
       } else {
         return {term: v.token.id, get: (value: string) => v.table[value] || -1}
       }
@@ -478,7 +483,8 @@ class Builder {
       if (v instanceof ExternalSpecializer) {
         let name = importName(v.ast.id.name, v.ast.source, v.ast.id.name)
         return `{term: ${v.term!.id}, get: (value, stack) => (${name}(value, stack) << 1)${
-          v.ast.type == "extend" ? ` | ${Specialize.Extend}` : ''}}`
+          v.ast.type == "extend" ? ` | ${Specialize.Extend}` : ''}, external: ${name}${
+          v.ast.type == "extend" ? ', extend: true' : ''}}`
       } else {
         let tableName = getName("spec_" + v.token.name.replace(/\W/g, ""))
         specHead += `const ${tableName} = ${specializationTableString(v.table)}\n`
