@@ -146,20 +146,33 @@ function toLineContext(file: string, index: number) {
 
 export function fileTests(file: string, fileName: string, mayIgnore = defaultIgnore) {
   let caseExpr = /\s*#\s*(.*)(?:\r\n|\r|\n)([^]*?)==+>([^]*?)(?:$|(?:\r\n|\r|\n)+(?=#))/gy
-  let tests: {name: string, run(parser: Parser): void}[] = []
+  let tests: {
+    name: string,
+    text: string,
+    expected: string,
+    configStr: string,
+    config: object,
+    strict: boolean,
+    run(parser: Parser): void
+  }[] = []
   let lastIndex = 0;
   for (;;) {
     let m = caseExpr.exec(file)
     if (!m) throw new Error(`Unexpected file format in ${fileName} around\n\n${toLineContext(file, lastIndex)}`)
 
+    let text = m[2].trim(), expected = m[3].trim()
     let [, name, configStr] = /(.*?)(\{.*?\})?$/.exec(m[1])!
     let config = configStr ? JSON.parse(configStr) : null
+    let strict = !/⚠|\.\.\./.test(expected)
 
-    let text = m[2].trim(), expected = m[3]
     tests.push({
       name,
+      text,
+      expected,
+      configStr,
+      config,
+      strict,
       run(parser: Parser) {
-        let strict = !/⚠|\.\.\./.test(expected)
         if ((parser as any).configure && (strict || config))
           parser = (parser as any).configure({strict, ...config})
         testTree(parser.parse(text), expected, mayIgnore)
