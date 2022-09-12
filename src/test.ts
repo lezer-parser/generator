@@ -145,7 +145,7 @@ function toLineContext(file: string, index: number) {
 }
 
 export function fileTests(file: string, fileName: string, mayIgnore = defaultIgnore) {
-  let caseExpr = /\s*#\s*(.*)(?:\r\n|\r|\n)([^]*?)==+>([^]*?)(?:$|(?:\r\n|\r|\n)+(?=#))/gy
+  let caseExpr = /\s*#[ \t]*(.*)(?:\r\n|\r|\n)([^]*?)==+>([^]*?)(?:$|(?:\r\n|\r|\n)+(?=#))/gy
   let tests: {
     name: string,
     text: string,
