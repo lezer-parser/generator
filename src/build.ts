@@ -1682,11 +1682,6 @@ const LOW_SURR_B = 0xdc00, HIGH_SURR_B = 0xdfff
 // Create intermediate states for astral characters in a range, if
 // necessary, since the tokenizer acts on UTF16 characters
 function rangeEdges(from: State, to: State, low: number, hi: number) {
-  if (low < GAP_START && hi == MAX_CODE + 1) {
-    from.edge(low, MAX_CHAR + 1, to)
-    return
-  }
-
   if (low < ASTRAL) {
     if (low < GAP_START) from.edge(low, Math.min(hi, GAP_START), to)
     if (hi > GAP_END) from.edge(Math.max(low, GAP_END), Math.min(hi, MAX_CHAR + 1), to)
