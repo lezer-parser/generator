@@ -1687,7 +1687,7 @@ function rangeEdges(from: State, to: State, low: number, hi: number) {
     if (hi > GAP_END) from.edge(Math.max(low, GAP_END), Math.min(hi, MAX_CHAR + 1), to)
     low = ASTRAL
   }
-  if (hi < ASTRAL) return
+  if (hi <= ASTRAL) return
 
   let lowStr = String.fromCodePoint(low), hiStr = String.fromCodePoint(hi - 1)
   let lowA = lowStr.charCodeAt(0), lowB = lowStr.charCodeAt(1)
