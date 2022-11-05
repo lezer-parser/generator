@@ -1467,7 +1467,11 @@ class TokenSet {
         from = next
       }
     } else if (expr instanceof AnyExpression) {
-      from.edge(0, MAX_CHAR + 1, to)
+      let mid = new State
+      from.edge(0, 0xDC00, to)
+      from.edge(0xDC00, MAX_CHAR + 1, to)
+      from.edge(0xD800, 0xDC00, mid)
+      mid.edge(0xDC00, 0xE000, to)
     } else {
       return this.b.raise(`Unrecognized expression type in token`, (expr as any).start)
     }

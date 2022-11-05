@@ -1,0 +1,23 @@
+@top T { A+ }
+
+@tokens {
+  A { "\\" _ "/" }
+}
+
+# Matches any char
+
+\_/\ /\x/
+
+==> T(A, A, A)
+
+# Matches astral chars
+
+\🤢/
+
+==> T(A)
+
+# Doesn't match multiple chars
+
+\xy/
+
+==> T(⚠)
