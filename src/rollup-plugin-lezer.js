@@ -1,6 +1,6 @@
 import {resolve, dirname} from "path"
 import {promises as fs} from "fs"
-import {buildParserFile} from "./index.ts"
+import {buildParserFile} from ".."
 
 export function lezer() {
   let built = Object.create(null)
