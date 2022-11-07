@@ -1,3 +1,11 @@
+## 1.1.2 (2022-11-07)
+
+### Bug fixes
+
+Fix a bug where the _ notation in tokens would match only half of a surrogate pair.
+
+Fix a bug that caused invalid tokenizer data to be generated for character ranges ending in \uffff.
+
 ## 1.1.1 (2022-08-03)
 
 ### Bug fixes
