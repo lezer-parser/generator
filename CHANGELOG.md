@@ -1,3 +1,9 @@
+## 1.1.3 (2022-11-07)
+
+### Bug fixes
+
+Fix broken Rollup plugin due to a bad import.
+
 ## 1.1.2 (2022-11-07)
 
 ### Bug fixes
