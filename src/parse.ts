@@ -252,6 +252,8 @@ const SET_MARKER = "\ufdda" // (Invalid unicode character)
 function parseExprInner(input: Input): Expression {
   let start = input.start
   if (input.eat("(")) {
+    if (input.eat(")"))
+      return new SequenceExpression(start, none, [none, none])
     let expr = parseExprChoice(input)
     input.expect(")")
     return expr
