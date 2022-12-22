@@ -15,7 +15,11 @@ export class Edge {
 }
 
 function charFor(n: number) {
-  return n > MAX_CHAR ? "∞" : n >= 0xd800 && n < 0xdfff ? "\\u{" + n.toString(16) + "}" : String.fromCharCode(n)
+  return n > MAX_CHAR ? "∞"
+    : n == 10 ? "\\n"
+    : n == 13 ? "\\r"
+    : n < 32 || n >= 0xd800 && n < 0xdfff ? "\\u{" + n.toString(16) + "}"
+    : String.fromCharCode(n)
 }
 
 type Partition = {[id: number]: State[]}
