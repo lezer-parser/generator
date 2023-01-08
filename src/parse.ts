@@ -1,6 +1,6 @@
 import {GrammarDeclaration, RuleDeclaration, PrecDeclaration,
-        TokenPrecDeclaration, TokenConflictDeclaration, TokenDeclaration, LiteralDeclaration,
-        ContextDeclaration, ExternalTokenDeclaration, ExternalPropSourceDeclaration,
+        TokenPrecDeclaration, TokenConflictDeclaration, TokenDeclaration, LocalTokenDeclaration,
+        LiteralDeclaration, ContextDeclaration, ExternalTokenDeclaration, ExternalPropSourceDeclaration,
         ExternalSpecializeDeclaration, ExternalPropDeclaration, Identifier,
         Expression, NameExpression, ChoiceExpression, SequenceExpression, LiteralExpression,
         RepeatExpression, SetExpression, InlineRuleExpression, Prop, PropPart,
@@ -125,6 +125,7 @@ function parseGrammar(input: Input) {
   let rules: RuleDeclaration[] = []
   let prec: PrecDeclaration | null = null
   let tokens: TokenDeclaration | null = null
+  let localTokens: LocalTokenDeclaration[] = []
   let mainSkip: Expression | null = null
   let scopedSkip: {expr: Expression, topRules: readonly RuleDeclaration[], rules: readonly RuleDeclaration[]}[] = []
   let dialects: Identifier[] = []
@@ -146,6 +147,9 @@ function parseGrammar(input: Input) {
     } else if (input.type == "at" && input.value == "tokens") {
       if (tokens) input.raise(`Multiple @tokens declaractions`, input.start)
       else tokens = parseTokens(input)
+    } else if (input.eat("at", "local")) {
+      input.expect("id", "tokens")
+      localTokens.push(parseLocalTokens(input, start))
     } else if (input.eat("at", "context")) {
       if (context) input.raise(`Multiple @context declarations`, start)
       let id = parseIdent(input)
@@ -193,7 +197,7 @@ function parseGrammar(input: Input) {
     }
   }
   if (!sawTop) return input.raise(`Missing @top declaration`)
-  return new GrammarDeclaration(start, rules, tops, tokens, context, external, specialized, propSources,
+  return new GrammarDeclaration(start, rules, tops, tokens, localTokens, context, external, specialized, propSources,
                                 prec, mainSkip, scopedSkip, dialects, props, autoDelim)
 }
 
@@ -430,6 +434,23 @@ function parseTokens(input: Input) {
     }
   }
   return new TokenDeclaration(start, precedences, conflicts, tokenRules, literals)
+}
+
+function parseLocalTokens(input: Input, start: number) {
+  input.expect("{")
+  let tokenRules: RuleDeclaration[] = []
+  let precedences: TokenPrecDeclaration[] = []
+  let fallback: {id: Identifier, props: readonly Prop[]} | null = null
+  while (!input.eat("}")) {
+    if (input.type == "at" && input.value == "precedence") {
+      precedences.push(parseTokenPrecedence(input))
+    } else if (input.eat("at", "else") && !fallback) {
+      fallback = {id: parseIdent(input), props: parseProps(input)}
+    } else {
+      tokenRules.push(parseRule(input))
+    }
+  }
+  return new LocalTokenDeclaration(start, precedences, tokenRules, fallback)
 }
 
 function parseTokenPrecedence(input: Input) {

@@ -1,0 +1,28 @@
+@top T { expr* }
+
+expr {
+ X { "x" } |
+ String { '"' (stringContent | Interpolation)* stringEnd }
+}
+
+Interpolation {
+  InterpolationStart expr InterpolationEnd
+}
+
+@local tokens {
+  stringEnd { '"' }
+  InterpolationStart { "{{" }
+  @else stringContent
+}
+
+@tokens {
+  InterpolationEnd { "}}" }
+}
+
+# Can parse else tokens
+
+"foo{{x}}bar{{x}}"
+
+==>
+
+T(String(Interpolation(InterpolationStart,X,InterpolationEnd),Interpolation(InterpolationStart,X,InterpolationEnd)))

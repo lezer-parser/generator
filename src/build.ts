@@ -1,5 +1,5 @@
-import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, ExternalTokenDeclaration,
-        ExternalSpecializeDeclaration,
+import {GrammarDeclaration, RuleDeclaration, TokenDeclaration, LocalTokenDeclaration,
+        ExternalTokenDeclaration, ExternalSpecializeDeclaration,
         Expression, Identifier, LiteralExpression, NameExpression, SequenceExpression,
         ChoiceExpression, RepeatExpression, SetExpression, AnyExpression, ConflictMarker,
         InlineRuleExpression, SpecializeExpression, Prop, PropPart, CharClass, CharClasses,
@@ -12,7 +12,7 @@ import {encodeArray} from "./encode"
 import {GenError} from "./error"
 import {verbose, time} from "./log"
 import {NodeProp, NodePropSource} from "@lezer/common"
-import {LRParser, ExternalTokenizer, Stack, ContextTracker} from "@lezer/lr"
+import {LRParser, ExternalTokenizer, LocalTokenGroup, Stack, ContextTracker} from "@lezer/lr"
 import {Action, Specialize, StateFlag, Seq, ParseState, File} from "@lezer/lr/dist/constants"
 
 const none: readonly any[] = []
@@ -105,12 +105,14 @@ class Builder {
   ast!: GrammarDeclaration
   input!: Input
   terms = new TermSet
-  tokens: TokenSet
+  tokens: MainTokenSet
+  localTokens: readonly LocalTokenSet[]
   externalTokens: ExternalTokenSet[]
   externalSpecializers: ExternalSpecializer[]
   specialized: {[name: string]: {value: string, name: string | null, term: Term, type: string, dialect: number | null}[]}
     = Object.create(null)
-  tokenOrigins: {[name: string]: {spec?: Term, external?: ExternalTokenSet | ExternalSpecializer}} = Object.create(null)
+  tokenOrigins: {[name: string]: {spec?: Term, external?: ExternalTokenSet | ExternalSpecializer,
+                                  group?: LocalTokenSet}} = Object.create(null)
   rules: Rule[] = []
   built: BuiltRule[] = []
   ruleNames: {[name: string]: Identifier | null} = Object.create(null)
@@ -146,7 +148,8 @@ class Builder {
 
     this.dialects = this.ast.dialects.map(d => d.name)
 
-    this.tokens = new TokenSet(this, this.ast.tokens)
+    this.tokens = new MainTokenSet(this, this.ast.tokens)
+    this.localTokens = this.ast.localTokens.map(g => new LocalTokenSet(this, g))
     this.externalTokens = this.ast.externalTokens.map(ext => new ExternalTokenSet(this, ext))
     this.externalSpecializers = this.ast.externalSpecializers.map(decl => new ExternalSpecializer(this, decl))
 
@@ -266,9 +269,11 @@ class Builder {
       return {skip, rule: rules.length ? name : null, startTokens, id}
     })
     let fullTable = time("Build full automaton", () => buildFullAutomaton(this.terms, startTerms, first))
+    let localTokens = this.localTokens
+      .map((grp, i) => grp.buildLocalGroup(fullTable, skipInfo, i))
     let {tokenGroups, tokenPrec, tokenData} =
-      time("Build token groups", () => this.tokens.buildTokenGroups(fullTable, skipInfo))
-    let table = time("Finish automaton", () => finishAutomaton(fullTable) as readonly LRState[])
+      time("Build token groups", () => this.tokens.buildTokenGroups(fullTable, skipInfo, localTokens.length))
+    let table = time("Finish automaton", () => finishAutomaton(fullTable))
     let skipState = findSkipStates(table, this.terms.tops)
 
     if (/\blr\b/.test(verbose)) console.log(table.join("\n"))
@@ -279,12 +284,14 @@ class Builder {
     for (let name in this.specialized)
       specialized.push({token: this.terms.names[name], table: buildSpecializeTable(this.specialized[name])})
 
-    let tokStart = (tokenizer: TokenGroup | ExternalTokenDeclaration) => {
-      if (tokenizer instanceof ExternalTokenDeclaration) return tokenizer.start
+    let tokStart = (tokenizer: TokenGroup | ExternalTokenSet) => {
+      if (tokenizer instanceof ExternalTokenSet) return tokenizer.ast.start
       return this.tokens.ast ? this.tokens.ast.start : -1
     }
-    let tokenizers = (tokenGroups as (TokenGroup | ExternalTokenDeclaration)[])
-      .concat(this.externalTokens.map(e => e.ast)).sort((a, b) => tokStart(a) - tokStart(b))
+    let tokenizers = ((tokenGroups as (TokenGroup | ExternalTokenSet)[])
+      .concat(this.externalTokens)
+      .sort((a, b) => tokStart(a) - tokStart(b)) as TokenizerSpec[])
+      .concat(localTokens)
 
     let data = new DataBuilder
     let skipData = skipInfo.map(info => {
@@ -353,7 +360,7 @@ class Builder {
       skippedTypes,
       maxTerm,
       repeatNodeCount,
-      tokenizers: rawTokenizers,
+      tokenizers,
       tokenData,
       topRules,
       dialects,
@@ -378,13 +385,7 @@ class Builder {
       }
     })
 
-    let tokenizers = rawTokenizers.map(tok => {
-      return tok instanceof ExternalTokenDeclaration
-        ? this.options.externalTokenizer!(tok.id.name, this.termTable)
-        : tok.id
-    })
-
-    return (LRParser as any).deserialize({
+    return LRParser.deserialize({
       version: File.Version,
       states,
       stateData,
@@ -397,7 +398,7 @@ class Builder {
         : this.ast.externalPropSources.map(s => this.options.externalPropSource!(s.id.name)),
       skippedNodes: skippedTypes,
       tokenData,
-      tokenizers,
+      tokenizers: tokenizers.map(tok => tok.create()),
       context: this.ast.context ? this.options.contextTracker : undefined,
       topRules,
       dialects,
@@ -457,14 +458,7 @@ class Builder {
     }
     let lrParser = importName("LRParser", "@lezer/lr")
 
-    let tokenizers = rawTokenizers.map(tok => {
-      if (tok instanceof ExternalTokenDeclaration) {
-        let {source, id: {name}} = tok
-        return importName(name, source, "tok")
-      } else {
-        return tok.id
-      }
-    })
+    let tokenizers = rawTokenizers.map(tok => tok.createSource(importName))
 
     let context = this.ast.context ? importName(this.ast.context.id.name, this.ast.context.source) : null
 
@@ -782,6 +776,10 @@ class Builder {
 
     let found = this.tokens.getToken(expr)
     if (found) return [p(found)]
+    for (let grp of this.localTokens) {
+      let found = grp.getToken(expr)
+      if (found) return [p(found)]
+    }
     for (let ext of this.externalTokens) {
       let found = ext.getToken(expr)
       if (found) return [p(found)]
@@ -1085,11 +1083,17 @@ const MinSharedActions = 5
 
 type SharedActions = {actions: readonly (Shift | Reduce)[], addr: number}
 
+interface TokenizerSpec {
+  groupID?: number,
+  create: () => any,
+  createSource: (importName: (name: string, source: string, prefix?: string) => string) => string
+}
+
 class FinishStateContext {
   sharedActions: SharedActions[] = []
 
   constructor(
-    readonly tokenizers: (TokenGroup | ExternalTokenDeclaration)[],
+    readonly tokenizers: TokenizerSpec[],
     readonly data: DataBuilder,
     readonly stateArray: Uint32Array,
     readonly skipData: readonly number[],
@@ -1161,21 +1165,20 @@ class FinishStateContext {
 
     if (state.set.some(p => p.rule.name.top && p.pos == p.rule.parts.length)) flags |= StateFlag.Accepting
 
-    let external: ExternalTokenDeclaration[] = []
+    let external: TokenizerSpec[] = []
     for (let i = 0; i < state.actions.length + skipTerms.length; i++) {
       let term = i < state.actions.length ? state.actions[i].term : skipTerms[i - state.actions.length]
       for (;;) {
         let orig = b.tokenOrigins[term.name]
         if (orig && orig.spec) { term = orig.spec; continue }
-        if (orig && (orig.external instanceof ExternalTokenSet)) addToSet(external, orig.external.ast)
+        if (orig && (orig.external instanceof ExternalTokenSet)) addToSet(external, orig.external)
         break
       }
     }
-    external.sort((a, b) => a.start - b.start)
     let tokenizerMask = 0
     for (let i = 0; i < this.tokenizers.length; i++) {
       let tok = this.tokenizers[i]
-      if (tok instanceof ExternalTokenDeclaration ? external.includes(tok) : tok.id == state.tokenGroup)
+      if (external.includes(tok) || tok.groupID == state.tokenGroup)
         tokenizerMask |= (1 << i)
     }
 
@@ -1319,8 +1322,10 @@ function computeGotoTable(states: readonly LRState[]) {
   return Uint16Array.from([maxTerm + 1, ...index, ...data.data])
 }
 
-class TokenGroup {
-  constructor(readonly tokens: Term[], readonly id: number) {}
+class TokenGroup implements TokenizerSpec {
+  constructor(readonly tokens: Term[], readonly groupID: number) {}
+  create() { return this.groupID }
+  createSource() { return String(this.groupID) }
 }
 
 function addToSet<T>(set: T[], value: T) {
@@ -1330,7 +1335,7 @@ function addToSet<T>(set: T[], value: T) {
 function buildTokenMasks(groups: TokenGroup[]) {
   let masks: {[id: number]: number} = Object.create(null)
   for (let group of groups) {
-    let groupMask = 1 << group.id
+    let groupMask = 1 << group.groupID
     for (let term of group.tokens) {
       masks[term.id] = (masks[term.id] || 0) | groupMask
     }
@@ -1357,11 +1362,10 @@ class TokenSet {
   rules: readonly RuleDeclaration[]
   byDialect: {[dialect: number]: Term[]} = Object.create(null)
   precedenceRelations: readonly {term: Term, after: readonly Term[]}[] = []
-  explicitConflicts: {a: Term, b: Term}[] = []
 
-  constructor(readonly b: Builder, readonly ast: TokenDeclaration | null) {
+  constructor(readonly b: Builder, readonly ast: TokenDeclaration | LocalTokenDeclaration | null) {
     this.rules = ast ? ast.rules : none
-    for (let rule of this.rules) this.b.unique(rule.id)
+    for (let rule of this.rules) b.unique(rule.id)
   }
 
   getToken(expr: NameExpression) {
@@ -1380,21 +1384,6 @@ class TokenSet {
     }
     this.buildRule(rule, expr, this.startState, new State([term]))
     this.built.push(new BuiltRule(name, expr.args, term))
-    return term
-  }
-
-  getLiteral(expr: LiteralExpression) {
-    let id = JSON.stringify(expr.value)
-    for (let built of this.built) if (built.id == id) return built.term
-    let name = null, props = {}, dialect = null, exported = null
-    let decl = this.ast ? this.ast.literals.find(l => l.literal == expr.value) : null
-    if (decl) ({name, props, dialect, exported} = this.b.nodeInfo(decl.props, "da", expr.value))
-
-    let term = this.b.makeTerminal(id, name, props)
-    if (dialect != null) (this.byDialect[dialect] || (this.byDialect[dialect] = [])).push(term)
-    if (exported) this.b.namedTerms[exported] = term
-    this.build(expr, this.startState, new State([term]), none)
-    this.built.push(new BuiltRule(id, none, term))
     return term
   }
 
@@ -1500,6 +1489,58 @@ class TokenSet {
     }
   }
 
+  precededBy(a: Term, b: Term) {
+    let found = this.precedenceRelations.find(r => r.term == a)
+    return found && found.after.includes(b)
+  }
+
+  buildPrecTable(softConflicts: readonly Conflict[]) {
+    let precTable: number[] = [], rel = this.precedenceRelations.slice()
+    // Add entries for soft-conflicting tokens that are in the
+    // precedence table, to make sure they'll appear in the right
+    // order and don't mess up the longer-wins default rule.
+    for (let {a, b, soft} of softConflicts) if (soft) {
+      if (!rel.some(r => r.term == a) || !rel.some(r => r.term == b)) continue
+      if (soft < 0) [a, b] = [b, a] // Now a is longer than b (and should thus take precedence)
+      addRel(rel, b, [a])
+      addRel(rel, a, [])
+    }
+    add: while (rel.length) {
+      for (let i = 0; i < rel.length; i++) {
+        let record = rel[i]
+        if (record.after.every(t => precTable.includes(t.id))) {
+          precTable.push(record.term.id)
+          if (rel.length == 1) break add
+          rel[i] = rel.pop()!
+          continue add
+        }
+      }
+      this.b.raise(`Cyclic token precedence relation between ${rel.map(r => r.term).join(", ")}`)
+    }
+
+    return precTable
+  }
+}
+
+class MainTokenSet extends TokenSet {
+  explicitConflicts: {a: Term, b: Term}[] = []
+  ast!: TokenDeclaration | null
+
+  getLiteral(expr: LiteralExpression) {
+    let id = JSON.stringify(expr.value)
+    for (let built of this.built) if (built.id == id) return built.term
+    let name = null, props = {}, dialect = null, exported = null
+    let decl = this.ast ? this.ast.literals.find(l => l.literal == expr.value) : null
+    if (decl) ({name, props, dialect, exported} = this.b.nodeInfo(decl.props, "da", expr.value))
+
+    let term = this.b.makeTerminal(id, name, props)
+    if (dialect != null) (this.byDialect[dialect] || (this.byDialect[dialect] = [])).push(term)
+    if (exported) this.b.namedTerms[exported] = term
+    this.build(expr, this.startState, new State([term]), none)
+    this.built.push(new BuiltRule(id, none, term))
+    return term
+  }
+
   takeConflicts() {
     let resolve = (expr: NameExpression | LiteralExpression) => {
       if (expr instanceof NameExpression) {
@@ -1518,11 +1559,6 @@ class TokenSet {
         this.explicitConflicts.push({a, b})
       }
     }
-  }
-
-  precededBy(a: Term, b: Term) {
-    let found = this.precedenceRelations.find(r => r.term == a)
-    return found && found.after.includes(b)
   }
 
   // Token groups are a mechanism for allowing conflicting (matching
@@ -1547,7 +1583,7 @@ class TokenSet {
   //
   // Extended/specialized tokens are treated as their parent token for
   // this purpose.
-  buildTokenGroups(states: readonly LRState[], skipInfo: readonly SkipInfo[]) {
+  buildTokenGroups(states: readonly LRState[], skipInfo: readonly SkipInfo[], startID: number) {
     let tokens = this.startState.compile()
     if (tokens.accepting.length)
       this.b.raise(`Grammar contains zero-length tokens (in '${tokens.accepting[0].name}')`,
@@ -1566,7 +1602,7 @@ class TokenSet {
 
     let groups: TokenGroup[] = []
     for (let state of states) {
-      if (state.defaultReduce) continue
+      if (state.defaultReduce || state.tokenGroup > -1) continue
       // Find potentially-conflicting terms (in terms) and the things
       // they conflict with (in conflicts), and raise an error if
       // there's a token conflict directly in this state.
@@ -1612,44 +1648,104 @@ class TokenSet {
         break
       }
       if (!tokenGroup) {
-        tokenGroup = new TokenGroup(terms, groups.length)
+        tokenGroup = new TokenGroup(terms, groups.length + startID)
         groups.push(tokenGroup)
       }
-      state.tokenGroup = tokenGroup.id
+      state.tokenGroup = tokenGroup.groupID
     }
 
     if (errors.length)
       this.b.raise(errors.map(e => e.error).join("\n\n"))
-    if (groups.length > 16)
+    if (groups.length + startID > 16)
       this.b.raise(`Too many different token groups (${groups.length}) to represent them as a 16-bit bitfield`)
 
-    let precTable: number[] = [], rel = this.precedenceRelations.slice()
-    // Add entries for soft-conflicting tokens that are in the
-    // precedence table, to make sure they'll appear in the right
-    // order and don't mess up the longer-wins default rule.
-    for (let {a, b, soft} of softConflicts) if (soft) {
-      if (!rel.some(r => r.term == a) || !rel.some(r => r.term == b)) continue
-      if (soft < 0) [a, b] = [b, a] // Now a is longer than b (and should thus take precedence)
-      addRel(rel, b, [a])
-      addRel(rel, a, [])
-    }
-    add: while (rel.length) {
-      for (let i = 0; i < rel.length; i++) {
-        let record = rel[i]
-        if (record.after.every(t => precTable.includes(t.id))) {
-          precTable.push(record.term.id)
-          if (rel.length == 1) break add
-          rel[i] = rel.pop()!
-          continue add
-        }
-      }
-      this.b.raise(`Cyclic token precedence relation between ${rel.map(r => r.term).join(", ")}`)
-    }
+    let precTable = this.buildPrecTable(softConflicts)
 
     return {
       tokenGroups: groups,
       tokenPrec: precTable.filter(id => allConflicts.some(c => !c.soft && (c.a.id == id || c.b.id == id))),
       tokenData: tokens.toArray(buildTokenMasks(groups), precTable)
+    }
+  }
+}
+
+class LocalTokenSet extends TokenSet {
+  fallback: Term | null = null
+  ast!: LocalTokenDeclaration
+
+  constructor(b: Builder, ast: LocalTokenDeclaration) {
+    super(b, ast)
+    if (ast.fallback) b.unique(ast.fallback.id)
+  }
+
+  getToken(expr: NameExpression) {
+    let term = null
+    if (this.ast.fallback && this.ast.fallback.id.name == expr.id.name) {
+      if (expr.args.length) this.b.raise(`Incorrect number of arguments for ${expr.id.name}`, expr.start)
+      if (!this.fallback) {
+        let {name: nodeName, props, exported} =
+          this.b.nodeInfo(this.ast.fallback.props, "", expr.id.name, none, none)
+        let term = this.fallback = this.b.makeTerminal(expr.id.name, nodeName, props)
+        if (term.nodeType || exported) {
+          if (!term.nodeType) term.preserve = true
+          this.b.namedTerms[exported || expr.id.name] = term
+        }
+        this.b.used(expr.id.name)
+      }
+      term = this.fallback
+    } else {
+      term = super.getToken(expr)
+    }
+    if (term && !this.b.tokenOrigins[term.name])
+      this.b.tokenOrigins[term.name] = {group: this}
+    return term
+  }
+
+  buildLocalGroup(states: readonly LRState[], skipInfo: readonly SkipInfo[], id: number): TokenizerSpec {
+    let tokens = this.startState.compile()
+    if (tokens.accepting.length)
+      this.b.raise(`Grammar contains zero-length tokens (in '${tokens.accepting[0].name}')`,
+                   this.rules.find(r => r.id.name == tokens.accepting[0].name)!.start)
+
+    for (let {a, b, exampleA} of tokens.findConflicts(() => true)) {
+      if (!this.precededBy(a, b) && !this.precededBy(b, a))
+        this.b.raise(`Overlapping tokens ${a.name} and ${b.name} in local token group${
+          exampleA ? ` (example: ${JSON.stringify(exampleA)})` : ''}`)
+    }
+
+    for (let state of states) {
+      if (state.defaultReduce) continue
+      // See if this state uses any of the tokens in this group, and
+      // if so, make sure it *only* uses tokens from this group.
+      let usesThis: Term | null = null
+      let usesOther: Term | undefined = skipInfo[this.b.skipRules.indexOf(state.skip)].startTokens[0]
+      for (let {term} of state.actions) {
+        let orig = this.b.tokenOrigins[term.name]
+        if (orig?.group == this) usesThis = term
+        else usesOther = term
+      }
+      if (usesThis) {
+        if (usesOther)
+          this.b.raise(`Tokens from a local token group used together with other tokens (${
+            usesThis.name} with ${usesOther.name})`)
+        state.tokenGroup = id
+      }
+    }
+
+    let precTable = this.buildPrecTable(none)
+    let tokenData = tokens.toArray({[id]: Seq.End}, precTable)
+    let precOffset = tokenData.length
+    let fullData = new Uint16Array(tokenData.length + precTable.length + 1)
+    fullData.set(tokenData, 0)
+    fullData.set(precTable, precOffset)
+    fullData[fullData.length - 1] = Seq.End
+
+    return {
+      groupID: id,
+      create: () => new LocalTokenGroup(fullData, precOffset, this.fallback ? this.fallback.id : undefined),
+      createSource: importName =>
+        `new ${importName("LocalTokenGroup", "@lezer/lr")}(${JSON.stringify(encodeArray(fullData))}, ${precOffset}${
+          this.fallback ? `, ${this.fallback.id}` : ''})`
     }
   }
 }
@@ -1750,7 +1846,7 @@ function addRel(rel: {term: Term, after: readonly Term[]}[], term: Term, after: 
   else rel[found] = {term, after: rel[found].after.concat(after)}
 }
 
-class ExternalTokenSet {
+class ExternalTokenSet implements TokenizerSpec {
   tokens: {[name: string]: Term}
 
   constructor(readonly b: Builder, readonly ast: ExternalTokenDeclaration) {
@@ -1760,6 +1856,15 @@ class ExternalTokenSet {
   }
 
   getToken(expr: NameExpression) { return findExtToken(this.b, this.tokens, expr) }
+
+  create() {
+    return this.b.options.externalTokenizer!(this.ast.id.name, this.b.termTable)
+  }
+
+  createSource(importName: (name: string, source: string, prefix?: string) => string) {
+    let {source, id: {name}} = this.ast
+    return importName(name, source)
+  }
 }
 
 class ExternalSpecializer {

@@ -1,0 +1,24 @@
+@top T { expr* }
+
+@skip { " " }
+
+expr {
+ X { "x" } |
+ String { '"' (stringContent | Interpolation)* stringEnd }
+}
+
+Interpolation {
+  InterpolationStart expr InterpolationEnd
+}
+
+@local tokens {
+  stringEnd { '"' }
+  InterpolationStart { "{{" }
+  @else stringContent
+}
+
+@tokens {
+  InterpolationEnd { "}}" }
+}
+
+//! Tokens from a local token group used together with other tokens (stringEnd with " ")
