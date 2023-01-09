@@ -1,3 +1,13 @@
+## 1.2.0 (2023-01-09)
+
+### Bug fixes
+
+Fix a bug where the error to use `()` to denote empty options in a choice expression was signalled even when that is what the input did.
+
+### New features
+
+Grammars can now declare `@local tokens` blocks defining all the tokens that may appear in a set of state, and allowing `@else` tokens that match everything else.
+
 ## 1.1.3 (2022-11-07)
 
 ### Bug fixes
