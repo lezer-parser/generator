@@ -1415,8 +1415,12 @@ class TokenSet {
     if (expr instanceof NameExpression) {
       let name = expr.id.name, arg = args.find(a => a.name == name)
       if (arg) return this.build(arg.expr, from, to, arg.scope)
-      let rule = this.rules.find(r => r.id.name == name)
-      if (!rule) return this.b.raise(`Reference to rule '${expr.id.name}', which isn't found in this token group`, expr.start)
+      let rule
+      for (let i = 0, lt = this.b.localTokens; i <= lt.length; i++) {
+        let set = i == lt.length ? this.b.tokens : lt[i]
+        rule = set.rules.find(r => r.id.name == name)
+      }
+      if (!rule) return this.b.raise(`Reference to token rule '${expr.id.name}', which isn't found`, expr.start)
       this.buildRule(rule, expr, from, to, args)
     } else if (expr instanceof CharClass) {
       for (let [a, b] of CharClasses[expr.type]) from.edge(a, b, to)
@@ -1744,7 +1748,7 @@ class LocalTokenSet extends TokenSet {
       groupID: id,
       create: () => new LocalTokenGroup(fullData, precOffset, this.fallback ? this.fallback.id : undefined),
       createSource: importName =>
-        `new ${importName("LocalTokenGroup", "@lezer/lr")}(${JSON.stringify(encodeArray(fullData))}, ${precOffset}${
+        `new ${importName("LocalTokenGroup", "@lezer/lr")}(${encodeArray(fullData)}, ${precOffset}${
           this.fallback ? `, ${this.fallback.id}` : ''})`
     }
   }
