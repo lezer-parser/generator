@@ -1,3 +1,9 @@
+## 1.2.1 (2023-01-13)
+
+### Bug fixes
+
+Fix an invalid optimization that sometimes led to incomplete token precedence tables, leading to incorrect tokenization.
+
 ## 1.2.0 (2023-01-09)
 
 ### Bug fixes
