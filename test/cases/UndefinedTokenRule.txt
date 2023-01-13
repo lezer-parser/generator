@@ -4,4 +4,4 @@
   X { y }
 }
 
-//! Reference to rule 'y'
+//! Reference to token rule 'y', which isn't found

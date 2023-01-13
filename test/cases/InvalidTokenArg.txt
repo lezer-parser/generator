@@ -8,4 +8,4 @@ foo<e> { token<e> }
   token<x> { x "!" }
 }
 
-//! isn't found in this token group
+//! Reference to token rule 'bar', which isn't found
