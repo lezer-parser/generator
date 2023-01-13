@@ -1667,7 +1667,7 @@ class MainTokenSet extends TokenSet {
 
     return {
       tokenGroups: groups,
-      tokenPrec: precTable.filter(id => allConflicts.some(c => !c.soft && (c.a.id == id || c.b.id == id))),
+      tokenPrec: precTable,
       tokenData: tokens.toArray(buildTokenMasks(groups), precTable)
     }
   }
