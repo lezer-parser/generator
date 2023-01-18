@@ -1,3 +1,9 @@
+## 1.2.2 (2023-01-18)
+
+### Bug fixes
+
+Make sure `require` isn't used as an identifier in generator output.
+
 ## 1.2.1 (2023-01-13)
 
 ### Bug fixes
