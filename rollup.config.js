@@ -1,3 +1,4 @@
+import path from 'node:path';
 import typescript from "rollup-plugin-typescript2"
 import {nodeResolve} from "@rollup/plugin-node-resolve"
 import commonjs from "@rollup/plugin-commonjs"
@@ -12,7 +13,9 @@ export default [{
     file: "./dist/index.js",
     externalLiveBindings: false
   }],
-  external(id) { return !/^[\.\/]/.test(id) },
+  external(id) { 
+    return !id.startsWith('.') && !path.isAbsolute(id);
+  },
   plugins: [
     nodeResolve(),
     typescript({

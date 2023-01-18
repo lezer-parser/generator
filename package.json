@@ -30,6 +30,7 @@
     "@rollup/plugin-commonjs": "^15.1.0",
     "@rollup/plugin-node-resolve": "^9.0.0",
     "rollup-plugin-typescript2": "^0.34.1",
+    "shx": "^0.3.4",
     "ts-node": "^10.0.0",
     "typescript": "^4.3.4"
   },
@@ -47,9 +48,9 @@
   "scripts": {
     "watch": "rollup -w -c rollup.config.js",
     "prepare": "npm run build:main && npm run build:bin && npm run build:test-helper",
-    "build:main": "rollup -c && mv dist/src/* dist/ && rm -rf dist/src dist/test",
+    "build:main": "rollup -c && shx mv dist/src/* dist/ && shx rm -rf dist/src dist/test",
     "build:bin": "rollup -c rollup.config.bin.js",
-    "build:test-helper": "tsc src/test.ts -d -m commonjs --outDir dist && mv dist/test.js dist/test.cjs && tsc --moduleResolution node -m es2015 src/test.ts --outDir dist",
+    "build:test-helper": "tsc src/test.ts -d -m commonjs --outDir dist && shx mv dist/test.js dist/test.cjs && tsc --moduleResolution node -m es2015 src/test.ts --outDir dist",
     "test": "mocha"
   },
   "bin": {
