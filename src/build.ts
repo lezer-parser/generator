@@ -1989,7 +1989,7 @@ const KEYWORDS = ["break", "case", "catch", "continue", "debugger", "default", "
                   "for", "function", "if", "return", "switch", "throw", "try", "var", "while", "with",
                   "null", "true", "false", "instanceof", "typeof", "void", "delete", "new", "in", "this",
                   "const", "class", "extends", "export", "import", "super", "enum", "implements", "interface",
-                  "let", "package", "private", "protected", "public", "static", "yield"]
+                  "let", "package", "private", "protected", "public", "static", "yield", "require"]
 
 /// Build the code that represents the parser tables for a given
 /// grammar description. The `parser` property in the return value
