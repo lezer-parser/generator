@@ -20,7 +20,7 @@
   },
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
-  "author": "Marijn Haverbeke <marijnh@gmail.com>",
+  "author": "Marijn Haverbeke <marijn@haverbeke.berlin>",
   "license": "MIT",
   "devDependencies": {
     "@types/mocha": "^5.2.6",
