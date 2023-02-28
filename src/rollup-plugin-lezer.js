@@ -1,6 +1,6 @@
 import {resolve, dirname} from "path"
 import {promises as fs} from "fs"
-import {buildParserFile} from ".."
+import {buildParserFile} from "@lezer/generator"
 
 export function lezer() {
   let built = Object.create(null)
