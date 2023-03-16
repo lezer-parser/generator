@@ -39,7 +39,8 @@ export default [{
     file: "./dist/rollup-plugin-lezer.cjs"
   }, {
     format: "es",
-    file: "./dist/rollup-plugin-lezer.js"
+    file: "./dist/rollup-plugin-lezer.js",
+    paths: id => /[\/]generator$/.test(id) ? "./index.js" : null
   }],
   external(id) { return true }
 }]
