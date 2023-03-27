@@ -4,7 +4,7 @@ let file = undefined, out = undefined, moduleStyle = "es", includeNames = false,
 
 let {writeFileSync, readFileSync} = require("fs")
 
-const usage = "Usage: build-parser [--cjs] [--names] [--noTerms] [--output outfile] [--export name] file"
+const usage = "Usage: lezer-generator [--cjs] [--names] [--noTerms] [--output outfile] [--export name] file"
 
 for (let i = 2; i < process.argv.length;) {
   let arg = process.argv[i++]
