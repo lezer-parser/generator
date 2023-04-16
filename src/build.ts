@@ -1634,8 +1634,12 @@ class MainTokenSet extends TokenSet {
             let example = conflict.exampleA ? ` (example: ${JSON.stringify(conflict.exampleA)}${
               conflict.exampleB ? ` vs ${JSON.stringify(conflict.exampleB)}` : ""})` : ""
             errors.push({
-              error: `Overlapping tokens ${term.name} and ${conflicting.name} used in same context${example}\n` +
-                `After: ${state.set[0].trail()}`,
+              error: 
+                `Overlapping tokens ${term.name} and ${conflicting.name} used in same context${example}\n` +
+                `After: ${state.set[0].trail()}\n` + 
+                `You may resolve this conflict by declaring a \`@precedence rule\`, `+
+                `(example: \`@precedence { ${term.name}, ${conflicting.name} }\`) ` + 
+                `or adjusting the character sets that ${term.name} and ${conflicting.name} consist of.`,
               conflict
             })
           }
