@@ -1,3 +1,11 @@
+## 1.2.3 (2023-04-28)
+
+### Bug fixes
+
+Make sure the Rollup plugin imports the rest of the library using a full file path.
+
+Make `--help` show the correct executable name.
+
 ## 1.2.2 (2023-01-18)
 
 ### Bug fixes
