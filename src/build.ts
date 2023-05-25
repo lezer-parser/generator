@@ -218,6 +218,7 @@ class Builder {
 
     this.tokens.takePrecedences()
     this.tokens.takeConflicts()
+    for (let lt of this.localTokens) lt.takePrecedences()
 
     for (let {name, group, rule} of this.definedGroups) this.defineGroup(name, group, rule)
     this.checkGroups()
