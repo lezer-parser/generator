@@ -1,3 +1,9 @@
+## 1.2.4 (2023-06-12)
+
+### Bug fixes
+
+Fix a bug where precedences specified for local tokens were not properly applied.
+
 ## 1.2.3 (2023-04-28)
 
 ### Bug fixes
