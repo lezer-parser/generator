@@ -9,6 +9,10 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./test": {
+      "import": "./dist/test.js",
+      "require": "./dist/test.cjs"
+    },
     "./dist/test": {
       "import": "./dist/test.js",
       "require": "./dist/test.cjs"
