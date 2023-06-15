@@ -1,3 +1,9 @@
+## 1.3.0 (2023-06-15)
+
+### New features
+
+The test utilities can now be imported as `"@lezer/generator/test"`.
+
 ## 1.2.4 (2023-06-12)
 
 ### Bug fixes
