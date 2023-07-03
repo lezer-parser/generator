@@ -1,0 +1,26 @@
+@top T { "a"* }
+
+@skip { LineComment | space | BlockComment }
+
+@skip {} {
+  BlockComment { "/*" blockCommentContent* blockCommentEnd }
+}
+
+@local tokens {
+  blockCommentEnd { "*/" }
+  @else blockCommentContent
+}
+
+@tokens {
+  LineComment { "//" ![\n]* }
+  space { @whitespace+ }
+}
+
+# Properly terminates unfinished skipped terms
+
+// Line
+/* Block
+
+==>
+
+T(LineComment, BlockComment(⚠))
