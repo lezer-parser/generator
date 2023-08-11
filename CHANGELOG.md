@@ -1,3 +1,9 @@
+## 1.4.0 (2023-08-11)
+
+### New features
+
+`BuildOptions.contextTracker` now takes a function, so that the code that produces it has access to the term IDs.
+
 ## 1.3.0 (2023-06-15)
 
 ### New features
