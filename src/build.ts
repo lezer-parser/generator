@@ -96,7 +96,7 @@ export type BuildOptions = {
   externalProp?: (name: string) => NodeProp<any>
   /// If given, will be used as context tracker in a parser built with
   /// `buildParser`.
-  contextTracker?: ContextTracker<any>
+  contextTracker?: ContextTracker<any> | ((terms: {[name: string]: number}) => ContextTracker<any>)
 }
 
 type SkipInfo = {skip: readonly Term[], rule: Term | null, startTokens: readonly Term[], id: number}
@@ -400,7 +400,9 @@ class Builder {
       skippedNodes: skippedTypes,
       tokenData,
       tokenizers: tokenizers.map(tok => tok.create()),
-      context: this.ast.context ? this.options.contextTracker : undefined,
+      context: !this.ast.context ? undefined
+        : typeof this.options.contextTracker == "function" ? this.options.contextTracker(this.termTable)
+        : this.options.contextTracker,
       topRules,
       dialects,
       dynamicPrecedences,
