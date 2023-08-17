@@ -1,3 +1,9 @@
+## 1.4.2 (2023-08-17)
+
+### Bug fixes
+
+Fix a regression in the build process that caused the Rollup plugin to not be part of the npm package.
+
 ## 1.4.1 (2023-08-17)
 
 ### Bug fixes
