@@ -1,6 +1,8 @@
 import {build, watch} from "@marijn/buildtool"
 import {fileURLToPath} from "url"
 import {dirname, join} from "path"
+import {readFileSync, writeFileSync, mkdirSync} from "fs"
+import {rollup} from "rollup"
 
 let tsOptions = {
   lib: ["dom", "es2016"],
@@ -8,9 +10,23 @@ let tsOptions = {
   target: "es6"
 }
 
-let src = join(dirname(fileURLToPath(import.meta.url)), "src")
+let base = dirname(fileURLToPath(import.meta.url)), src = join(base, "src"), dist = join(base, "dist")
 let main = join(src, "index.ts"), mainConf = {tsOptions}
 let test = join(src, "test.ts"), testConf = {tsOptions, bundleName: "test"}
+
+let rollupFile = join(src, "rollup-plugin-lezer.js")
+try { mkdirSync(dist) } catch {}
+
+writeFileSync(join(dist, "rollup-plugin-lezer.js"), readFileSync(rollupFile, "utf8"))
+rollup({
+  input: rollupFile,
+  external: () => true
+}).then(bundle => bundle.generate({
+  format: "cjs",
+  file: join(dist, "rollup-plugin-lezer.cjs")
+})).then(result => {
+  writeFileSync(join(dist, "rollup-plugin-lezer.cjs"), result.output[0].code)
+})
 
 if (process.argv.includes("--watch")) {
   watch([main], [], mainConf)
