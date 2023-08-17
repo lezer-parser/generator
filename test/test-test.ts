@@ -33,7 +33,7 @@ bbbb
 
     try {
       fileTests(content, file)
-    } catch (err) {
+    } catch (err: any) {
       if (err.message !== expectedError) {
         throw err;
       }

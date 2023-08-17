@@ -1,4 +1,5 @@
 /node_modules/
 .tern-*
 /dist
+/test/*.js
 /.rpt2_cache

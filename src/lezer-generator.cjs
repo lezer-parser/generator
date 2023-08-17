@@ -1,8 +1,9 @@
-import {buildParserFile, GenError} from ".."
+#!/usr/bin/env node
+const {buildParserFile, GenError} = require("..")
 
 let file = undefined, out = undefined, moduleStyle = "es", includeNames = false, exportName = undefined, noTerms = false
 
-let {writeFileSync, readFileSync} = require("fs")
+const {writeFileSync, readFileSync} = require("fs")
 
 const usage = "Usage: lezer-generator [--cjs] [--names] [--noTerms] [--output outfile] [--export name] file"
 
@@ -32,7 +33,7 @@ for (let i = 2; i < process.argv.length;) {
 
 if (!file) error("No input file given")
 
-function error(msg: string) {
+function error(msg) {
   console.error(msg)
   console.log(usage)
   process.exit(1)

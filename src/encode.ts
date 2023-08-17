@@ -25,7 +25,7 @@ export function encode(value: number, max = 0xffff) {
   if (value > max) throw new Error("Trying to encode a number that's too big: " + value)
   if (value == Encode.BigVal) return String.fromCharCode(Encode.BigValCode)
   let result = ""
-  for (let first = Encode.Base;; first = 0) {
+  for (let first = Encode.Base;; first = 0 as Encode) {
     let low = value % Encode.Base, rest = value - low
     result = digitToChar(low + first) + result
     if (rest == 0) break
