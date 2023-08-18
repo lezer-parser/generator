@@ -490,7 +490,7 @@ class Builder {
         let tableName = getName("spec_" + v.token.name.replace(/\W/g, ""))
         defined[tableName] = true
         specHead += `const ${tableName} = ${specializationTableString(v.table)}\n`
-        return `{term: ${v.token.id}, get: value => ${tableName}[value] || -1}`
+        return `{term: ${v.token.id}, get: (value${ts}) => ${tableName}[value] || -1}`
       }
     })
 
