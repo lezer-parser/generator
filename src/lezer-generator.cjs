@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 const {buildParserFile, GenError} = require("..")
 
-let file = undefined, out = undefined, moduleStyle = "es", includeNames = false, exportName = undefined, noTerms = false
+let file = undefined, out = undefined, moduleStyle = "es", includeNames = false, exportName = undefined, noTerms = false, typeScript = false
 
 const {writeFileSync, readFileSync} = require("fs")
 
-const usage = "Usage: lezer-generator [--cjs] [--names] [--noTerms] [--output outfile] [--export name] file"
+const usage = "Usage: lezer-generator [--cjs] [--names] [--noTerms] [--typeScript] [--output outfile] [--export name] file"
 
 for (let i = 2; i < process.argv.length;) {
   let arg = process.argv[i++]
@@ -26,6 +26,8 @@ for (let i = 2; i < process.argv.length;) {
     exportName = process.argv[i++]
   } else if (arg == "--noTerms") {
     noTerms = true
+  } else if (arg == "--typeScript") {
+    typeScript = true
   } else {
     error("Unrecognized option " + arg)
   }
@@ -41,7 +43,9 @@ function error(msg) {
 
 let parser, terms
 try {
-  ;({parser, terms} = buildParserFile(readFileSync(file, "utf8"), {fileName: file, moduleStyle, includeNames, exportName}))
+  ;({parser, terms} = buildParserFile(readFileSync(file, "utf8"), {
+    fileName: file, moduleStyle, includeNames, exportName, typeScript
+  }))
 } catch (e) {
   console.error(e instanceof GenError ? e.message : e.stack)
   process.exit(1)
@@ -49,7 +53,8 @@ try {
 
 if (out) {
   let ext = /^(.*)\.(c?js|mjs|ts|esm?)$/.exec(out)
-  let [parserFile, termFile] = ext ? [out, ext[1] + ".terms." + ext[2]] : [out + ".js", out + ".terms.js"]
+  let outExt = typeScript ? "ts" : "js"
+  let [parserFile, termFile] = ext ? [out, ext[1] + ".terms." + ext[2]] : [out + "." + outExt, out + ".terms." + outExt]
   writeFileSync(parserFile, parser)
   if (!noTerms) writeFileSync(termFile, terms)
   console.log(`Wrote ${parserFile}${noTerms ? "" : ` and ${termFile}`}`)
