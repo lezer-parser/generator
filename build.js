@@ -23,7 +23,8 @@ rollup({
   external: () => true
 }).then(bundle => bundle.generate({
   format: "cjs",
-  file: join(dist, "rollup-plugin-lezer.cjs")
+  file: join(dist, "rollup-plugin-lezer.cjs"),
+  paths: id => id.endsWith("/index.js") ? "./index.cjs" : id
 })).then(result => {
   writeFileSync(join(dist, "rollup-plugin-lezer.cjs"), result.output[0].code)
 })
