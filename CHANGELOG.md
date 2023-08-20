@@ -1,3 +1,13 @@
+## 1.5.0 (2023-08-20)
+
+### Bug fixes
+
+Fix a build issue that made the ES version of the Rollup plugin fail to load.
+
+### New features
+
+The new `typeScript` option to `buildParserFile` (and `--typeScript` option to lezer-generator) makes the tool emit TypeScript code.
+
 ## 1.4.2 (2023-08-17)
 
 ### Bug fixes
