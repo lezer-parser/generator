@@ -176,6 +176,23 @@ function hashPositions(set: readonly Pos[]) {
 export class State {
   actions: (Shift | Reduce)[] = []
   actionPositions: (readonly Pos[])[] = []
+
+  private actionsMapCache: {[termHash: number]: (Shift | Reduce)[]} | undefined;
+
+  // Only use after all mutations to this.actions are complete
+  filterByTermHash(termHash: number) {
+    if (this.actionsMapCache == null) {
+      this.actionsMapCache={}
+      for(const action of this.actions) {
+        if( this.actionsMapCache[action.term.hash] == null) {
+          this.actionsMapCache[action.term.hash] = []
+        }
+        this.actionsMapCache[action.term.hash].push(action);
+      }
+    }
+    return this.actionsMapCache[termHash] ?? []
+  }
+
   goto: Shift[] = []
   tokenGroup: number = -1
   defaultReduce: Rule | null = null
@@ -486,7 +503,8 @@ function canMergeInner(a: State, b: State, mapping: readonly number[]) {
   }
   actions: for (let action of a.actions) {
     let conflict = false
-    for (let other of b.actions) if (other.term == action.term) {
+    const matchingActions = b.filterByTermHash(action.term.hash);
+    for (let other of matchingActions) if (other.term == action.term) {
       if (action instanceof Shift
           ? other instanceof Shift && mapping[action.target.id] == mapping[other.target.id]
           : other.eq(action)) continue actions
