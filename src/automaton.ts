@@ -502,15 +502,13 @@ function canMerge(a: State, b: State, mapping: readonly number[]) {
     if (goto.term == other.term && mapping[goto.target.id] != mapping[other.target.id]) return false
   }
   actions: for (let action of a.actions) {
-    let conflict = false
     const matchingActions = b.filterByTermHash(action.term.hash);
     for (let other of matchingActions) if (other.term == action.term) {
       if (action instanceof Shift
           ? other instanceof Shift && mapping[action.target.id] == mapping[other.target.id]
           : other.eq(action)) continue actions
-      conflict = true
+      return false
     }
-    if (conflict) return false
   }
   return true
 }
