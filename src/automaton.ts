@@ -179,20 +179,6 @@ export class State {
 
   private actionsMapCache: {[termHash: number]: (Shift | Reduce)[]} | undefined;
 
-  // Only use after all mutations to this.actions are complete
-  filterByTermHash(termHash: number) {
-    if (this.actionsMapCache == null) {
-      this.actionsMapCache={}
-      for(const action of this.actions) {
-        if( this.actionsMapCache[action.term.hash] == null) {
-          this.actionsMapCache[action.term.hash] = []
-        }
-        this.actionsMapCache[action.term.hash].push(action);
-      }
-    }
-    return this.actionsMapCache[termHash] ?? []
-  }
-
   goto: Shift[] = []
   tokenGroup: number = -1
   defaultReduce: Rule | null = null
@@ -262,6 +248,20 @@ export class State {
 
   hasSet(set: readonly Pos[]) {
     return eqSet(this.set, set)
+  }
+
+  // Only use after all mutations to this.actions are complete
+  filterByTerm(term: Term) {
+    if (this.actionsMapCache == null) {
+      this.actionsMapCache={}
+      for(const action of this.actions) {
+        if( this.actionsMapCache[action.term.hash] == null) {
+          this.actionsMapCache[action.term.hash] = []
+        }
+        this.actionsMapCache[action.term.hash].push(action);
+      }
+    }
+    return this.actionsMapCache[term.hash] ?? []
   }
 
   finish() {
@@ -502,7 +502,7 @@ function canMerge(a: State, b: State, mapping: readonly number[]) {
     if (goto.term == other.term && mapping[goto.target.id] != mapping[other.target.id]) return false
   }
   actions: for (let action of a.actions) {
-    const matchingActions = b.filterByTermHash(action.term.hash);
+    const matchingActions = b.filterByTerm(action.term);
     for (let other of matchingActions) if (other.term == action.term) {
       if (action instanceof Shift
           ? other instanceof Shift && mapping[action.target.id] == mapping[other.target.id]
