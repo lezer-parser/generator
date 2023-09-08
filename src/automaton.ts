@@ -392,6 +392,7 @@ function findConflictOrigin(a: Pos, b: Pos) {
 // Builds a full LR(1) automaton
 export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[name: string]: Term[]}) {
   let states: State[] = []
+  let statesBySetHash: {[hash: number]: State[]} = {}
   let cores: {[hash: number]: Core[]} = {}
   let t0 = Date.now()
   function getState(core: readonly Pos[], top?: Term) {
@@ -409,9 +410,13 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
 
     let set = closure(core, first)
     let hash = hashPositions(set), found
-    if (!top) for (let state of states) if (state.hash == hash && state.hasSet(set)) found = state
+    if (!top) for (let state of statesBySetHash[hash] ?? []) if (state.hash == hash && state.hasSet(set)) found = state
     if (!found) {
       found = new State(states.length, set, 0, skip!, hash, top)
+      if(statesBySetHash[hash] == null) {
+        statesBySetHash[hash] = []
+      }
+      statesBySetHash[hash].push(found)
       states.push(found)
       if (timing && states.length % 500 == 0)
         console.log(`${states.length} states after ${((Date.now() - t0) / 1000).toFixed(2)}s`)
