@@ -253,9 +253,9 @@ export class State {
   // Only use after all mutations to this.actions are complete
   filterByTerm(term: Term) {
     if (this.actionsMapCache == null) {
-      this.actionsMapCache={}
-      for(const action of this.actions) {
-        if( this.actionsMapCache[action.term.hash] == null) {
+      this.actionsMapCache = {}
+      for (const action of this.actions) {
+        if (this.actionsMapCache[action.term.hash] == null) {
           this.actionsMapCache[action.term.hash] = []
         }
         this.actionsMapCache[action.term.hash].push(action);
@@ -502,20 +502,26 @@ function applyCut(set: readonly Pos[]): readonly Pos[] {
   return found || set
 }
 
-function canMerge(a: State, b: State, mapping: readonly number[]) {
+function canMergeInner(a: State, b: State, mapping: readonly number[]) {
   for (let goto of a.goto) for (let other of b.goto) {
     if (goto.term == other.term && mapping[goto.target.id] != mapping[other.target.id]) return false
   }
   actions: for (let action of a.actions) {
+    let conflict = false
     const matchingActions = b.filterByTerm(action.term);
     for (let other of matchingActions) if (other.term == action.term) {
       if (action instanceof Shift
           ? other instanceof Shift && mapping[action.target.id] == mapping[other.target.id]
           : other.eq(action)) continue actions
-      return false
+      conflict = true
     }
+    if (conflict) return false
   }
   return true
+}
+
+function canMerge(a: State, b: State, mapping: readonly number[]) {
+  return canMergeInner(a, b, mapping) && canMergeInner(b, a, mapping)
 }
 
 function mergeStates(states: readonly State[], mapping: readonly number[]) {
