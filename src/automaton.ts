@@ -142,6 +142,10 @@ export class Shift {
 
   cmp(other: Shift | Reduce): number { return other instanceof Reduce ? -1 : this.term.id - other.term.id || this.target.id - other.target.id }
 
+  matches(other: Shift | Reduce, mapping: readonly number[]) {
+    return other instanceof Shift && mapping[other.target.id] == mapping[this.target.id]
+  }
+
   toString() { return "s" + this.target.id }
 
   map(mapping: readonly number[], states: readonly State[]) {
@@ -160,6 +164,10 @@ export class Reduce {
   cmp(other: Shift | Reduce): number {
     return other instanceof Shift ? 1 : this.term.id - other.term.id || this.rule.name.id - other.rule.name.id ||
       this.rule.parts.length - other.rule.parts.length
+  }
+
+  matches(other: Shift | Reduce, mapping: readonly number[]) {
+    return other instanceof Reduce && other.rule.sameReduce(this.rule)
   }
 
   toString() { return `${this.rule.name.name}(${this.rule.parts.length})` }
@@ -245,6 +253,18 @@ export class State {
 
   hasSet(set: readonly Pos[]) {
     return eqSet(this.set, set)
+  }
+
+  _actionsByTerm: null | {[id: number]: (Shift | Reduce)[]} = null
+
+  actionsByTerm() {
+    let result = this._actionsByTerm
+    if (!result) {
+      this._actionsByTerm = result = Object.create(null) as {[id: number]: (Shift | Reduce)[]}
+      for (let action of this.actions)
+        (result[action.term.id] || (result[action.term.id] = [])).push(action)
+    }
+    return result
   }
 
   finish() {
@@ -482,25 +502,28 @@ function applyCut(set: readonly Pos[]): readonly Pos[] {
   return found || set
 }
 
-function canMergeInner(a: State, b: State, mapping: readonly number[]) {
+// Verify that there are no conflicting actions or goto entries in the
+// two given states (using the state ID remapping provided in mapping)
+function canMerge(a: State, b: State, mapping: readonly number[]) {
+  // If a goto for the same term differs, that makes the states
+  // incompatible
   for (let goto of a.goto) for (let other of b.goto) {
     if (goto.term == other.term && mapping[goto.target.id] != mapping[other.target.id]) return false
   }
-  actions: for (let action of a.actions) {
-    let conflict = false
-    for (let other of b.actions) if (other.term == action.term) {
-      if (action instanceof Shift
-          ? other instanceof Shift && mapping[action.target.id] == mapping[other.target.id]
-          : other.eq(action)) continue actions
-      conflict = true
+  // If there is an action where a conflicting action exists in the
+  // other state, the merge is only allowed when both states have the
+  // exact same set of actions for this term.
+  let byTerm = b.actionsByTerm()
+  for (let action of a.actions) {
+    let setB = byTerm[action.term.id]
+    if (setB && setB.some(other => !other.matches(action, mapping))) {
+      if (setB.length == 1) return false
+      let setA = a.actionsByTerm()[action.term.id]
+      if (setA.length != setB.length || setA.some(a1 => !setB.some(a2 => a1.matches(a2, mapping))))
+        return false
     }
-    if (conflict) return false
   }
   return true
-}
-
-function canMerge(a: State, b: State, mapping: readonly number[]) {
-  return canMergeInner(a, b, mapping) && canMergeInner(b, a, mapping)
 }
 
 function mergeStates(states: readonly State[], mapping: readonly number[]) {
