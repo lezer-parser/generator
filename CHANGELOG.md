@@ -1,3 +1,9 @@
+## 1.5.1 (2023-09-15)
+
+### Bug fixes
+
+Fix a quadratic complexity in state merging.
+
 ## 1.5.0 (2023-08-20)
 
 ### Bug fixes
