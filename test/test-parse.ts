@@ -1,5 +1,5 @@
 import {buildParser, BuildOptions} from "../dist/index.js"
-import {Tree, TreeFragment, NodeProp, parseMixed, SyntaxNode} from "@lezer/common"
+import {Tree, TreeFragment, NodeIterator, NodeProp, parseMixed, SyntaxNode} from "@lezer/common"
 import {LRParser, ParserConfig} from "@lezer/lr"
 // @ts-ignore
 import {testTree} from "../dist/test.js"
@@ -466,16 +466,17 @@ describe("mixed languages", () => {
     ist(shared(ast1, ast2), 90, ">")
   })
 
+  let templateParser = p(`
+    @top Doc { (Dir | Content | Block)* }
+    Dir { "{{" Word "}}" }
+    Block { "{%" (Dir | Content)* "%}" }
+    @tokens {
+      Content { ![{%]+ }
+      Word { $[a-z]+ }
+    }`)
+
   it("can create overlays", () => {
-    let outer = buildParser(`
-      @top Doc { (Dir | Content)* }
-      Dir { "{{" Word "}}" }
-      @tokens {
-        Content { (![{] | "{" ![{])+ }
-        Word { $[a-z]+ }
-      }
-    `)
-    let mix = outer.configure({
+    let mix = templateParser().configure({
       wrap: parseMixed(node => {
         return node.name == "Doc" ? {
           parser: blob(),
@@ -492,7 +493,7 @@ describe("mixed languages", () => {
     ist(c1.parent!.name, "Doc")
     ist(tree.resolveInner(10, 1).name, "Blob")
 
-    let mix2 = outer.configure({
+    let mix2 = templateParser().configure({
       wrap: parseMixed(node => {
         return node.name == "Doc" ? {
           parser: blob(),
@@ -505,6 +506,28 @@ describe("mixed languages", () => {
     ist(c2.name, "Blob")
     ist(c2.from, 5)
     ist(c2.to, 7)
+  })
+
+  it("can resolve a stack", () => {
+    let parens = buildParser(`
+      @top T { (Text | Group)* }
+      Group { "(" (Text | Group)* ")" }
+      @tokens { Text { ![()]+ } }`)
+    let mix = templateParser().configure({
+      wrap: parseMixed(node => node.type.isTop ? {parser: parens, overlay: n => n.name == "Content"} : null)
+    })
+    let trail = (stack: NodeIterator | null) => {
+      let result = []
+      for (; stack; stack = stack.next) result.push(stack.node.name)
+      return result.join(" ")
+    }
+    for (let i = 0; i < 2; i++) {
+      let parser = i ? mix.configure({bufferLength: 2}) : mix
+      let ast = parser.parse("(hey{%okay(one)two%}three)!")
+      ist(trail(ast.resolveStack(12)), "Text Group Content Block Group T Doc")
+      ist(trail(ast.resolveStack(2)), "Content Text Group T Doc")
+      ist(trail(ast.resolveStack(5)), "Text Block Group Doc T")
+    }
   })
 
   it("reuses ranges from previous parses", () => {
