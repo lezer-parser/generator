@@ -475,7 +475,7 @@ class Builder {
     })
 
     function specializationTableString(table: {[name: string]: number}) {
-      return "{__proto__:null," + Object.keys(table).map(key => `${/\W/.test(key) ? JSON.stringify(key) : key}:${table[key]}`)
+      return "{__proto__:null," + Object.keys(table).map(key => `${/\W/.test(key) || /^0_\d.*/.test(key) ? JSON.stringify(key) : key}:${table[key]}`)
         .join(", ") + "}"
     }
 
