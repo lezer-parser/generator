@@ -469,7 +469,7 @@ describe("mixed languages", () => {
   let templateParser = p(`
     @top Doc { (Dir | Content | Block)* }
     Dir { "{{" Word "}}" }
-    Block { "{%" (Dir | Content)* "%}" }
+    Block { "{%" BlockContent { (Dir | Content)* } "%}" }
     @tokens {
       Content { ![{%]+ }
       Word { $[a-z]+ }
@@ -508,6 +508,17 @@ describe("mixed languages", () => {
     ist(c2.to, 7)
   })
 
+  it("adds a mount even for empty nodes", () => {
+    let inner = p("@top E { tok? } @tokens { tok { \" \"+ } }")()
+    let mix = templateParser().configure({
+      wrap: parseMixed(node => {
+        return node.name == "BlockContent" ? {parser: inner} : null
+      })
+    })
+    let ast = mix.parse("a{%%}b{% %}")
+    testTree(ast, "Doc(Content,Block(E),Content,Block(E))")
+  })
+
   it("can resolve a stack", () => {
     let parens = buildParser(`
       @top T { (Text | Group)* }
@@ -524,7 +535,7 @@ describe("mixed languages", () => {
     for (let i = 0; i < 2; i++) {
       let parser = i ? mix.configure({bufferLength: 2}) : mix
       let ast = parser.parse("(hey{%okay(one)two%}three)!")
-      ist(trail(ast.resolveStack(12)), "Text Group Content Block Group T Doc")
+      ist(trail(ast.resolveStack(12)), "Text Group Content BlockContent Block Group T Doc")
       ist(trail(ast.resolveStack(2)), "Content Text Group T Doc")
       ist(trail(ast.resolveStack(5)), "Text Block Group Doc T")
     }
