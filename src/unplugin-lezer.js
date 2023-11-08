@@ -1,12 +1,14 @@
+import { createUnplugin } from "unplugin"
+
 import {resolve, dirname} from "path"
 import {promises as fs} from "fs"
 import {buildParserFile} from "./index.js"
 
-export function lezer() {
+export const unpluginLezer = createUnplugin(() => {
   let built = Object.create(null)
 
   return {
-    name: "rollup-plugin-lezer",
+    name: 'unplugin-lezer',
 
     resolveId(source, importer) {
       let m = /^(.*\.grammar)(\.terms)?$/.exec(source)
@@ -32,6 +34,8 @@ export function lezer() {
       if (built[id]) built[id] = null
     }
   }
-}
+})
 
-export const rollup = lezer
+// For backwards compatibility
+export const lezer = unpluginLezer.rollup
+export const rollup = unpluginLezer.rollup
