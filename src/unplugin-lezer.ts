@@ -27,7 +27,7 @@ export const unpluginLezer = createUnplugin(() => {
         moduleStyle: "es",
         warn: message => this.warn(message)
       })))
-      return build.then(result => m[2] ? result.terms : result.parser)
+      return build.then((result: ReturnType<typeof buildParserFile>) => m?.[2] ? result.terms : result.parser)
     },
 
     watchChange(id) {

@@ -1,6 +1,6 @@
 import {Term, union} from "./grammar"
 import {GenError} from "./error"
-import {Seq} from "@lezer/lr/dist/constants"
+import {Seq} from "@lezer/lr"
 
 export const MAX_CHAR = 0xffff
 

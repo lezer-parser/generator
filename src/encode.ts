@@ -12,7 +12,7 @@
 //
 // - The digits in a number are ordered from high to low significance.
 
-import {Encode} from "@lezer/lr/dist/constants"
+import {Encode} from "@lezer/lr"
 
 function digitToChar(digit: number) {
   let ch = digit + Encode.Start

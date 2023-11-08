@@ -12,8 +12,7 @@ import {encodeArray} from "./encode"
 import {GenError} from "./error"
 import {verbose, time} from "./log"
 import {NodeProp, NodePropSource} from "@lezer/common"
-import {LRParser, ExternalTokenizer, LocalTokenGroup, Stack, ContextTracker} from "@lezer/lr"
-import {Action, Specialize, StateFlag, Seq, ParseState, File} from "@lezer/lr/dist/constants"
+import {LRParser, ExternalTokenizer, LocalTokenGroup, Stack, ContextTracker, Action, Specialize, StateFlag, Seq, ParseState, File} from "@lezer/lr"
 
 const none: readonly any[] = []
 

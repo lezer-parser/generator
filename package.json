@@ -18,12 +18,24 @@
       "require": "./dist/test.cjs"
     },
     "./rollup": {
-      "import": "./dist/unplugin-lezer.js",
-      "require": "./dist/unplugin-lezer.cjs"
+      "import": {
+        "types": "./dist/unplugin.d.ts",
+        "default": "./dist/unplugin.js"
+      },
+      "require": {
+        "types": "./dist/unplugin.d.cts",
+        "default": "./dist/unplugin.cjs"
+      }
     },
-    "./unplugin": {
-      "import": "./dist/unplugin-lezer.js",
-      "require": "./dist/unplugin-lezer.cjs"
+    "./dist/unplugin": {
+      "import": {
+        "types": "./dist/unplugin.d.ts",
+        "default": "./dist/unplugin.js"
+      },
+      "require": {
+        "types": "./dist/unplugin.d.cts",
+        "default": "./dist/unplugin.cjs"
+      }
     }
   },
   "module": "dist/index.js",
@@ -35,9 +47,9 @@
     "@marijn/buildtool": "^0.1.6",
     "@types/mocha": "^5.2.6",
     "@types/node": "^20.5.0",
-    "esbuild": "0.19.5",
     "ist": "^1.1.1",
     "mocha": "^10.2.0",
+    "tsup": "^7.2.0",
     "unplugin": "^1.5.0"
   },
   "dependencies": {
