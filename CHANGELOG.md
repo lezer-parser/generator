@@ -1,3 +1,15 @@
+## 1.6.0 (2024-01-08)
+
+### Bug fixes
+
+Fix an issue where the generator could output invalid JavaScript when a specialization used a string that started with a number.
+
+Adjust TypeScript output to compile with recent tsc versions. Add a test for zero-length node mounts
+
+### New features
+
+Support an `exportName` option to the Rollup plugin.
+
 ## 1.5.1 (2023-09-15)
 
 ### Bug fixes
