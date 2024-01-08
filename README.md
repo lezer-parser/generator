@@ -22,4 +22,6 @@ export default {
 }
 ```
 
+The plugin can be passed `lezer({exportName})` option to configure the name of the parser export.
+
 The code is licensed under an MIT license.

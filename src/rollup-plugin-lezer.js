@@ -2,7 +2,7 @@ import {resolve, dirname} from "path"
 import {promises as fs} from "fs"
 import {buildParserFile} from "./index.js"
 
-export function lezer() {
+export function lezer(config = {}) {
   let built = Object.create(null)
 
   return {
@@ -23,6 +23,7 @@ export function lezer() {
       let build = built[base] || (built[base] = fs.readFile(base, "utf8").then(code => buildParserFile(code, {
         fileName: base,
         moduleStyle: "es",
+        exportName: config.exportName,
         warn: message => this.warn(message)
       })))
       return build.then(result => m[2] ? result.terms : result.parser)
