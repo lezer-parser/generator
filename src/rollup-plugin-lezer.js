@@ -2,9 +2,10 @@ import {resolve, dirname} from "path"
 import {promises as fs} from "fs"
 import {buildParserFile} from "./index.js"
 
-export function lezer(exportName=undefined) {
+export function lezer(config={ exportName:undefined }) {
   let built = Object.create(null)
-
+  let exportName = undefined || config.exportName
+  
   return {
     name: "rollup-plugin-lezer",
 
