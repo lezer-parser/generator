@@ -262,7 +262,7 @@ class Builder {
         if (!rule.parts.length) continue
         let start = rule.parts[0]
         for (let t of start.terminal ? [start] : first[start.name] || [])
-          if (!startTokens.includes(t)) startTokens.push(t)
+          if (t && !startTokens.includes(t)) startTokens.push(t)
         if (start.terminal && rule.parts.length == 1 && !rules.some(r => r != rule && r.parts[0] == start))
           skip.push(start)
         else

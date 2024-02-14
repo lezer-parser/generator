@@ -107,7 +107,7 @@ function cmpStr(a: string, b: string) {
   return a < b ? -1 : a > b ? 1 : 0
 }
 
-function termsAhead(rule: Rule, pos: number, after: readonly Term[], first: {[name: string]: Term[]}): Term[] {
+function termsAhead(rule: Rule, pos: number, after: readonly Term[], first: {[name: string]: (Term | null)[]}): Term[] {
   let found: Term[] = []
   for (let i = pos + 1; i < rule.parts.length; i++) {
     let next = rule.parts[i], cont = false
@@ -181,6 +181,11 @@ function hashPositions(set: readonly Pos[]) {
   return h
 }
 
+class ConflictContext {
+  conflicts: Conflict[] = []
+  constructor(readonly first: {[name: string]: (Term | null)[]}) {}
+}
+
 export class State {
   actions: (Shift | Reduce)[] = []
   actionPositions: (readonly Pos[])[] = []
@@ -230,20 +235,22 @@ export class State {
     return null
   }
 
-  addAction(value: Shift | Reduce, positions: readonly Pos[], conflicts: Conflict[]) {
+  addAction(value: Shift | Reduce, positions: readonly Pos[], context: ConflictContext) {
     let conflict = this.addActionInner(value, positions)
     if (conflict) {
       let conflictPos = this.actionPositions[this.actions.indexOf(conflict)][0]
       let rules = [positions[0].rule.name, conflictPos.rule.name]
-      if (conflicts.some(c => c.rules.some(r => rules.includes(r)))) return
+      if (context.conflicts.some(c => c.rules.some(r => rules.includes(r)))) return
       let error
       if (conflict instanceof Shift)
         error = `shift/reduce conflict between\n  ${conflictPos}\nand\n  ${positions[0].rule}`
       else
         error = `reduce/reduce conflict between\n  ${conflictPos.rule}\nand\n  ${positions[0].rule}`
       error += `\nWith input:\n  ${positions[0].trail(70)} · ${value.term} …`
+      if (conflict instanceof Shift)
+        error += findConflictShiftSource(positions[0], conflict.term, context.first)
       error += findConflictOrigin(conflictPos, positions[0])
-      conflicts.push(new Conflict(error, rules))
+      context.conflicts.push(new Conflict(error, rules))
     }
   }
 
@@ -291,7 +298,7 @@ export class State {
   }
 }
 
-function closure(set: readonly Pos[], first: {[name: string]: Term[]}) {
+function closure(set: readonly Pos[], first: {[name: string]: (Term | null)[]}) {
   let added: Pos[] = [], redo: Pos[] = []
   function addFor(name: Term, ahead: readonly Term[], ambigAhead: readonly string[], skipAhead: Term, via: Pos) {
     for (let rule of name.rules) {
@@ -342,7 +349,7 @@ function addTo<T>(value: T, array: T[]) {
 }
 
 export function computeFirstSets(terms: TermSet) {
-  let table: {[term: string]: Term[]} = Object.create(null)
+  let table: {[term: string]: (Term | null)[]} = Object.create(null)
   for (let t of terms.terms) if (!t.terminal) table[t.name] = []
   for (;;) {
     let change = false
@@ -392,8 +399,49 @@ function findConflictOrigin(a: Pos, b: Pos) {
   return ""
 }
 
+// Search for the reason that a given 'after' token exists at the
+// given pos, by scanning up the trail of positions. Because the `via`
+// link is only one source of a pos, of potentially many, this
+// requires a re-simulation of the whole path up to the pos.
+function findConflictShiftSource(conflictPos: Pos, termAfter: Term, first: {[name: string]: (Term | null)[]}) {
+  let pos = conflictPos, path: Term[] = []
+  for (;;) {
+    for (let i = pos.pos - 1; i >= 0; i--) path.push(pos.rule.parts[i])
+    if (!pos.via) break
+    pos = pos.via
+  }
+  path.reverse()
+  let seen = new Set<number>()
+  function explore(pos: Pos, i: number, hasMatch: Pos | null): string {
+    if (i == path.length && hasMatch && !pos.next)
+      return `\nThe reduction of ${conflictPos.rule.name} is allowed before ${termAfter} because of this rule:\n  ${hasMatch}`
+
+    for (let next; next = pos.next;) {
+      if (i < path.length && next == path[i]) {
+        let inner = explore(pos.advance(), i + 1, hasMatch)
+        if (inner) return inner
+      }
+      let after = pos.rule.parts[pos.pos + 1], match = pos.pos + 1 == pos.rule.parts.length ? hasMatch : null
+      if (after && (after.terminal ? after == termAfter : first[after.name].includes(termAfter)))
+        match = pos.advance()
+      for (let rule of next.rules) {
+        let hash = (rule.id << 5) + i + (match ? 555 : 0)
+        if (!seen.has(hash)) {
+          seen.add(hash)
+          let inner = explore(new Pos(rule, 0, [], [], next, pos), i, match)
+          if (inner) return inner
+        }
+      }
+      if (!next.terminal && first[next.name].includes(null)) pos = pos.advance()
+      else break
+    }
+    return ""
+  }
+  return explore(pos, 0, null)
+}
+
 // Builds a full LR(1) automaton
-export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[name: string]: Term[]}) {
+export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[name: string]: (Term | null)[]}) {
   let states: State[] = [], statesBySetHash: {[hash: number]: State[]} = {}
   let cores: {[hash: number]: Core[]} = {}
   let t0 = Date.now()
@@ -430,7 +478,7 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
     getState(startTerm.rules.map(rule => new Pos(rule, 0, [terms.eof], none, startSkip, null).finish()), startTerm)
   }
 
-  let conflicts: Conflict[] = []
+  let conflicts = new ConflictContext(first)
 
   for (let filled = 0; filled < states.length; filled++) {
     let state = states[filled]
@@ -480,7 +528,7 @@ export function buildFullAutomaton(terms: TermSet, startTerms: Term[], first: {[
     }
   }
 
-  if (conflicts.length) throw new GenError(conflicts.map(c => c.error).join("\n\n"))
+  if (conflicts.conflicts.length) throw new GenError(conflicts.conflicts.map(c => c.error).join("\n\n"))
 
   // Resolve alwaysReduce and sort actions
   for (let state of states) state.finish()
