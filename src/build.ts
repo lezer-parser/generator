@@ -881,7 +881,11 @@ class Builder {
 
     if (!inline) this.built.push(new BuiltRule(rule.id.name, args, name))
     this.currentSkip.push(skip)
-    this.defineRule(name, this.normalizeExpr(expr))
+    let parts = this.normalizeExpr(expr)
+    if (parts.length > 100 * (expr instanceof ChoiceExpression ? expr.exprs.length : 1))
+      this.warn(`Rule ${rule.id.name} is generating a lot (${parts.length}) of choices.\n  Consider splitting it up or reducing the amount of ? or | operator uses.`, rule.start)
+    if (/\brulesize\b/.test(verbose) && parts.length > 10) console.log(`Rule ${rule.id.name}: ${parts.length} variants`)
+    this.defineRule(name, parts)
     this.currentSkip.pop()
     if (group) this.definedGroups.push({name, group, rule})
     return name
