@@ -543,6 +543,8 @@ class Builder {
       if (KEYWORDS.includes(id)) for (let i = 1;; i++) {
         id = "_".repeat(i) + name
         if (!(id in this.termTable)) break
+      } else if (!/^[\w$]+$/.test(name)) {
+        continue
       }
       terms.push(`${id}${mod == "cjs" ? ":" : " ="} ${this.termTable[name]}`)
     }
@@ -979,7 +981,7 @@ class Builder {
 
   resolveSpecialization(expr: SpecializeExpression) {
     let type = expr.type
-    let {name, props, dialect} = this.nodeInfo(expr.props, "d")
+    let {name, props, dialect, exported} = this.nodeInfo(expr.props, "d")
     let terminal = this.normalizeExpr(expr.token)
     if (terminal.length != 1 || terminal[0].terms.length != 1 || !terminal[0].terms[0].terminal)
       this.raise(`The first argument to '${type}' must resolve to a token`, expr.token.start)
@@ -1002,6 +1004,10 @@ class Builder {
         }
         table.push({value, term: token, type, dialect, name})
         this.tokenOrigins[token.name] = {spec: term}
+        if (name || exported) {
+          if (!name) token.preserve = true
+          this.namedTerms[exported || name!] = token
+        }
       } else {
         if (known.type != type)
           this.raise(`Conflicting specialization types for ${JSON.stringify(value)} of ${term.name} (${type} vs ${known.type})`,
@@ -1997,7 +2003,7 @@ export function buildParser(text: string, options: BuildOptions = {}): LRParser 
   return parser
 }
 
-const KEYWORDS = ["break", "case", "catch", "continue", "debugger", "default", "do", "else", "finally",
+const KEYWORDS = ["await", "break", "case", "catch", "continue", "debugger", "default", "do", "else", "finally",
                   "for", "function", "if", "return", "switch", "throw", "try", "var", "while", "with",
                   "null", "true", "false", "instanceof", "typeof", "void", "delete", "new", "in", "this",
                   "const", "class", "extends", "export", "import", "super", "enum", "implements", "interface",
