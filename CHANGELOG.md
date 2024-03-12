@@ -1,3 +1,15 @@
+## 1.7.0 (2024-03-12)
+
+### Bug fixes
+
+Include type declarations for the Rollup plugin.
+
+Named or `@export`-ed specialized tokens are now available in the terms file.
+
+### New features
+
+The generator now emits a warning when rules generate a lot of different variants (usually due to a combinatory explosion of `?` and `|` operators).
+
 ## 1.6.0 (2024-01-08)
 
 ### Bug fixes
