@@ -2,7 +2,7 @@
 
 expr {
  X { "x" } |
- String { '"' (stringContent | Interpolation)* stringEnd }
+ String { '"' (stringContent | Interpolation | Letter )* stringEnd }
 }
 
 Interpolation {
@@ -12,6 +12,9 @@ Interpolation {
 @local tokens {
   stringEnd { '"' }
   InterpolationStart { "{{" }
+  Y { "y" }
+  Z { "z" }
+  Letter { Y | Z }
   @else stringContent
 }
 
@@ -21,8 +24,8 @@ Interpolation {
 
 # Can parse else tokens
 
-"foo{{x}}bar{{x}}"
+"foo{{x}}bar{{x}}yz"
 
 ==>
 
-T(String(Interpolation(InterpolationStart,X,InterpolationEnd),Interpolation(InterpolationStart,X,InterpolationEnd)))
+T(String(Interpolation(InterpolationStart,X,InterpolationEnd),Interpolation(InterpolationStart,X,InterpolationEnd),Letter,Letter))

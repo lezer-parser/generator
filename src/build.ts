@@ -1437,8 +1437,9 @@ class TokenSet {
       for (let i = 0, lt = this.b.localTokens; i <= lt.length; i++) {
         let set = i == lt.length ? this.b.tokens : lt[i]
         rule = set.rules.find(r => r.id.name == name)
+        if (rule) break
       }
-      if (!rule) return this.b.raise(`Reference to token rule '${expr.id.name}', which isn't found`, expr.start)
+      if (!rule) return this.b.raise(`Reference to token rule '${name}', which isn't found`, expr.start)
       this.buildRule(rule, expr, from, to, args)
     } else if (expr instanceof CharClass) {
       for (let [a, b] of CharClasses[expr.type]) from.edge(a, b, to)
