@@ -1,0 +1,23 @@
+@top T { expr* }
+
+expr {
+ String { '"' (stringContent | Q | QQ )* stringEnd }
+}
+
+@local tokens {
+  @precedence { QQ, Q }
+
+  stringEnd { '"' }
+  Q { "q" "."? }
+  QQ { "qq" }
+  @else stringContent
+}
+
+# precedence in local tokens
+
+"xqqxq"
+
+==>
+
+T(String(QQ,Q))
+

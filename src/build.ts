@@ -219,9 +219,12 @@ class Builder {
       if (value) this.warn(`Unused rule '${value.name}'`, value.start)
     }
 
-    this.tokens.takePrecedences()
+    this.tokens.takePrecedences(true)
     this.tokens.takeConflicts()
-    for (let lt of this.localTokens) lt.takePrecedences()
+    for (let lt of this.localTokens) {
+      lt.takePrecedences(false)
+      lt.takeConflicts()
+    }
 
     for (let {name, group, rule} of this.definedGroups) this.defineGroup(name, group, rule)
     this.checkGroups()
@@ -1380,10 +1383,31 @@ class TokenSet {
   rules: readonly RuleDeclaration[]
   byDialect: {[dialect: number]: Term[]} = Object.create(null)
   precedenceRelations: readonly {term: Term, after: readonly Term[]}[] = []
+  explicitConflicts: {a: Term, b: Term}[] = []
 
   constructor(readonly b: Builder, readonly ast: TokenDeclaration | LocalTokenDeclaration | null) {
     this.rules = ast ? ast.rules : none
     for (let rule of this.rules) b.unique(rule.id)
+  }
+
+  takeConflicts() {
+    let resolve = (expr: NameExpression | LiteralExpression) => {
+      if (expr instanceof NameExpression) {
+        for (let built of this.built) if (built.matches(expr)) return built.term
+      } else {
+        let id = JSON.stringify(expr.value), found = this.built.find(b => b.id == id)
+        if (found) return found.term
+      }
+      this.b.warn(`Precedence specified for unknown token ${expr}`, expr.start)
+      return null
+    }
+    for (let c of this.ast?.conflicts || []) {
+      let a = resolve(c.a), b = resolve(c.b)
+      if (a && b) {
+        if (a.id < b.id) [a, b] = [b, a]
+        this.explicitConflicts.push({a, b})
+      }
+    }
   }
 
   getToken(expr: NameExpression) {
@@ -1491,7 +1515,7 @@ class TokenSet {
     }
   }
 
-  takePrecedences() {
+  takePrecedences(flag: boolean) {
     let rel: {term: Term, after: Term[]}[] = this.precedenceRelations = []
     if (this.ast) for (let group of this.ast.precedences) {
       let prev: Term[] = []
@@ -1505,7 +1529,7 @@ class TokenSet {
           let id = JSON.stringify(item.value), found = this.built.find(b => b.id == id)
           if (found) level.push(found.term)
         }
-        if (!level.length) this.b.warn(`Precedence specified for unknown token ${item}`, item.start)
+        if (!level.length && flag) this.b.warn(`Precedence specified for unknown token ${item}`, item.start)
         for (let term of level) addRel(rel, term, prev)
         prev = prev.concat(level)
       }
@@ -1546,7 +1570,6 @@ class TokenSet {
 }
 
 class MainTokenSet extends TokenSet {
-  explicitConflicts: {a: Term, b: Term}[] = []
   ast!: TokenDeclaration | null
 
   getLiteral(expr: LiteralExpression) {
@@ -1562,26 +1585,6 @@ class MainTokenSet extends TokenSet {
     this.build(expr, this.startState, new State([term]), none)
     this.built.push(new BuiltRule(id, none, term))
     return term
-  }
-
-  takeConflicts() {
-    let resolve = (expr: NameExpression | LiteralExpression) => {
-      if (expr instanceof NameExpression) {
-        for (let built of this.built) if (built.matches(expr)) return built.term
-      } else {
-        let id = JSON.stringify(expr.value), found = this.built.find(b => b.id == id)
-        if (found) return found.term
-      }
-      this.b.warn(`Precedence specified for unknown token ${expr}`, expr.start)
-      return null
-    }
-    for (let c of this.ast?.conflicts || []) {
-      let a = resolve(c.a), b = resolve(c.b)
-      if (a && b) {
-        if (a.id < b.id) [a, b] = [b, a]
-        this.explicitConflicts.push({a, b})
-      }
-    }
   }
 
   // Token groups are a mechanism for allowing conflicting (matching
@@ -1730,6 +1733,16 @@ class LocalTokenSet extends TokenSet {
       this.b.raise(`Grammar contains zero-length tokens (in '${tokens.accepting[0].name}')`,
                    this.rules.find(r => r.id.name == tokens.accepting[0].name)!.start)
 
+    // If there is a precedence specified for the pair, the conflict is resolved
+    let allConflicts = tokens.findConflicts(checkTogether(states, this.b, skipInfo))
+      .filter(({a, b}) => !this.precededBy(a, b) && !this.precededBy(b, a))
+    for (let {a, b} of this.explicitConflicts) {
+      if (!allConflicts.some(c => c.a == a && c.b == b))
+        allConflicts.push(new Conflict(a, b, 0, "", ""))
+    }
+    let softConflicts = allConflicts.filter(c => c.soft), conflicts = allConflicts.filter(c => !c.soft)
+    let errors: {conflict: Conflict, error: string}[] = []
+
     for (let {a, b, exampleA} of tokens.findConflicts(() => true)) {
       if (!this.precededBy(a, b) && !this.precededBy(b, a))
         this.b.raise(`Overlapping tokens ${a.name} and ${b.name} in local token group${
@@ -1755,7 +1768,68 @@ class LocalTokenSet extends TokenSet {
       }
     }
 
-    let precTable = this.buildPrecTable(none)
+
+    let groups: TokenGroup[] = []
+    for (let state of states) {
+      if (state.defaultReduce || state.tokenGroup > -1) continue
+      // Find potentially-conflicting terms (in terms) and the things
+      // they conflict with (in conflicts), and raise an error if
+      // there's a token conflict directly in this state.
+      let terms: Term[] = [], incompatible: Term[] = []
+      let skip = skipInfo[this.b.skipRules.indexOf(state.skip)].startTokens
+      for (let term of skip)
+        if (state.actions.some(a => a.term == term))
+          this.b.raise(`Use of token ${term.name} conflicts with skip rule`)
+
+      let stateTerms: Term[] = []
+      for (let i = 0; i < state.actions.length + (skip ? skip.length : 0); i++) {
+        let term = i < state.actions.length ? state.actions[i].term : skip[i - state.actions.length]
+        let orig = this.b.tokenOrigins[term.name]
+        if (orig && orig.spec) term = orig.spec
+        else if (orig && orig.external) continue
+        addToSet(stateTerms, term)
+      }
+      if (stateTerms.length == 0) continue
+
+
+      for (let term of stateTerms) {
+        for (let conflict of conflicts) {
+          let conflicting = conflict.a == term ? conflict.b : conflict.b == term ? conflict.a : null
+          if (!conflicting) continue
+          if (stateTerms.includes(conflicting) && !errors.some(e => e.conflict == conflict)) {
+            let example = conflict.exampleA ? ` (example: ${JSON.stringify(conflict.exampleA)}${
+              conflict.exampleB ? ` vs ${JSON.stringify(conflict.exampleB)}` : ""})` : ""
+            errors.push({
+              error: `Overlapping tokens ${term.name} and ${conflicting.name} used in same context${example}\n` +
+                `After: ${state.set[0].trail()}`,
+              conflict
+            })
+          }
+          addToSet(terms, term)
+          addToSet(incompatible, conflicting)
+        }
+      }
+
+      let tokenGroup = null
+      for (let group of groups) {
+        if (incompatible.some(term => group.tokens.includes(term))) continue
+        for (let term of terms) addToSet(group.tokens, term)
+        tokenGroup = group
+        break
+      }
+      if (!tokenGroup) {
+        tokenGroup = new TokenGroup(terms, groups.length + id)
+        groups.push(tokenGroup)
+      }
+      // state.tokenGroup = tokenGroup.groupID
+    }
+
+    if (errors.length)
+      this.b.raise(errors.map(e => e.error).join("\n\n"))
+    if (groups.length + id > 16)
+      this.b.raise(`Too many different token groups (${groups.length}) to represent them as a 16-bit bitfield`)
+
+    let precTable = this.buildPrecTable(softConflicts)
     let tokenData = tokens.toArray({[id]: Seq.End}, precTable)
     let precOffset = tokenData.length
     let fullData = new Uint16Array(tokenData.length + precTable.length + 1)

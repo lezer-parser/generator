@@ -75,6 +75,7 @@ export class TokenDeclaration extends Node {
 export class LocalTokenDeclaration extends Node {
   constructor(start: number,
               readonly precedences: readonly TokenPrecDeclaration[],
+              readonly conflicts: readonly TokenConflictDeclaration[],
               readonly rules: readonly RuleDeclaration[],
               readonly fallback: {readonly id: Identifier, readonly props: readonly Prop[]} | null) {
     super(start)

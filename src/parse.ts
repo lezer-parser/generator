@@ -441,16 +441,19 @@ function parseLocalTokens(input: Input, start: number) {
   let tokenRules: RuleDeclaration[] = []
   let precedences: TokenPrecDeclaration[] = []
   let fallback: {id: Identifier, props: readonly Prop[]} | null = null
+  let conflicts: TokenConflictDeclaration[] = []
   while (!input.eat("}")) {
     if (input.type == "at" && input.value == "precedence") {
       precedences.push(parseTokenPrecedence(input))
+    } else if (input.type == "at" && input.value == "conflict") {
+      conflicts.push(parseTokenConflict(input))
     } else if (input.eat("at", "else") && !fallback) {
       fallback = {id: parseIdent(input), props: parseProps(input)}
     } else {
       tokenRules.push(parseRule(input))
     }
   }
-  return new LocalTokenDeclaration(start, precedences, tokenRules, fallback)
+  return new LocalTokenDeclaration(start, precedences, conflicts, tokenRules, fallback)
 }
 
 function parseTokenPrecedence(input: Input) {
