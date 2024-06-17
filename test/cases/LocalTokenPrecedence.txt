@@ -1,23 +1,26 @@
 @top T { expr* }
 
 expr {
- String { '"' (stringContent | Q | QQ )* stringEnd }
+ String { '"' (stringContent | A | AA | Letter)* stringEnd }
 }
 
 @local tokens {
-  @precedence { QQ, Q }
+  @precedence { AA, A }
 
   stringEnd { '"' }
-  Q { "q" "."? }
-  QQ { "qq" }
+  A { "a" "."? }
+  AA { "aa" }
+  Y { "y" }
+  Z { "z" }
+  Letter { Y | Z }
   @else stringContent
 }
 
 # precedence in local tokens
 
-"xqqxq"
+"yaaza"
 
 ==>
 
-T(String(QQ,Q))
+T(String(Letter,AA,Letter,A))
 
