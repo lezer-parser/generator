@@ -219,10 +219,10 @@ class Builder {
       if (value) this.warn(`Unused rule '${value.name}'`, value.start)
     }
 
-    this.tokens.takePrecedences(true)
+    this.tokens.takePrecedences()
     this.tokens.takeConflicts()
     for (let lt of this.localTokens) {
-      lt.takePrecedences(false)
+      lt.takePrecedences()
       lt.takeConflicts()
     }
 
@@ -1515,7 +1515,7 @@ class TokenSet {
     }
   }
 
-  takePrecedences(flag: boolean) {
+  takePrecedences() {
     let rel: {term: Term, after: Term[]}[] = this.precedenceRelations = []
     if (this.ast) for (let group of this.ast.precedences) {
       let prev: Term[] = []
@@ -1529,7 +1529,7 @@ class TokenSet {
           let id = JSON.stringify(item.value), found = this.built.find(b => b.id == id)
           if (found) level.push(found.term)
         }
-        if (!level.length && flag) this.b.warn(`Precedence specified for unknown token ${item}`, item.start)
+        if (!level.length) this.b.warn(`Precedence specified for unknown token ${item}`, item.start)
         for (let term of level) addRel(rel, term, prev)
         prev = prev.concat(level)
       }
