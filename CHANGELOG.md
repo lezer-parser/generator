@@ -1,3 +1,9 @@
+## 1.7.1 (2024-06-19)
+
+### Bug fixes
+
+Fix a bug that broken references to tokens in local token groups.
+
 ## 1.7.0 (2024-03-12)
 
 ### Bug fixes
