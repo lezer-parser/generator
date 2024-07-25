@@ -2004,9 +2004,9 @@ export function buildParser(text: string, options: BuildOptions = {}): LRParser 
   return parser
 }
 
-const KEYWORDS = ["await", "break", "case", "catch", "continue", "debugger", "default", "do", "else", "finally",
-                  "for", "function", "if", "return", "switch", "throw", "try", "var", "while", "with",
-                  "null", "true", "false", "instanceof", "typeof", "void", "delete", "new", "in", "this",
+const KEYWORDS = ["arguments", "await", "break", "case", "catch", "continue", "debugger", "default", "do", "else",
+                  "eval", "finally", "for", "function", "if", "return", "switch", "throw", "try", "var", "while",
+                  "with", "null", "true", "false", "instanceof", "typeof", "void", "delete", "new", "in", "this",
                   "const", "class", "extends", "export", "import", "super", "enum", "implements", "interface",
                   "let", "package", "private", "protected", "public", "static", "yield", "require"]
 
