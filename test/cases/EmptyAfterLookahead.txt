@@ -1,0 +1,31 @@
+// This example caused the moving of nodes for reductions to move a
+// node across a buffer position stored on the parser stack, causing a
+// node to fall out of its parent node.
+
+@skip { space | lineComment }
+@top Program { (GlobalConstantDeclaration ";")* }
+GlobalConstantDeclaration {
+  AttributeList @specialize[@name='Keyword']<Identifier, 'const'> Identifier "="
+}
+AttributeList { Attribute { "@" Identifier }* }
+@tokens {
+  space { std.whitespace+ }
+  lineComment { "//" ![\n\r]* $[\n\r]? }
+  Identifier { $[a-zA-Z_] $[0-9a-zA-Z_]* }
+}
+
+# Doesn't produce corrupt trees
+
+// Comment
+
+// Comment Comment
+const ACES_INPUT = ;
+
+// Comment Comment Comment
+const ACES_OUTPUT = ; 
+
+==>
+
+Program(
+  GlobalConstantDeclaration(AttributeList,Keyword,Identifier),
+  GlobalConstantDeclaration(AttributeList,Keyword,Identifier))
