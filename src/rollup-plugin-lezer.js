@@ -9,6 +9,7 @@ export function lezer(config = {}) {
     name: "rollup-plugin-lezer",
 
     resolveId(source, importer) {
+      if (source.startsWith('\0')) return null
       let m = /^(.*\.grammar)(\.terms)?$/.exec(source)
       if (!m) return null
       let id = resolve(importer ? dirname(importer) : process.cwd(), m[1])
