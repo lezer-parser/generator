@@ -9,7 +9,7 @@ export function lezer(config = {}) {
     name: "rollup-plugin-lezer",
 
     resolveId(source, importer) {
-      let m = /^(.*\.grammar)(\.terms)?$/.exec(source)
+      let m = /^([^\0].*\.grammar)(\.terms)?$/.exec(source)
       if (!m) return null
       let id = resolve(importer ? dirname(importer) : process.cwd(), m[1])
       return m[2] ? `\0${id}.terms` : id
