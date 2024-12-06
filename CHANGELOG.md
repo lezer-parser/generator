@@ -1,3 +1,11 @@
+## 1.7.2 (2024-12-06)
+
+### Bug fixes
+
+Fix an issue where the terms file could contain tokens named `eval` or `arguments`, which isn't allowed in strict mode.
+
+The Rollup plugin will now ignore sources starting with null characters in its resolve hook.
+
 ## 1.7.1 (2024-06-19)
 
 ### Bug fixes
