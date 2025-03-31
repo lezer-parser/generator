@@ -1,3 +1,9 @@
+## 1.7.3 (2025-03-31)
+
+### Bug fixes
+
+Fix an issue where specializations of local tokens were sometimes not assigned to the proper group, breaking parsing of such tokens.
+
 ## 1.7.2 (2024-12-06)
 
 ### Bug fixes
