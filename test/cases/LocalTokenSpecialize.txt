@@ -1,0 +1,15 @@
+@top T { A }
+
+A { "#" Auto }
+
+Auto { @specialize<identifier, "auto"> }
+
+@local tokens { identifier { @asciiLetter+ } }
+
+# Assigns the proper group to states
+
+#auto
+
+==>
+
+T(A(Auto))

@@ -1744,6 +1744,7 @@ class LocalTokenSet extends TokenSet {
       let usesOther: Term | undefined = skipInfo[this.b.skipRules.indexOf(state.skip)].startTokens[0]
       for (let {term} of state.actions) {
         let orig = this.b.tokenOrigins[term.name]
+        while (orig?.spec) orig = this.b.tokenOrigins[orig.spec.name]
         if (orig?.group == this) usesThis = term
         else usesOther = term
       }
