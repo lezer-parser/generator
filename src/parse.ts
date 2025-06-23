@@ -484,23 +484,32 @@ function parseTokenConflict(input: Input) {
   return new TokenConflictDeclaration(start, a, b)
 }
 
-function parseExternalTokenSet(input: Input) {
-  let tokens: {id: Identifier, props: readonly Prop[]}[] = []
+function parseExternalTokenSet(input: Input, allowConflicts: boolean) {
+  let tokens: {id: Identifier, props: readonly Prop[]}[] = [], conflicts: Identifier[] = []
   input.expect("{")
-  while (!input.eat("}")) {
-    if (tokens.length) input.eat(",")
-    let id = parseIdent(input)
-    let props = parseProps(input)
-    tokens.push({id, props})
+  for (let first = true; !input.eat("}"); first = false) {
+    if (!first) input.eat(",")
+    if (allowConflicts && input.eat("at", "conflict")) {
+      input.expect("{")
+      for (let f = true; !input.eat("}"); f = false) {
+        if (!f) input.eat(",")
+        conflicts.push(parseIdent(input))
+      }
+    } else {
+      let id = parseIdent(input)
+      let props = parseProps(input)
+      tokens.push({id, props})
+    }
   }
-  return tokens
+  return {tokens, conflicts}
 }
 
 function parseExternalTokens(input: Input, start: number) {
   let id = parseIdent(input)
   input.expect("id", "from")
   let from = input.expect("string")
-  return new ExternalTokenDeclaration(start, id, from, parseExternalTokenSet(input))
+  let {tokens, conflicts} = parseExternalTokenSet(input, true)
+  return new ExternalTokenDeclaration(start, id, from, tokens, conflicts)
 }
 
 function parseExternalSpecialize(input: Input, type: "extend" | "specialize", start: number) {
@@ -508,7 +517,7 @@ function parseExternalSpecialize(input: Input, type: "extend" | "specialize", st
   let id = parseIdent(input)
   input.expect("id", "from")
   let from = input.expect("string")
-  return new ExternalSpecializeDeclaration(start, type, token, id, from, parseExternalTokenSet(input))
+  return new ExternalSpecializeDeclaration(start, type, token, id, from, parseExternalTokenSet(input, false).tokens)
 }
 
 function parseExternalPropSource(input: Input, start: number) {

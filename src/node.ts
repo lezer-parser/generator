@@ -97,7 +97,8 @@ export class ExternalTokenDeclaration extends Node {
   constructor(start: number,
               readonly id: Identifier,
               readonly source: string,
-              readonly tokens: readonly {id: Identifier, props: readonly Prop[]}[]) {
+              readonly tokens: readonly {id: Identifier, props: readonly Prop[]}[],
+              readonly conflicts: readonly Identifier[]) {
     super(start)
   }
 }

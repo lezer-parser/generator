@@ -277,6 +277,7 @@ class Builder {
       .map((grp, i) => grp.buildLocalGroup(fullTable, skipInfo, i))
     let {tokenGroups, tokenPrec, tokenData} =
       time("Build token groups", () => this.tokens.buildTokenGroups(fullTable, skipInfo, localTokens.length))
+    for (let ext of this.externalTokens) ext.checkConflicts(fullTable, skipInfo)
     let table = time("Finish automaton", () => finishAutomaton(fullTable))
     let skipState = findSkipStates(table, this.terms.tops)
 
@@ -1586,7 +1587,7 @@ class MainTokenSet extends TokenSet {
         let id = JSON.stringify(expr.value), found = this.built.find(b => b.id == id)
         if (found) return found.term
       }
-      this.b.warn(`Precedence specified for unknown token ${expr}`, expr.start)
+      this.b.warn(`Conflict specified for unknown token ${expr}`, expr.start)
       return null
     }
     for (let c of this.ast?.conflicts || []) {
@@ -1894,6 +1895,36 @@ class ExternalTokenSet implements TokenizerSpec {
   }
 
   getToken(expr: NameExpression) { return findExtToken(this.b, this.tokens, expr) }
+
+  checkConflicts(states: readonly LRState[], skipInfo: readonly SkipInfo[]) {
+    let conflicting: Term[] = []
+    for (let id of this.ast.conflicts) {
+      let term = this.b.namedTerms[id.name]
+      if (!term) {
+        this.b.warn(`Unknown conflict term '${id.name}'`)
+      } else if (!term.terminal) {
+        this.b.warn(`Term '${id.name}' isn't a terminal and cannot be used in a token conflict.`)
+      } else if (this.tokens[id.name]) {
+        this.b.warn(`External token set specifying a conflict with one of its own tokens ('${id.name}')`)
+      } else {
+        conflicting.push(term)
+      }
+    }
+    if (conflicting.length) for (let state of states) {
+      let skip = skipInfo[this.b.skipRules.indexOf(state.skip)].startTokens, relevant = false, conflict: Term | null = null
+      for (let i = 0; i < state.actions.length + skip.length; i++) {
+        let term = i < state.actions.length ? state.actions[i].term : skip[i - state.actions.length]
+        if (term.name in this.tokens) {
+          relevant = true
+        } else if (conflicting.indexOf(term) > -1) {
+          conflict = term
+        }
+      }
+      if (relevant && conflict)
+        this.b.raise(`Tokens from external group used together with conflicting token '${conflict.name}'
+After: ${state.set[0].trail()}`, this.ast.start)
+    }
+  }
 
   create() {
     return this.b.options.externalTokenizer!(this.ast.id.name, this.b.termTable)
