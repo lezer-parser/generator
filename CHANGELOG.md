@@ -1,3 +1,11 @@
+## 1.8.0 (2025-06-23)
+
+### New features
+
+`@specialize` and `@extend` now accept concatenated literal expressions for the token content.
+
+`@external tokens` declarations now support `@conflict { some, tokens }` declarations to check that they are never used in a context that also allows those tokens.
+
 ## 1.7.3 (2025-03-31)
 
 ### Bug fixes
