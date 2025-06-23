@@ -985,11 +985,11 @@ class Builder {
     let terminal = this.normalizeExpr(expr.token)
     if (terminal.length != 1 || terminal[0].terms.length != 1 || !terminal[0].terms[0].terminal)
       this.raise(`The first argument to '${type}' must resolve to a token`, expr.token.start)
-    let values
-    if (expr.content instanceof LiteralExpression)
-      values = [expr.content.value]
-    else if ((expr.content instanceof ChoiceExpression) && expr.content.exprs.every(e => e instanceof LiteralExpression))
-      values = expr.content.exprs.map(expr => (expr as LiteralExpression).value)
+    let values: string[], lit
+    if ((lit = isLiteralToken(expr.content)) != null)
+      values = [lit]
+    else if ((expr.content instanceof ChoiceExpression) && expr.content.exprs.every(e => isLiteralToken(e) != null))
+      values = expr.content.exprs.map(isLiteralToken) as string[]
     else
       return this.raise(`The second argument to '${expr.type}' must be a literal or choice of literals`, expr.content.start)
 
@@ -1095,6 +1095,20 @@ class Builder {
       }
     }
   }
+}
+
+function isLiteralToken(expr: Expression): string | null {
+  if (expr instanceof LiteralExpression) return expr.value
+  if (expr instanceof SequenceExpression) {
+    let result = ""
+    for (let sub of expr.exprs) {
+      let lit = isLiteralToken(sub)
+      if (lit == null) return null
+      result += lit
+    }
+    return result
+  }
+  return null
 }
 
 const MinSharedActions = 5
