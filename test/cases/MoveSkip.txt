@@ -1,0 +1,30 @@
+@top T { IfStatement+ }
+
+IfStatement { IfClause { "if" "a" } ElseClause { "else" "b" }? }
+
+@skip { "\n" | " " | LineComment }
+
+@tokens {
+  LineComment { "//" ![\n]* }
+}
+
+# Puts skipped tokens before optional content outside of a node
+
+if a // comment
+
+==> T(IfStatement(IfClause), LineComment)
+
+# Puts them inside if the node continues
+
+if a // comment
+else b
+
+==> T(IfStatement(IfClause, LineComment, ElseClause))
+
+# Can handle multiple comments
+
+if a
+  // comment
+  // comment
+
+==> T(IfStatement(IfClause), LineComment, LineComment)
