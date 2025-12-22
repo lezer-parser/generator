@@ -1,5 +1,5 @@
 import {buildParser, BuildOptions} from "../dist/index.js"
-import {Tree, TreeFragment, NodeIterator, NodeProp, parseMixed, SyntaxNode} from "@lezer/common"
+import {Tree, TreeFragment, NodeIterator, NodeProp, parseMixed, SyntaxNode, IterMode} from "@lezer/common"
 import {LRParser, ParserConfig} from "@lezer/lr"
 // @ts-ignore
 import {testTree} from "../dist/test.js"
@@ -393,7 +393,7 @@ describe("mixed languages", () => {
       }
     `).configure({
       wrap: parseMixed(node => {
-        if (node.name == "NestContent") return {parser: inner}
+        if (node.name == "NestContent") return {parser: inner, bracketed: true}
         return null
       })
     })
@@ -409,6 +409,8 @@ describe("mixed languages", () => {
     ist(innerNode.to, 5)
     ist(innerNode.firstChild!.from, 2)
     ist(innerNode.firstChild!.to, 5)
+    ist(tree.topNode.enter(2, 0), null)
+    ist(tree.topNode.enter(2, 0, IterMode.EnterBracketed)?.name, "I")
   })
 
   it("supports conditional nesting", () => {
@@ -480,7 +482,8 @@ describe("mixed languages", () => {
       wrap: parseMixed(node => {
         return node.name == "Doc" ? {
           parser: blob(),
-          overlay: node => node.name == "Content"
+          overlay: node => node.name == "Content",
+          bracketed: true
         } : null
       })
     })
@@ -492,12 +495,14 @@ describe("mixed languages", () => {
     ist(c1.to, 13)
     ist(c1.parent!.name, "Doc")
     ist(tree.resolveInner(10, 1).name, "Blob")
+    ist(tree.topNode.enter(3, 1)?.name, "Dir")
+    ist(tree.topNode.enter(3, 1, IterMode.EnterBracketed) + "", "Blob")
 
     let mix2 = templateParser().configure({
       wrap: parseMixed(node => {
         return node.name == "Doc" ? {
           parser: blob(),
-          overlay: [{from: 5, to: 7}]
+          overlay: [{from: 5, to: 7}],
         } : null
       })
     })
@@ -506,6 +511,7 @@ describe("mixed languages", () => {
     ist(c2.name, "Blob")
     ist(c2.from, 5)
     ist(c2.to, 7)
+    ist(tree.topNode.enter(5, -1, IterMode.EnterBracketed)?.name, "Dir")
   })
 
   it("adds a mount even for empty nodes", () => {
