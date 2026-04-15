@@ -1,3 +1,5 @@
+**This repository has moved to https://code.haverbeke.berlin/lezer/generator**
+
 # @lezer/generator
 
 [ [**WEBSITE**](http://lezer.codemirror.net) | [**ISSUES**](https://code.haverbeke.berlin/lezer/lezer/issues) | [**FORUM**](https://discuss.codemirror.net/c/lezer) | [**CHANGELOG**](https://code.haverbeke.berlin/lezer/generator/src/branch/main/CHANGELOG.md) ]
